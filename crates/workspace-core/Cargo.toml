@@ -1,0 +1,9 @@
+[package]
+name = "workspace-core"
+version = "0.1.0"
+edition = "2021"
+description = "Platform-independent spaces, tab stacks, and recursive browser layouts"
+license = "MIT"
+
+[dependencies]
+url = "2"

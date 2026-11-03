@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New tab · Axolotl</title>
+<style>
+  :root { color-scheme: light; font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #30433f; background: #f7f9f6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: clamp(24px, 6vw, 72px); }
+  main { max-width: 580px; margin: 7vh auto 0; }
+  .eyebrow { font-size: 11px; letter-spacing: .18em; font-weight: 650; color: #78918a; }
+  h1 { margin: 16px 0 12px; font-size: clamp(24px, 5vw, 38px); font-weight: 500; letter-spacing: -.045em; line-height: 1.12; }
+  p { color: #7c8b85; line-height: 1.65; margin: 0 0 26px; }
+  nav { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 40px; }
+  a { color: #3f6b5d; text-decoration: none; border: 1px solid #dce5dd; border-radius: 8px; padding: 10px 14px; background: #fff; }
+  a:hover { background: #ebf2ea; }
+  section { border-top: 1px solid #e1e8e0; padding-top: 24px; }
+  h2 { font-size: 12px; font-weight: 600; margin: 0 0 16px; color: #72857b; }
+  label { display: block; font-size: 12px; color: #708478; margin-bottom: 12px; }
+  input, textarea, select { display: block; width: 100%; margin-top: 6px; padding: 10px 12px; color: #3c5145; font: inherit; background: white; border: 1px solid #dce5dd; border-radius: 7px; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid #b3cdb9; outline-offset: 1px; }
+  textarea { resize: vertical; min-height: 76px; }
+  small { color: #96a399; font-size: 11px; line-height: 1.6; }
+</style>
+<main>
+  <div class="eyebrow">AXOLOTL / A LITTLE MORE ROOM</div>
+  <h1>Make space for your thoughts.</h1>
+  <p>Open a page, split your view, follow a second thread.<br>Each pane keeps its own tabs and history.</p>
+  <nav aria-label="Start browsing">
+    <a href="https://example.com">Example page ↗</a>
+    <a href="https://www.rust-lang.org">Explore Rust ↗</a>
+    <a href="https://example.com" target="_blank">Open in a new tab ↗</a>
+  </nav>
+  <section aria-label="Native browser input playground">
+    <h2>A quiet place to try things</h2>
+    <label>Type something<input placeholder="Your next idea…" aria-label="Your next idea"></label>
+    <label>Keep a thought<textarea placeholder="This note stays here while you switch tabs and spaces." aria-label="Keep a thought"></textarea></label>
+    <label>Choose a rhythm<select aria-label="Choose a rhythm"><option>Slow and focused</option><option>Side by side</option><option>Everything in view</option></select></label>
+    <small>This is a local start page. Notes live only in this tab's memory.</small>
+  </section>
+</main>
+</html>

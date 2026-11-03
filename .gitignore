@@ -1,2 +1,4 @@
 .worktrees
 .raft
+/target
+.DS_Store

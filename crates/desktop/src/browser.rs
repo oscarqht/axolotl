@@ -28,6 +28,8 @@ pub enum BrowserEvent {
 /// The operations a replacement engine must provide. Browser state is never
 /// serialized into the layout core, so a future mobile adapter can share it.
 pub trait BrowserHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
     #[cfg(feature = "smoke")]
     fn evaluate(
         &self,
@@ -100,6 +102,26 @@ impl WryHost {
 }
 
 impl BrowserHost for WryHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()> {
+        use objc2_app_kit::{
+            NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
+        };
+        use wry::WebViewExtMacOS;
+        // Window-local override exercises AppKit's real appearance notification
+        // without changing the user's system preference. None restores OS mode.
+        let appearance = dark.and_then(|dark| unsafe {
+            NSAppearance::appearanceNamed(if dark {
+                NSAppearanceNameDarkAqua
+            } else {
+                NSAppearanceNameAqua
+            })
+        });
+        self.get(tab)?
+            .ns_window()
+            .setAppearance(appearance.as_deref());
+        Ok(())
+    }
     #[cfg(feature = "smoke")]
     fn is_loaded(&self, tab: TabId) -> bool {
         self.loaded.borrow().contains(&tab)

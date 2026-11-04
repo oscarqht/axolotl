@@ -1,4 +1,4 @@
-use crate::app::{BrowserApp, Command, TabAction, TabTarget};
+use crate::app::{BrowserApp, Command, TabTarget};
 use gpui::{prelude::*, *};
 use gpui_component::{InteractiveElementExt, input::Input};
 use workspace_core::{Axis, PaneId, Rect};
@@ -13,10 +13,6 @@ pub fn tab_insertion_index(x: f32, count: usize) -> usize {
         .max(0.) as usize)
         .min(count)
 }
-const INK: u32 = 0xdde5ed;
-const SURFACE: u32 = 0x181e27;
-const MUTED: u32 = 0x8491a2;
-const ACCENT: u32 = 0x8fddc3;
 
 impl BrowserApp {
     fn compact_tab(
@@ -30,6 +26,7 @@ impl BrowserApp {
             TabTarget::Space(id) => ("space", id),
             TabTarget::Page(_, id) => ("page", id),
         };
+        let colors = crate::chrome_theme::ChromeColors::current(cx);
         let editing = self.editing == Some(target);
         div()
             .id((kind, id))
@@ -39,10 +36,18 @@ impl BrowserApp {
             .flex()
             .items_center()
             .rounded_md()
-            .bg(rgb(if active { 0x303b49 } else { SURFACE }))
+            .bg(rgb(if active {
+                colors.active_tab
+            } else {
+                colors.surface
+            }))
             .border_1()
-            .border_color(rgb(if editing { ACCENT } else { 0x303845 }))
-            .text_color(rgb(if active { INK } else { MUTED }))
+            .border_color(rgb(if editing {
+                colors.accent
+            } else {
+                colors.border
+            }))
+            .text_color(rgb(if active { colors.ink } else { colors.muted }))
             .when(
                 self.tab_drag.is_some_and(|drag| {
                     drag.active && target == TabTarget::Page(drag.source, drag.tab)
@@ -119,12 +124,12 @@ impl BrowserApp {
                     .justify_center()
                     .rounded_md()
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(0x465366)))
+                    .hover(|s| s.bg(rgb(colors.hover)))
                     .text_color(rgb(
                         if self.menu.is_some_and(|menu| menu.target == target) {
-                            ACCENT
+                            colors.accent
                         } else {
-                            MUTED
+                            colors.muted
                         },
                     ))
                     .child("•")
@@ -143,8 +148,8 @@ impl BrowserApp {
         drop: Option<(PaneId, usize)>,
         cx: &Context<Self>,
     ) -> AnyElement {
+        let colors = crate::chrome_theme::ChromeColors::current(cx);
         let pane = self.model.pane(pane_id).expect("layout pane exists");
-        let focused = self.model.focused_pane().id == pane_id;
         let tab = pane.active_tab;
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let unavailable = page.is_none();
@@ -171,12 +176,12 @@ impl BrowserApp {
                     .flex_shrink_0()
                     .rounded_md()
                     .border_1()
-                    .border_color(rgb(ACCENT))
-                    .bg(rgb(0x29483f))
+                    .border_color(rgb(colors.accent))
+                    .bg(rgb(colors.placeholder))
                     .px_2()
                     .flex()
                     .items_center()
-                    .text_color(rgb(ACCENT))
+                    .text_color(rgb(colors.accent))
                     .child("Drop tab here")
                     .into_any_element(),
             );
@@ -187,15 +192,13 @@ impl BrowserApp {
             .top(px(rect.y))
             .w(px(rect.width))
             .h(px(rect.height))
-            .bg(rgb(SURFACE))
+            .bg(rgb(colors.surface))
             .child(
                 div()
                     .h(px(34.))
                     .flex()
                     .items_center()
                     .px_1()
-                    .border_b_1()
-                    .border_color(rgb(if focused { ACCENT } else { 0x303845 }))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {
@@ -223,14 +226,14 @@ impl BrowserApp {
                     .bottom_0()
                     .left_0()
                     .right_0()
-                    .bg(rgb(0xf5f6f8))
-                    .child(if self.menu.is_some() || unavailable {
+                    .bg(rgb(colors.page))
+                    .child(if unavailable {
                         div()
                             .size_full()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_color(rgb(0x627083))
+                            .text_color(rgb(colors.muted))
                             .child(if unavailable { "Page unavailable" } else { "" })
                             .into_any_element()
                     } else {
@@ -250,33 +253,11 @@ impl BrowserApp {
             )
             .into_any_element()
     }
-
-    fn menu_item(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        target: TabTarget,
-        action: TabAction,
-        cx: &Context<Self>,
-    ) -> Stateful<Div> {
-        div()
-            .id(id)
-            .h(px(32.))
-            .px_2()
-            .flex()
-            .items_center()
-            .rounded_md()
-            .cursor_pointer()
-            .hover(|s| s.bg(rgb(0x3a4859)))
-            .child(label)
-            .on_click(
-                cx.listener(move |this, _, window, cx| this.tab_action(target, action, window, cx)),
-            )
-    }
 }
 
 impl Render for BrowserApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = crate::chrome_theme::ChromeColors::current(cx);
         self.prepare_views(window);
         if self.select_address && self.editing.is_some() {
             self.select_address = false;
@@ -316,8 +297,8 @@ impl Render for BrowserApp {
         div()
             .size_full()
             .relative()
-            .bg(rgb(0x11161e))
-            .text_color(rgb(INK))
+            .bg(rgb(colors.shell))
+            .text_color(rgb(colors.ink))
             .text_size(px(12.))
             .font_family(if cfg!(target_os = "windows") {
                 "Segoe UI"
@@ -451,11 +432,12 @@ impl Render for BrowserApp {
                     .top(px(bounds.y))
                     .w(px(bounds.width))
                     .h(px(bounds.height))
+                    .bg(rgb(colors.divider))
                     .cursor(match divider.axis {
                         Axis::Horizontal => CursorStyle::ResizeLeftRight,
                         Axis::Vertical => CursorStyle::ResizeUpDown,
                     })
-                    .hover(|s| s.bg(rgb(ACCENT)))
+                    .hover(|s| s.bg(rgb(colors.accent)))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {
@@ -474,78 +456,8 @@ impl Render for BrowserApp {
                         .right_0()
                         .h(px(22.))
                         .px_2()
-                        .bg(rgb(SURFACE))
+                        .bg(rgb(colors.surface))
                         .child(self.status.clone()),
-                )
-            })
-            .when_some(self.menu, |root, menu| {
-                let x = f32::from(menu.position.x)
-                    .min((f32::from(viewport.width) - 232.).max(4.))
-                    .max(4.);
-                let y = f32::from(menu.position.y)
-                    .min((f32::from(viewport.height) - 146.).max(TOP))
-                    .max(TOP);
-                root.child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, _, cx| {
-                                this.menu = None;
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .absolute()
-                                .left(px(x))
-                                .top(px(y))
-                                .w(px(224.))
-                                .p_1()
-                                .rounded_lg()
-                                .bg(rgb(0x25303d))
-                                .border_1()
-                                .border_color(rgb(0x465366))
-                                .shadow_lg()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child(self.menu_item(
-                                    "menu-new",
-                                    if matches!(menu.target, TabTarget::Space(_)) {
-                                        "New sibling space"
-                                    } else {
-                                        "New sibling tab"
-                                    },
-                                    menu.target,
-                                    TabAction::NewSibling,
-                                    cx,
-                                ))
-                                .child(self.menu_item(
-                                    "menu-h",
-                                    "Split horizontally  ↔",
-                                    menu.target,
-                                    TabAction::Split(Axis::Horizontal),
-                                    cx,
-                                ))
-                                .child(self.menu_item(
-                                    "menu-v",
-                                    "Split vertically  ↕",
-                                    menu.target,
-                                    TabAction::Split(Axis::Vertical),
-                                    cx,
-                                ))
-                                .child(self.menu_item(
-                                    "menu-close",
-                                    if matches!(menu.target, TabTarget::Space(_)) {
-                                        "Close space"
-                                    } else {
-                                        "Close tab"
-                                    },
-                                    menu.target,
-                                    TabAction::Close,
-                                    cx,
-                                )),
-                        ),
                 )
             })
     }

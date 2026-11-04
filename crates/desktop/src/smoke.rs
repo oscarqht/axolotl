@@ -121,6 +121,50 @@ async fn run(
         (app.host.clone(), app.active_tab())
     })?;
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    view.update_in(cx, |_, window, cx| {
+        use gpui_component::ActiveTheme;
+        ensure!(
+            cx.theme().mode == gpui_component::ThemeMode::from(window.appearance()),
+            "Startup theme did not follow OS appearance"
+        );
+        Ok(())
+    })??;
+    #[cfg(target_os = "macos")]
+    {
+        for dark in [true, false, true] {
+            host.set_test_appearance(first, Some(dark))?;
+            pause(cx).await;
+            view.update_in(cx, |_, _, cx| {
+                use gpui_component::ActiveTheme;
+                ensure!(
+                    cx.theme().is_dark() == dark,
+                    "Native appearance change did not update theme"
+                );
+                let colors = crate::chrome_theme::ChromeColors::current(cx);
+                ensure!(
+                    colors.shell == if dark { 0x11161e } else { 0xe9edf1 },
+                    "Shell palette did not switch"
+                );
+                ensure!(
+                    colors.divider == if dark { 0x11161e } else { 0xd7dfe7 },
+                    "Split border did not switch"
+                );
+                Ok(())
+            })??;
+            if std::env::args().any(|arg| arg == "--smoke-hold-theme") {
+                eprintln!(
+                    "AXOLOTL_THEME_READY: {}",
+                    if dark { "dark" } else { "light" }
+                );
+                cx.background_executor()
+                    .timer(Duration::from_secs(12))
+                    .await;
+            }
+        }
+        host.set_test_appearance(first, None)?;
+        pause(cx).await;
+    }
+
     ensure!(
         eval(
             &host,
@@ -142,6 +186,7 @@ async fn run(
     )
     .await?;
     let mut checks = vec![
+        "OS theme at startup; native light/dark appearance changes update shell and split borders",
         "real native web-engine document loaded",
         "start page DOM available",
     ];
@@ -270,9 +315,16 @@ async fn run(
     })?;
     pause(cx).await;
     ensure!(
-        tabs.iter().all(|tab| !host.is_visible(*tab)),
-        "Menu left a native surface on top"
+        tabs.iter().all(|tab| host.is_visible(*tab)),
+        "Menu hid native page surfaces"
     );
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.menu_surface.is_some(),
+            "Native menu surface was not created"
+        );
+        Ok(())
+    })??;
     view.update_in(cx, |app, window, cx| {
         app.open_menu(
             TabTarget::Space(app.model.active_space),
@@ -286,7 +338,7 @@ async fn run(
         tabs.iter().all(|tab| host.is_visible(*tab)),
         "Menu dismissal failed to restore surfaces"
     );
-    checks.push("menu hides and restores native page surfaces");
+    checks.push("native dropdown keeps all page surfaces visible while open and after dismissal");
     let before_resize = eval(&host, tabs[0], "[innerWidth, innerHeight]", cx).await?;
     view.update_in(cx, |app, _, cx| {
         let geometry = app.model.active_space().layout.geometry(

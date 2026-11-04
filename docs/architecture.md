@@ -96,7 +96,13 @@ draws application chrome independently of the web page. Native views occupy real
 child surfaces over the GPUI window, so a GPUI element drawn over their bounds
 does not automatically appear above page content.
 
-The prototype hides native page surfaces while its GPUI layout menu is open.
+Tab dropdowns use a transparent native child surface above all page views.
+Its backdrop consumes outside clicks to dismiss without activating the page
+beneath it. Fixed menu messages route to the existing targeted tab actions;
+Escape dismisses, arrow keys move focus, and Enter selects a button. Closing the
+surface returns keyboard focus to the shell without changing page documents.
+The overlay resizes with the window and keeps its menu within the viewport.
+
 During tab dragging and divider resizing, active pages remain visible and the
 normal geometry canvas continues updating their bounds. The shell retains the
 initial drag's mouse events; the native preview is offset from the cursor and
@@ -156,3 +162,13 @@ adapter, platform lifecycle integration, and touch interactions. Phone layouts
 may expose one pane at a time while retaining the shared tree. This prototype
 does not establish GPUI mobile support or ship Android/iOS adapters. Persistence
 and schema/version migration also remain future work.
+
+## System appearance
+
+The component theme initializes from OS appearance rather than forcing dark mode.
+`BrowserApp` observes native window appearance changes, synchronizes the component
+theme, and requests shell presentation. `ChromeColors` supplies matching light and
+dark colors for space/page tabs, text, focus and insertion indicators, split
+dividers, and shell backgrounds. Inline inputs use the same component theme.
+Native dropdowns and preview cards use `prefers-color-scheme` media queries.
+Web pages retain their own appearance rules.

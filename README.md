@@ -47,31 +47,36 @@ they have not been run on this macOS host.
 
 ## Use
 
-- **+** beside the space strip creates another space; select a space to return.
-- The address bar follows the focused pane. Enter a URL, hostname, localhost
-  address, or search phrase. `about:blank` opens the built-in start page.
-- **Split ↔** and **Split ↕** split the focused pane; repeat to nest splits.
-- **Grid** arranges four panes in two columns and two rows. Existing tabs survive
-  conversion, including when extra panes are consolidated.
-- Drag the thin divider between panes to resize. Page surfaces hide during the
-  drag, then return at their new sizes.
-- Select a pane's header or click its page to focus it. **+** in that header adds
-  a tab; select a tab title to switch; **×** closes it.
-- **⤢** temporarily maximizes a pane; select it again to restore the layout.
-- **···** opens layout controls and a command to close the focused pane. The last
-  pane is retained. Closing the last tab replaces it with a fresh start page.
+- The native titlebar and separate navigation toolbar are hidden. On macOS,
+  native traffic lights sit before the first space tab. Drag the empty area to
+  the right of the space tabs to move the window; resize from its edges.
+- Space tabs show the title of their focused page; each pane has its own page
+  tabs. Double-click either title to edit that page's URL in place. Enter visits,
+  Escape cancels, and switching tabs, spaces, panes, or leaving the input cancels
+  an unfinished edit. URL redirects and title updates do not replace a draft.
+- Each tab's **•** menu creates a sibling, splits horizontally (side by side) or
+  vertically (stacked), or closes the tab. Space menus act on that space and its
+  focused pane; page menus act on that page and its pane, even when inactive.
+- New siblings and split panes open the start page. Closing the last page tab
+  replaces it with a fresh start page; the final space remains.
+- Drag the thin divider between panes to resize. Native page surfaces hide
+  during dragging or while a tab menu is open, then return with state retained.
+  Dismiss menus by clicking outside, pressing Escape, or selecting an action.
+- Enter a URL, hostname, localhost address, or search phrase. `about:blank`
+  opens the built-in start page. Page links requesting a new window become tabs
+  in the originating pane.
 
 | Shortcut | Action |
 | --- | --- |
-| Cmd/Ctrl+L | Focus the address bar |
+| Cmd/Ctrl+L | Edit the focused page URL inline |
 | Cmd/Ctrl+T | New tab in the focused pane |
 | Cmd/Ctrl+W | Close the focused tab |
 | Cmd/Ctrl+R | Reload the focused tab |
+| Alt+Left / Alt+Right | Back / forward (when delivered to the shell) |
 | F6 | Cycle pane focus when delivered to the GPUI shell |
 
 Back, forward, and reload act on the focused pane. The native macOS Edit menu
-supplies standard copy/paste actions to both web content and the address input.
-Page links requesting a new window become tabs in the originating pane.
+supplies standard copy/paste actions to both web content and the inline URL input.
 
 ## Checks
 
@@ -99,14 +104,16 @@ mean either remote CI job has been run.
 
 ## Scope and limitations
 
-This milestone implements spaces, pane tab stacks, nested/resizable splits, a
-2×2 grid, native browser views, and a compact native shell. Workspace layouts and
+This milestone implements spaces, pane tab stacks, nested/resizable splits,
+native browser views, and compact title tabs. The core retains a 2×2 grid
+operation for integration testing; it is not exposed as a standalone UI control.
+Workspace layouts and
 tab metadata are in memory. Website cookies/storage follow the platform engine's
 default store; this is not a private-browsing mode or an isolated profile per
 space. Hidden pages stay loaded and can keep running; page suspension and memory
 budgets remain future work.
 
-Native child views cover GPUI overlays. The app hides them while its layout menu
+Native child views cover GPUI overlays. The app hides them while a tab menu
 is open and restores them afterward; it does not composite a menu over live page
 pixels. Browser permission controls, downloads (currently denied), profiles,
 passwords, browser extensions, mobile shells, and layout persistence are outside

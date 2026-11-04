@@ -1,7 +1,7 @@
-# Prototype validation
+# Compact tab chrome validation
 
-Run on 2026-11-04 on macOS 27.0.1, Apple M1 Pro, using Rust 1.91.1,
-GPUI 0.2.2, gpui-component 0.5.1, and Wry 0.55.1. Windows hardware was
+Run on 2026-11-04 on macOS, using the pinned GPUI 0.2.2,
+gpui-component 0.5.1, and Wry 0.55.1 dependencies. Windows hardware was
 not available.
 
 ## Automated results
@@ -10,81 +10,87 @@ not available.
   Seven core tests cover model/layout invariants, geometry, navigation policy,
   and a deterministic 1,500-command sequence. Two host tests cover URL schemes
   and the authenticated input bridge.
-- Strict Clippy for the workspace, every target and feature: passed.
-- Rust formatting and whitespace checks: passed.
-- Native macOS debug build: passed. A locally signed `.app` can be generated
-  with `scripts/package-macos.sh`.
-- The opt-in native smoke test passed on actual WKWebView instances. It checked:
-  page DOM availability; separate pane document state; HTTPS page content;
-  native back/forward history; nested horizontal/vertical layout; four nonempty
-  grid browser viewports; native view hiding/restoration while the GPUI menu is
-  open; split-ratio relayout; hidden-space state retention; tab creation and
-  closed-view disposal.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`:
+  passed.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- Native macOS debug build and ad hoc signed app packaging: passed.
+- The opt-in native smoke test passed on actual WKWebView instances. In addition
+  to the original document, history, layout, retention and disposal checks, it
+  exercises the handlers used by compact tabs:
+  - A space URL input mounts with its full URL selected. Cancelling preserves
+    the document and URL.
+  - Enter from the page input navigates to example.com and closes editing.
+  - Escape routes from the focused input to the shell and cancels editing.
+  - Changing panes cancels an unfinished space edit.
+  - A page sibling action targets its originating pane even when another pane
+    was focused. Page close disposes its native view.
+  - A space split action targets that space even when another space was active.
+    Sibling creation and close actions preserve the last space.
+  - Closing the final page tab creates a fresh start page.
+  - Native page surfaces hide for a tab menu and return after dismissal.
 
-The smoke test calls the normal Rust app commands and actual browser host. It
-reads native engine results through asynchronous JavaScript evaluation. It
-waits for native page-load completion because Wry's macOS implementation does
-not retain a result callback for evaluation submitted before the initial load.
-It explicitly draws GPUI frames so an occluded test window can lay out its
-native children. Its elapsed time includes deliberate waits and HTTPS network
-work; it is **not** a startup or frame-rate benchmark.
+Run the smoke test with:
 
-## Desktop interaction limits
+```sh
+cargo run -p axolotl --locked --features smoke -- --smoke-test
+```
 
-The macOS computer-use adapter repeatedly failed to attach with
-`cgWindowNotFound`, even though native window metadata showed a visible,
-onscreen Axolotl window. A read-only accessibility probe showed the same unusual
-AX window identity behavior for Chrome, so this did not establish an
-Axolotl-specific accessibility defect. No application accessibility workaround
-was added on that evidence.
+This uses normal app handlers, input action routing and actual browser documents;
+it does **not** synthesize OS mouse or keyboard events. Its explicit frame draws
+allow native geometry checks while a window is occluded. These checks do not
+establish that a GPUI dropdown was presented by the compositor above page pixels.
 
-The native `focus` call succeeded, but the smoke window did not receive OS
-activation (`document.hasFocus()` was false). Consequently **keyboard focus,
-real text entry, clipboard delivery, pointer dragging, and visual menu layering
-have not completed end-to-end acceptance**. Menu visibility transitions and
-layout geometry passed programmatically; those results do not substitute for
-these manual checks. The app has been built and exercised, but complete desktop
-interaction acceptance remains outstanding.
+## Desktop interaction evidence and limits
 
-## Manual acceptance checklist
+The packaged app was opened through the macOS computer-use adapter. Screenshots
+confirmed the transparent native titlebar, traffic lights before the first space
+tab, both compact title strips, the absence of standalone toolbar controls,
+updated titles, side-by-side native pages, and the inline URL input. The input's
+light-theme text on the dark shell was caught visually and fixed by setting the
+component theme to dark; a subsequent screenshot confirmed readable URL text.
 
-Run these on macOS and Windows in a foreground GUI session:
+The adapter could attach, unlike the earlier prototype run, but the desktop
+session did not reliably activate/present the app or deliver successive text,
+Escape, and traffic-light actions. A temporary isolated test instance with
+explicit frame draws did not resolve the discrepancy between native view updates
+and screenshots of the GPUI scene. That diagnostic mode was removed. The smoke
+run likewise reported that a native focus call succeeded while
+`document.hasFocus()` was false.
 
-1. Enter two different HTTPS URLs into side-by-side panes. Follow links, then
-   use back/forward/reload in each pane. Confirm the other page is unaffected.
-2. Click a text field on each page, type, select/copy/paste, and use Cmd/Ctrl+L
-   to return to the address field. Confirm the address belongs to the clicked
-   pane. Test these actions inside a cross-origin iframe as well.
-3. Add two tabs per pane, switch between them, switch spaces, and return.
-   Confirm document state, page scroll position, and histories remain separate.
-4. Split horizontally, then split one pane vertically. Drag each divider in
-   both directions. Release outside the window, then re-enter and verify resize
-   mode ends. Resize the window and check that page bounds follow the layout.
-5. Create a grid, open **···**, and confirm the entire menu is visible. Select a
-   command, then **Done**; pages must return with their prior document state.
-   Open the start page's native select menu and a page context menu.
-6. Maximize and restore a pane. Close tabs and panes, including the final tab;
-   confirm the app keeps a valid focused target. Test many tabs/spaces and small
-   windows. Click every pane's new-tab button to verify it targets that pane.
-7. On Windows, verify WebView2 runtime discovery, 100%/150%/200% DPI, a second
-   monitor, IME input, focus after Alt+Tab, and WebView2 child-window rendering.
-8. Close the window while pages load, relaunch, and confirm clean shutdown. The
-   prototype intentionally starts a fresh workspace; saved layouts are absent.
+Consequently **complete foreground macOS interaction acceptance is outstanding**.
+Screenshots of intermediate state and programmatic handler success are not proof
+that double-clicking, keyboard editing, native controls, dragging or menu
+presentation work end to end under ordinary OS input. This session does not
+establish whether those remaining symptoms come solely from automation or also
+occur during normal foreground use. Windows interaction remains untested.
 
-## Performance and engine findings
+## Remaining foreground acceptance
 
-- GPUI draws the shell, while each visible page occupies a native engine view.
-  Runtime validation demonstrated four nonempty native page viewports together.
-- Native pages cover GPUI pixels. During menus and divider dragging, hiding the
-  native surfaces avoids that composition conflict. The tradeoff is placeholder
-  content during resizing, rather than a live page preview.
-- Views are created lazily and released on tab closure. Hidden views retain
-  documents and may continue consuming CPU/memory. There is no suspension policy.
-- The shell polls browser events every 40 ms and the focused native URL about
-  every 480 ms to observe same-document navigation. Idle-energy and latency
-  impact have not been benchmarked.
-- Release startup, resize frame time, total browser-process memory, idle energy,
-  and Windows behavior remain unmeasured. No performance comparison with Electron
-  or other browsers is claimed.
-- This backend supplies no Chrome extension runtime. A future CEF/Chromium or
-  other engine adapter requires a separate feasibility prototype.
+1. Click each native traffic light: close, minimize, fullscreen/restore. Drag
+   the empty space-strip area and resize the window from its edges.
+2. Double-click titles at both levels, including inactive tabs/spaces. Type a
+   URL, Enter to visit, Escape to cancel. Test Cmd/Ctrl+L from page text fields,
+   immediately replacing the selected URL, clipboard paste, and IME input.
+3. Switch page tabs, spaces and panes while editing. Click native page content,
+   including in the same pane. The draft must cancel without stealing page focus.
+4. Open every dot menu over real native pages. Verify all four items are visible,
+   target the menu's tab/space, and dismiss on action, outside click or Escape.
+   Page pixels must return with their state retained.
+5. Split horizontally, then vertically in a nested pane. Resize both dividers,
+   including releasing outside the window. Confirm page geometry follows the
+   window and divider sizes.
+6. Close inactive and active tabs/spaces, including the final page tab and final
+   space. Create enough siblings to overflow each strip; confirm horizontal
+   scrolling and Cmd/Ctrl+L reveal the intended input.
+7. On Windows, verify native window controls, WebView2, keyboard focus, DPI and
+   monitor changes in a foreground session.
+
+## Retained prototype limitations
+
+Layouts and tab metadata remain in memory. Hidden pages remain loaded and may
+consume CPU/memory. Menus and divider dragging temporarily hide native surfaces
+because those surfaces otherwise cover GPUI overlays; this is not compositing a
+menu over live webpage pixels. The core still supports a grid, but the compact UI
+has no standalone grid/maximize controls. Permission controls, downloads, browser
+profiles, extensions, saved layouts and performance benchmarking remain outside
+this change.

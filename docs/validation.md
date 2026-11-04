@@ -1,3 +1,23 @@
+# Windows spaces header controls
+
+Run on 2026-11-04 on Windows x64.
+
+- Reproduced the spaces header failing to move the window with actual mouse
+  input. GPUI's focusable shell prevented the default caption mouse-down.
+  Moved focus tracking into the content container so native caption operations
+  can proceed, while shell actions remain in the focus dispatch path.
+- Actual desktop mouse input verified dragging the empty spaces header,
+  double-click maximize, and the new minimize, maximize/restore, and close
+  buttons. The maximize glyph switched to restore while maximized; minimize
+  was confirmed by the desktop API reporting a minimized window, and close
+  removed the app window.
+- Windows build, all 19 unit tests, formatting, whitespace checks, Clippy with
+  all targets/features, and the programmatic WebView2 smoke test passed.
+  The smoke test covers inline input/action routing, native page placement,
+  nested splits, resizing, tab docking, and retained document state.
+- macOS was not rerun on this Windows host. Multiple monitors and DPI changes
+  remain manual checks.
+
 # Windows support validation
 
 Run on 2026-11-04 on Windows x64 with Rust 1.93.0 (MSVC), Visual Studio

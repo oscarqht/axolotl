@@ -7,6 +7,53 @@ pub const TOP: f32 = 38.;
 pub const TAB_WIDTH: f32 = 204.;
 pub const TAB_GAP: f32 = 4.;
 
+#[cfg(target_os = "windows")]
+fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
+    let colors = crate::chrome_theme::ChromeColors::current(cx);
+    div()
+        .id("window-controls")
+        .flex()
+        .flex_shrink_0()
+        .h_full()
+        .children(
+            [
+                ("minimize", WindowControlArea::Min, '\u{e921}'),
+                (
+                    "maximize-restore",
+                    WindowControlArea::Max,
+                    if window.is_maximized() {
+                        '\u{e923}'
+                    } else {
+                        '\u{e922}'
+                    },
+                ),
+                ("close", WindowControlArea::Close, '\u{e8bb}'),
+            ]
+            .into_iter()
+            .map(|(id, area, glyph)| {
+                div()
+                    .id(id)
+                    .w(px(46.))
+                    .h_full()
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .font_family("Segoe MDL2 Assets")
+                    .text_size(px(10.))
+                    .window_control_area(area)
+                    .hover(move |style| {
+                        if area == WindowControlArea::Close {
+                            style.bg(rgb(0xc42b1c)).text_color(rgb(0xffffff))
+                        } else {
+                            style.bg(rgb(colors.hover))
+                        }
+                    })
+                    .child(glyph.to_string())
+            }),
+        )
+}
+
 pub fn tab_insertion_index(x: f32, count: usize) -> usize {
     (((x + TAB_WIDTH / 2. + TAB_GAP) / (TAB_WIDTH + TAB_GAP))
         .floor()
@@ -189,7 +236,7 @@ impl BrowserApp {
         div()
             .absolute()
             .left(px(rect.x))
-            .top(px(rect.y))
+            .top(px(rect.y - TOP))
             .w(px(rect.width))
             .h(px(rect.height))
             .bg(rgb(colors.surface))
@@ -305,7 +352,6 @@ impl Render for BrowserApp {
             } else {
                 ".SystemUIFont"
             })
-            .track_focus(&self.focus)
             .when(self.tab_drag_active(), |root| {
                 root.cursor(CursorStyle::ClosedHand)
             })
@@ -391,7 +437,7 @@ impl Render for BrowserApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .pr_2()
+                    .when(!cfg!(target_os = "windows"), |header| header.pr_2())
                     .child(
                         div()
                             .w(px(if cfg!(target_os = "macos") { 84. } else { 8. }))
@@ -401,7 +447,13 @@ impl Render for BrowserApp {
                         div()
                             .id("spaces")
                             .track_scroll(&self.space_scroll)
-                            .max_w(relative(0.85))
+                            .when(cfg!(target_os = "windows"), |spaces| {
+                                // Reserve caption buttons, gaps, and an empty drag target.
+                                spaces.max_w(px((f32::from(viewport.width) - 194.).max(0.)))
+                            })
+                            .when(!cfg!(target_os = "windows"), |spaces| {
+                                spaces.max_w(relative(0.85))
+                            })
                             .min_w_0()
                             .flex()
                             .gap_1()
@@ -419,10 +471,34 @@ impl Render for BrowserApp {
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, _| this.moving_window = true),
                             )
-                            .on_double_click(|_, window, _| window.titlebar_double_click()),
-                    ),
+                            .when(!cfg!(target_os = "windows"), |drag| {
+                                drag.on_double_click(|_, window, _| window.titlebar_double_click())
+                            }),
+                    )
+                    .when(cfg!(target_os = "windows"), |header| {
+                        #[cfg(target_os = "windows")]
+                        {
+                            header.child(window_controls(window, cx))
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            header
+                        }
+                    }),
             )
-            .children(panes)
+            // Keep native caption hit regions outside the focusable content.
+            // GPUI's automatic focus handler prevents the default mouse-down,
+            // which would swallow Windows caption dragging and button actions.
+            .child(
+                div()
+                    .absolute()
+                    .top(px(TOP))
+                    .bottom_0()
+                    .left_0()
+                    .right_0()
+                    .track_focus(&self.focus)
+                    .children(panes),
+            )
             .children(geometry.dividers.into_iter().map(|divider| {
                 let bounds = divider.bounds;
                 div()

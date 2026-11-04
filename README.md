@@ -69,8 +69,10 @@ machine running the executable. See the validation report below for tested scope
 ## Use
 
 - The native titlebar and separate navigation toolbar are hidden. On macOS,
-  native traffic lights sit before the first space tab. Drag the empty area to
-  the right of the space tabs to move the window; resize from its edges.
+  native traffic lights sit before the first space tab. On Windows, minimize,
+  maximize/restore, and close buttons sit at the right of the spaces header.
+  Drag the empty area to the right of the space tabs to move the window;
+  double-click it to maximize/restore on Windows. Resize from the window edges.
 - Tab bars, split borders, inline URL fields, dropdowns and drag cards follow the
   OS light/dark appearance and update while the app is running.
 - Space tabs show the title of their focused page; each pane has its own page

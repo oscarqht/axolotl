@@ -496,8 +496,12 @@ impl BrowserApp {
             Command::NewTab => {
                 self.report(self.host.focus_parent(self.active_tab()));
                 self.focus.focus(window);
-                self.model.add_tab("about:blank");
-                self.sync_address(window, cx);
+                let tab = self.model.add_tab("about:blank");
+                self.begin_edit(
+                    TabTarget::Page(self.model.focused_pane().id, tab),
+                    window,
+                    cx,
+                );
             }
             Command::CloseTab => {
                 self.report(self.host.focus_parent(self.active_tab()));

@@ -51,6 +51,14 @@ pub trait BrowserHost {
     fn reload(&self, tab: TabId) -> Result<()>;
     fn current_url(&self, tab: TabId) -> Result<String>;
     fn retain(&self, tabs: &HashSet<TabId>);
+    fn drag_preview(
+        &self,
+        tab: TabId,
+        title: &str,
+        window: &Window,
+    ) -> Result<crate::drag_preview::DragPreview>;
+    /// Request presentation after shell interactions involving native child views.
+    fn request_redraw(&self);
     fn hide_all(&self) -> Result<()>;
     fn drain_events(&self) -> Vec<BrowserEvent>;
 }
@@ -288,6 +296,40 @@ impl BrowserHost for WryHost {
             }
             false
         });
+    }
+
+    fn drag_preview(
+        &self,
+        tab: TabId,
+        title: &str,
+        window: &Window,
+    ) -> Result<crate::drag_preview::DragPreview> {
+        let source = self.views.borrow().get(&tab).cloned();
+        let loaded = self.loaded.clone();
+        crate::drag_preview::DragPreview::new(
+            source,
+            move || loaded.borrow().contains(&tab),
+            title,
+            window,
+        )
+    }
+
+    fn request_redraw(&self) {
+        #[cfg(target_os = "macos")]
+        {
+            use wry::WebViewExtMacOS;
+            if let Some(view) = self.views.borrow().values().next()
+                && let Some(parent) = unsafe { view.webview().superview() }
+            {
+                // AppKit can suspend GPUI's display link when native children
+                // cover its layer. Invalidate that layer through AppKit so its
+                // normal displayLayer callback draws and presents the scene.
+                parent.setNeedsDisplay(true);
+                if let Some(layer) = parent.layer() {
+                    layer.setNeedsDisplay();
+                }
+            }
+        }
     }
 
     fn hide_all(&self) -> Result<()> {

@@ -1,5 +1,6 @@
 mod app;
 mod browser;
+mod drag_preview;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;

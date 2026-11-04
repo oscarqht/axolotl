@@ -63,6 +63,36 @@ async fn eval(host: &Host, tab: TabId, script: &str, cx: &mut AsyncWindowContext
     anyhow::bail!("Native web engine evaluation timed out")
 }
 
+async fn wait_preview(
+    view: &WeakEntity<BrowserApp>,
+    title: &str,
+    cx: &mut AsyncWindowContext,
+) -> Result<()> {
+    let mut captured = false;
+    for _ in 0..30 {
+        let response = Arc::new(Mutex::new(None));
+        let target = response.clone();
+        view.update_in(cx, |app, _, _| {
+            app.drag_preview
+                .as_ref()
+                .context("Missing native drag card")?
+                .evaluate(
+                    &format!("Boolean(document.querySelector('img')?.naturalWidth > 0 && document.querySelector('header').textContent === {})", serde_json::to_string(title)?),
+                    move |value| {
+                        *target.lock().unwrap() = Some(value);
+                    },
+                )
+        })??;
+        pause(cx).await;
+        if response.lock().unwrap().as_deref() == Some("true") {
+            captured = true;
+            break;
+        }
+    }
+    ensure!(captured, "Native drag thumbnail never decoded");
+    Ok(())
+}
+
 async fn wait_title(
     host: &Host,
     tab: TabId,
@@ -257,17 +287,31 @@ async fn run(
         "Menu dismissal failed to restore surfaces"
     );
     checks.push("menu hides and restores native page surfaces");
+    let before_resize = eval(&host, tabs[0], "[innerWidth, innerHeight]", cx).await?;
     view.update_in(cx, |app, _, cx| {
         let geometry = app.model.active_space().layout.geometry(
             workspace_core::Rect::new(0., 0., 1200., 800.),
             6.,
             100.,
         );
+        app.dragging = Some(geometry.dividers[0]);
         app.model.resize_split(geometry.dividers[0].id, 0.65);
         cx.notify();
     })?;
     pause(cx).await;
-    checks.push("split ratio relayout");
+    ensure!(
+        tabs.iter().all(|tab| host.is_visible(*tab)),
+        "Resize hid native pages"
+    );
+    ensure!(
+        eval(&host, tabs[0], "[innerWidth, innerHeight]", cx).await? != before_resize,
+        "Native bounds did not update while resizing"
+    );
+    view.update_in(cx, |app, _, cx| {
+        app.dragging = None;
+        cx.notify();
+    })?;
+    checks.push("split ratio relayout keeps native pages visible during resize");
     view.update_in(cx, |app, window, cx| {
         app.command(Command::NewSpace, window, cx)
     })?;
@@ -446,6 +490,81 @@ async fn run(
         "History fixture forward failed before docking"
     );
     let width_before = eval(&host, destination_tab, "innerWidth", cx).await?;
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.model.tab(moved).unwrap().title == "Example Domain",
+            "Drag source title is stale"
+        );
+        Ok(())
+    })??;
+    view.update_in(cx, |app, window, cx| {
+        let origin = point(px(60.), px(crate::render::TOP + 16.));
+        app.arm_tab_drag(source, moved, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: point(window.viewport_size().width / 2. + px(20.), origin.y),
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+    })?;
+    pause(cx).await;
+    ensure!(
+        host.is_visible(moved) && host.is_visible(destination_tab),
+        "Drag hid native pages"
+    );
+    wait_preview(view, "Example Domain", cx).await?;
+    if std::env::args().any(|arg| arg == "--smoke-hold-preview") {
+        eprintln!("AXOLOTL_PREVIEW_READY: holding native drag state for 20 seconds");
+        cx.background_executor()
+            .timer(Duration::from_secs(20))
+            .await;
+    }
+    view.update_in(cx, |app, _, cx| {
+        app.cancel_tab_drag(cx);
+        ensure!(app.drag_preview.is_none(), "Cancel retained drag card");
+        Ok(())
+    })??;
+    checks.push("drag keeps native pages visible and decodes a captured page thumbnail; cancellation disposes card");
+    let lazy = view.update_in(cx, |app, window, cx| {
+        app.model.focus_pane(source);
+        let lazy = app.model.add_tab("about:blank");
+        app.model.switch_tab(source, moved);
+        app.model.focus_pane(destination);
+        ensure!(
+            !app.host.has_view(lazy),
+            "Lazy fixture already has a native view"
+        );
+        let origin = point(px(260.), px(crate::render::TOP + 16.));
+        app.arm_tab_drag(source, lazy, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: origin + point(px(20.), px(50.)),
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        Ok(lazy)
+    })??;
+    wait_preview(view, "New tab", cx).await?;
+    ensure!(
+        host.is_visible(moved) && host.is_visible(destination_tab) && !host.is_visible(lazy),
+        "Inactive-tab capture changed page visibility"
+    );
+    view.update_in(cx, |app, _, cx| {
+        app.cancel_tab_drag(cx);
+        app.model.close_tab(source, lazy);
+        cx.notify();
+    })?;
+    checks.push(
+        "dragging a lazy inactive tab captures its native page without replacing the active page",
+    );
+
     view.update_in(cx, |app, window, cx| {
         let origin = point(px(60.), px(crate::render::TOP + 16.));
         let destination_point = point(window.viewport_size().width / 2. + px(20.), origin.y);

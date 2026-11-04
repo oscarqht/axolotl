@@ -46,6 +46,7 @@ pub struct TabDrag {
     pub source: PaneId,
     pub tab: TabId,
     pub origin: Point<Pixels>,
+    pub position: Point<Pixels>,
     pub active: bool,
 }
 
@@ -63,6 +64,7 @@ pub struct BrowserApp {
     pub dragging: Option<Divider>,
     pub tab_drag: Option<TabDrag>,
     pub suppress_tab_click: bool,
+    pub drag_preview: Option<crate::drag_preview::DragPreview>,
     pub status: String,
     pub poll_count: u8,
 }
@@ -119,6 +121,7 @@ impl BrowserApp {
             dragging: None,
             tab_drag: None,
             suppress_tab_click: false,
+            drag_preview: None,
             status: String::new(),
             poll_count: 0,
         }
@@ -129,6 +132,8 @@ impl BrowserApp {
     }
 
     pub fn cancel_tab_drag(&mut self, cx: &mut Context<Self>) {
+        self.drag_preview = None;
+        self.host.request_redraw();
         if self.tab_drag.take().is_some() {
             cx.notify();
         }
@@ -140,6 +145,7 @@ impl BrowserApp {
             source,
             tab,
             origin,
+            position: origin,
             active: false,
         });
     }
@@ -155,6 +161,7 @@ impl BrowserApp {
             self.cancel_tab_drag(cx);
             return;
         }
+        self.tab_drag.as_mut().unwrap().position = event.position;
         let delta = event.position - drag.origin;
         if !drag.active && (f32::from(delta.x).powi(2) + f32::from(delta.y).powi(2)) >= 25. {
             self.cancel_edit(window, cx);
@@ -163,9 +170,46 @@ impl BrowserApp {
             self.suppress_tab_click = true;
             self.report(self.host.focus_parent(self.active_tab()));
             self.focus.focus(window);
-            self.report(self.host.hide_all());
+            if let Some(tab) = self.model.tab(drag.tab) {
+                let result = self.host.ensure(drag.tab, &tab.url, window);
+                self.report(result);
+            }
+            let viewport = window.viewport_size();
+            let geometry = self.model.active_space().layout.geometry(
+                Rect::new(
+                    0.,
+                    crate::render::TOP,
+                    f32::from(viewport.width),
+                    (f32::from(viewport.height) - crate::render::TOP).max(0.),
+                ),
+                6.,
+                100.,
+            );
+            if let Some(pane) = geometry.panes.iter().find(|pane| pane.id == drag.source) {
+                let r = pane.bounds;
+                self.report(self.host.place(
+                    drag.tab,
+                    Bounds {
+                        origin: point(px(r.x), px(r.y + 34.)),
+                        size: size(px(r.width), px((r.height - 34.).max(1.))),
+                    },
+                ));
+            }
+            let title = self
+                .model
+                .tab(drag.tab)
+                .map_or("New tab", |tab| tab.title.as_str());
+            match self.host.drag_preview(drag.tab, title, window) {
+                Ok(preview) => self.drag_preview = Some(preview),
+                Err(error) => self.report(Err(error)),
+            }
+        }
+        if let Some(preview) = &self.drag_preview {
+            let result = preview.update(event.position, window.viewport_size());
+            self.report(result);
         }
         if self.tab_drag_active() {
+            self.host.request_redraw();
             cx.notify();
         }
     }
@@ -218,6 +262,8 @@ impl BrowserApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.drag_preview = None;
+        self.host.request_redraw();
         let target = position.and_then(|position| self.tab_drop_target(position, window));
         if let Some(drag) = self.tab_drag.take() {
             if let Some((pane, index)) = target
@@ -437,6 +483,13 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(preview) = &self.drag_preview {
+            let result = preview.update(
+                self.tab_drag.expect("preview belongs to a drag").position,
+                window.viewport_size(),
+            );
+            self.report(result);
+        }
         let mut events = self.host.drain_events();
         self.poll_count = (self.poll_count + 1) % 12;
         if self.poll_count == 0 {
@@ -577,21 +630,14 @@ impl BrowserApp {
             .collect();
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {
-            if !visible.iter().any(|(tab, _)| tab == id)
-                || self.menu.is_some()
-                || self.dragging.is_some()
-                || self.tab_drag_active()
-            {
+            if !visible.iter().any(|(tab, _)| tab == id) || self.menu.is_some() {
                 self.report(self.host.show(*id, false));
             }
         }
         for (id, url) in visible {
             let result = self.host.ensure(id, &url, window);
             self.report(result);
-            self.report(self.host.show(
-                id,
-                self.menu.is_none() && self.dragging.is_none() && !self.tab_drag_active(),
-            ));
+            self.report(self.host.show(id, self.menu.is_none()));
         }
     }
 }

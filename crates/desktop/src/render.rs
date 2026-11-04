@@ -136,13 +136,19 @@ impl BrowserApp {
             .into_any_element()
     }
 
-    fn pane(&self, pane_id: PaneId, rect: Rect, cx: &Context<Self>) -> AnyElement {
+    fn pane(
+        &self,
+        pane_id: PaneId,
+        rect: Rect,
+        drop: Option<(PaneId, usize)>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let pane = self.model.pane(pane_id).expect("layout pane exists");
         let focused = self.model.focused_pane().id == pane_id;
         let tab = pane.active_tab;
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let unavailable = page.is_none();
-        let tabs = pane
+        let mut tabs = pane
             .tabs
             .iter()
             .map(|tab| {
@@ -154,6 +160,27 @@ impl BrowserApp {
                 )
             })
             .collect::<Vec<_>>();
+        if let Some((target, index)) = drop
+            && target == pane_id
+        {
+            tabs.insert(
+                index,
+                div()
+                    .w(px(TAB_WIDTH))
+                    .h(px(30.))
+                    .flex_shrink_0()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(rgb(ACCENT))
+                    .bg(rgb(0x29483f))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .text_color(rgb(ACCENT))
+                    .child("Drop tab here")
+                    .into_any_element(),
+            );
+        }
         div()
             .absolute()
             .left(px(rect.x))
@@ -197,35 +224,29 @@ impl BrowserApp {
                     .left_0()
                     .right_0()
                     .bg(rgb(0xf5f6f8))
-                    .child(
-                        if self.menu.is_some()
-                            || self.dragging.is_some()
-                            || self.tab_drag_active()
-                            || unavailable
-                        {
-                            div()
-                                .size_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_color(rgb(0x627083))
-                                .child(if unavailable { "Page unavailable" } else { "" })
-                                .into_any_element()
-                        } else {
-                            canvas(
-                                move |bounds, _, _| {
-                                    if let Some(page) = &page
-                                        && let Err(error) = page.place(tab, bounds)
-                                    {
-                                        eprintln!("Webview bounds: {error}");
-                                    }
-                                },
-                                |_, _, _, _| {},
-                            )
+                    .child(if self.menu.is_some() || unavailable {
+                        div()
                             .size_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(rgb(0x627083))
+                            .child(if unavailable { "Page unavailable" } else { "" })
                             .into_any_element()
-                        },
-                    ),
+                    } else {
+                        canvas(
+                            move |bounds, _, _| {
+                                if let Some(page) = &page
+                                    && let Err(error) = page.place(tab, bounds)
+                                {
+                                    eprintln!("Webview bounds: {error}");
+                                }
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .size_full()
+                        .into_any_element()
+                    }),
             )
             .into_any_element()
     }
@@ -269,10 +290,15 @@ impl Render for BrowserApp {
             (f32::from(viewport.height) - TOP).max(0.),
         );
         let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
+        let drop_target = self.tab_drop_target(
+            self.tab_drag
+                .map_or(window.mouse_position(), |drag| drag.position),
+            window,
+        );
         let panes = geometry
             .panes
             .iter()
-            .map(|p| self.pane(p.id, p.bounds, cx))
+            .map(|p| self.pane(p.id, p.bounds, drop_target, cx))
             .collect::<Vec<_>>();
         let spaces = self
             .model
@@ -350,6 +376,7 @@ impl Render for BrowserApp {
                             divider.container.height,
                         ),
                     };
+                    this.host.request_redraw();
                     this.model
                         .resize_split(divider.id, (position - start - 3.) / (length - 6.).max(1.));
                     cx.notify();
@@ -361,6 +388,7 @@ impl Render for BrowserApp {
                     this.finish_tab_drag(Some(event.position), window, cx);
                     this.moving_window = false;
                     if this.dragging.take().is_some() {
+                        this.host.request_redraw();
                         cx.notify();
                     }
                 }),
@@ -371,6 +399,7 @@ impl Render for BrowserApp {
                     this.finish_tab_drag(None, window, cx);
                     this.moving_window = false;
                     if this.dragging.take().is_some() {
+                        this.host.request_redraw();
                         cx.notify();
                     }
                 }),
@@ -413,28 +442,6 @@ impl Render for BrowserApp {
                     ),
             )
             .children(panes)
-            .when_some(
-                self.tab_drop_target(window.mouse_position(), window),
-                |root, (pane, index)| {
-                    let rect = geometry.panes.iter().find(|p| p.id == pane).unwrap().bounds;
-                    let offset = self
-                        .pane_scrolls
-                        .get(&pane)
-                        .map_or(0., |s| f32::from(s.offset().x));
-                    let x = (rect.x + 4. + index as f32 * (TAB_WIDTH + TAB_GAP) + offset - 2.)
-                        .clamp(rect.x + 2., (rect.x + rect.width - 5.).max(rect.x + 2.));
-                    root.child(
-                        div()
-                            .absolute()
-                            .left(px(x))
-                            .top(px(rect.y + 2.))
-                            .w(px(3.))
-                            .h(px(30.))
-                            .rounded_sm()
-                            .bg(rgb(ACCENT)),
-                    )
-                },
-            )
             .children(geometry.dividers.into_iter().map(|divider| {
                 let bounds = divider.bounds;
                 div()
@@ -454,7 +461,6 @@ impl Render for BrowserApp {
                         cx.listener(move |this, _, window, cx| {
                             this.cancel_edit(window, cx);
                             this.dragging = Some(divider);
-                            this.report(this.host.hide_all());
                             cx.notify();
                         }),
                     )

@@ -35,8 +35,10 @@ and collapses the parent split; it does not create a replacement blank tab. The
 native view remains keyed by the same ID, preserving the document and history.
 Same-pane and cross-space drops are not docking targets. The drag starts after
 five logical pixels; Escape, window deactivation, outside release, and release
-over page content cancel it. Native surfaces hide during the drag so they cannot
-intercept pointer events. The insertion marker uses the strip's scroll offset.
+over page content cancel it. Native surfaces remain visible during the drag.
+A tab-sized placeholder occupies the destination insertion slot, using the same
+fixed widths, gaps and scroll offset as hit testing. The latest drag-event position
+is shared by the card and placeholder, including in the native smoke test.
 
 Closing a pane closes its tabs and collapses its parent split. The final pane
 and final space are retained. Closing the last tab creates a fresh blank tab.
@@ -94,12 +96,25 @@ draws application chrome independently of the web page. Native views occupy real
 child surfaces over the GPUI window, so a GPUI element drawn over their bounds
 does not automatically appear above page content.
 
-The prototype hides native page surfaces while its GPUI layout menu is open and
-while a divider is being dragged. GPUI placeholders occupy those regions during
-the interaction, and pages are shown again afterward. This makes the menu
-reviewable and prevents native views intercepting the split drag. It also means
-resize interaction is not a live page preview. Real composited overlays would
-require a different embedding strategy or platform-specific native overlays.
+The prototype hides native page surfaces while its GPUI layout menu is open.
+During tab dragging and divider resizing, active pages remain visible and the
+normal geometry canvas continues updating their bounds. The shell retains the
+initial drag's mouse events; the native preview is offset from the cursor and
+flips at window edges so it cannot cover the drop position.
+
+The drag card is a separate native Wry child created after the page surfaces,
+placing it above their pixels. It displays an escaped title and a frozen PNG from
+WKWebView's snapshot API on macOS or WebView2's CapturePreview on Windows. Lazy
+inactive tabs are created and sized without replacing the active page; capture
+waits for the native page load. Capture errors leave a title card with an
+unavailable message. Each drag owns its callback image slot, preventing a late
+snapshot from updating a subsequent drag. Dropping or cancelling disposes the
+card without recreating the source page.
+
+On macOS, native child surfaces can coincide with suspended GPUI display-link
+presentation. Drag/resize updates invalidate the parent AppKit layer, letting
+GPUI's normal displayLayer callback draw and present chrome. This avoids forced
+frame drawing in normal app execution.
 
 The Windows entry point sets `GPUI_DISABLE_DIRECT_COMPOSITION=true` before GPUI
 starts, selecting the window path suitable for WebView2 child HWNDs. Windows

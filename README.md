@@ -59,8 +59,12 @@ they have not been run on this macOS host.
   focused pane; page menus act on that page and its pane, even when inactive.
 - New siblings and split panes open the start page. Closing the last page tab
   replaces it with a fresh start page; the final space remains.
-- Drag the thin divider between panes to resize. Native page surfaces hide
-  during dragging or while a tab menu is open, then return with state retained.
+- Drag the thin divider between panes to resize; page content stays visible and
+  follows the divider. Drag a page title to another pane's tab strip to dock it.
+  A captured thumbnail card follows the cursor above page content, and a tab-shaped
+  placeholder marks the insertion slot. Escape, window deactivation, or releasing
+  outside a destination strip cancels the move.
+- Native pages hide while a tab menu is open and return with state retained.
   Dismiss menus by clicking outside, pressing Escape, or selecting an action.
 - Enter a URL, hostname, localhost address, or search phrase. `about:blank`
   opens the built-in start page. Page links requesting a new window become tabs
@@ -93,6 +97,9 @@ exits. It requires a GUI session and HTTPS access to example.com:
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
 ```
+
+For visual inspection of a held drag state, append `--smoke-hold-preview` after
+`--smoke-test`; it holds the captured card and insertion placeholder for 20 seconds.
 
 This checks actual native documents and host operations programmatically. It
 does **not** synthesize OS mouse or keyboard input. The smoke test explicitly

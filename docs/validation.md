@@ -1,3 +1,38 @@
+# Live tab drag and split resize validation
+
+Run on 2026-11-04 on macOS in `bro-tab-drag-preview`.
+
+- Workspace unit tests, formatting, whitespace checks and Clippy with all targets
+  and features passed (13 unit tests).
+- Native WKWebView smoke passed. Added checks keep interactions active across
+  rendered frames, verify page visibility and changed native viewport dimensions
+  during resize, decode a captured thumbnail with the dragged title, and dispose
+  the preview on cancellation. A lazy inactive tab also loads/captures while the
+  original active pages remain visible. Existing threshold, invalid drop,
+  cancellation, insertion, document identity, form and history checks still pass.
+- An ad hoc signed app with an isolated bundle ID was exercised through desktop
+  input. A divider drag changed both page widths without zoom/restore. A tab drag
+  into another pane immediately displayed the merged full-width pane and retained
+  the input value `Retained through native drag`. Another drag released over page
+  content kept both panes, tabs and that value intact.
+- Held native smoke states were inspected visually: the destination strip showed
+  a tab-shaped insertion placeholder, and the correctly titled Example Domain
+  thumbnail appeared above native page pixels. The desktop adapter completes
+  each OS drag atomically, so it cannot pause a real held OS drag for a screenshot;
+  intermediate visual inspection used `--smoke-hold-preview` instead.
+- The existing unattended desktop compositor issue still affected initial menus
+  and some held-smoke screenshots: zoom/restore was needed to inspect native
+  pixels. The drag/resize-specific AppKit layer invalidation fixed the tested
+  desktop input outcomes without requiring zoom/restore after those operations.
+  This does not establish that every foreground/occlusion scenario is resolved.
+- The Windows CapturePreview/stream adapter type-checked in isolation for
+  `x86_64-pc-windows-msvc`. Full desktop cross-compilation on this Mac stopped in
+  `ring` because the Windows C headers/toolchain are unavailable. No full Windows
+  build, native overlay layering, DPI, input or interaction pass is claimed.
+
+The reports below describe earlier milestones; their hide-during-drag behavior
+is superseded by this change. Other outstanding prototype checks remain applicable.
+
 # Tab docking validation
 
 Run on 2026-11-04 on macOS in `bro-tab-panel-docking`.

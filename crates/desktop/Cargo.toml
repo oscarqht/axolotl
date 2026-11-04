@@ -10,8 +10,21 @@ gpui = { version = "=0.2.2", features = ["runtime_shaders"] }
 gpui-component = "=0.5.1"
 wry = "=0.55.1"
 anyhow = "1"
+base64 = "0.22"
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 
 [features]
 smoke = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSBitmapImageRep", "NSImageRep", "NSImage"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSData", "NSError"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["WKSnapshotConfiguration", "WKWebView", "block2"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell"] }

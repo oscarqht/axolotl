@@ -516,10 +516,19 @@ name = "axolotl"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
+ "block2",
  "gpui",
  "gpui-component",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-quartz-core",
+ "objc2-web-kit",
  "serde_json",
  "uuid",
+ "webview2-com",
+ "windows 0.61.3",
  "workspace-core",
  "wry",
 ]

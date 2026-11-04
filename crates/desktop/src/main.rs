@@ -4,6 +4,7 @@ mod drag_preview;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;
+mod tab_menu;
 
 use app::BrowserApp;
 use gpui::{prelude::*, *};

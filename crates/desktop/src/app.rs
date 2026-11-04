@@ -22,7 +22,7 @@ pub enum TabAction {
     Close,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct TabMenu {
     pub target: TabTarget,
     pub position: Point<Pixels>,
@@ -56,6 +56,7 @@ pub struct BrowserApp {
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
     pub menu: Option<TabMenu>,
+    pub menu_surface: Option<(TabMenu, crate::tab_menu::NativeTabMenu)>,
     pub editing: Option<TabTarget>,
     pub select_address: bool,
     pub moving_window: bool,
@@ -113,6 +114,7 @@ impl BrowserApp {
             address,
             focus: cx.focus_handle(),
             menu: None,
+            menu_surface: None,
             editing: None,
             select_address: false,
             moving_window: false,
@@ -364,10 +366,10 @@ impl BrowserApp {
         } else {
             self.cancel_edit(window, cx);
             self.report(self.host.focus_parent(self.active_tab()));
-            self.report(self.host.hide_all());
             self.focus.focus(window);
             self.menu = Some(TabMenu { target, position });
         }
+        self.host.request_redraw();
         cx.notify();
     }
     pub fn tab_action(
@@ -483,6 +485,21 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(event) = self
+            .menu_surface
+            .as_ref()
+            .and_then(|(_, menu)| menu.next_event())
+        {
+            let target = self.menu.take().map(|menu| menu.target);
+            self.menu_surface = None;
+            self.report(self.host.focus_parent(self.active_tab()));
+            self.focus.focus(window);
+            if let (Some(target), crate::tab_menu::MenuEvent::Action(action)) = (target, event) {
+                self.tab_action(target, action, window, cx);
+            }
+            self.host.request_redraw();
+            cx.notify();
+        }
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(
                 self.tab_drag.expect("preview belongs to a drag").position,
@@ -630,14 +647,40 @@ impl BrowserApp {
             .collect();
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {
-            if !visible.iter().any(|(tab, _)| tab == id) || self.menu.is_some() {
+            if !visible.iter().any(|(tab, _)| tab == id) {
                 self.report(self.host.show(*id, false));
             }
         }
         for (id, url) in visible {
             let result = self.host.ensure(id, &url, window);
             self.report(result);
-            self.report(self.host.show(id, self.menu.is_none()));
+            self.report(self.host.show(id, true));
+        }
+        if let Some(menu) = self.menu {
+            if !self
+                .menu_surface
+                .as_ref()
+                .is_some_and(|(current, _)| *current == menu)
+            {
+                self.menu_surface = None;
+                match crate::tab_menu::NativeTabMenu::new(
+                    menu.position,
+                    matches!(menu.target, TabTarget::Space(_)),
+                    window,
+                ) {
+                    Ok(surface) => self.menu_surface = Some((menu, surface)),
+                    Err(error) => {
+                        self.report(Err(error));
+                        self.menu = None;
+                    }
+                }
+            }
+            if let Some((_, surface)) = &self.menu_surface {
+                let result = surface.place(window.viewport_size());
+                self.report(result);
+            }
+        } else {
+            self.menu_surface = None;
         }
     }
 }

@@ -96,7 +96,13 @@ draws application chrome independently of the web page. Native views occupy real
 child surfaces over the GPUI window, so a GPUI element drawn over their bounds
 does not automatically appear above page content.
 
-The prototype hides native page surfaces while its GPUI layout menu is open.
+Tab dropdowns use a transparent native child surface above all page views.
+Its backdrop consumes outside clicks to dismiss without activating the page
+beneath it. Fixed menu messages route to the existing targeted tab actions;
+Escape dismisses, arrow keys move focus, and Enter selects a button. Closing the
+surface returns keyboard focus to the shell without changing page documents.
+The overlay resizes with the window and keeps its menu within the viewport.
+
 During tab dragging and divider resizing, active pages remain visible and the
 normal geometry canvas continues updating their bounds. The shell retains the
 initial drag's mouse events; the native preview is offset from the cursor and

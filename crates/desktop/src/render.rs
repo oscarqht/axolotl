@@ -1,4 +1,4 @@
-use crate::app::{BrowserApp, Command, TabAction, TabTarget};
+use crate::app::{BrowserApp, Command, TabTarget};
 use gpui::{prelude::*, *};
 use gpui_component::{InteractiveElementExt, input::Input};
 use workspace_core::{Axis, PaneId, Rect};
@@ -224,7 +224,7 @@ impl BrowserApp {
                     .left_0()
                     .right_0()
                     .bg(rgb(0xf5f6f8))
-                    .child(if self.menu.is_some() || unavailable {
+                    .child(if unavailable {
                         div()
                             .size_full()
                             .flex()
@@ -249,29 +249,6 @@ impl BrowserApp {
                     }),
             )
             .into_any_element()
-    }
-
-    fn menu_item(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        target: TabTarget,
-        action: TabAction,
-        cx: &Context<Self>,
-    ) -> Stateful<Div> {
-        div()
-            .id(id)
-            .h(px(32.))
-            .px_2()
-            .flex()
-            .items_center()
-            .rounded_md()
-            .cursor_pointer()
-            .hover(|s| s.bg(rgb(0x3a4859)))
-            .child(label)
-            .on_click(
-                cx.listener(move |this, _, window, cx| this.tab_action(target, action, window, cx)),
-            )
     }
 }
 
@@ -476,76 +453,6 @@ impl Render for BrowserApp {
                         .px_2()
                         .bg(rgb(SURFACE))
                         .child(self.status.clone()),
-                )
-            })
-            .when_some(self.menu, |root, menu| {
-                let x = f32::from(menu.position.x)
-                    .min((f32::from(viewport.width) - 232.).max(4.))
-                    .max(4.);
-                let y = f32::from(menu.position.y)
-                    .min((f32::from(viewport.height) - 146.).max(TOP))
-                    .max(TOP);
-                root.child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, _, cx| {
-                                this.menu = None;
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .absolute()
-                                .left(px(x))
-                                .top(px(y))
-                                .w(px(224.))
-                                .p_1()
-                                .rounded_lg()
-                                .bg(rgb(0x25303d))
-                                .border_1()
-                                .border_color(rgb(0x465366))
-                                .shadow_lg()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child(self.menu_item(
-                                    "menu-new",
-                                    if matches!(menu.target, TabTarget::Space(_)) {
-                                        "New sibling space"
-                                    } else {
-                                        "New sibling tab"
-                                    },
-                                    menu.target,
-                                    TabAction::NewSibling,
-                                    cx,
-                                ))
-                                .child(self.menu_item(
-                                    "menu-h",
-                                    "Split horizontally  ↔",
-                                    menu.target,
-                                    TabAction::Split(Axis::Horizontal),
-                                    cx,
-                                ))
-                                .child(self.menu_item(
-                                    "menu-v",
-                                    "Split vertically  ↕",
-                                    menu.target,
-                                    TabAction::Split(Axis::Vertical),
-                                    cx,
-                                ))
-                                .child(self.menu_item(
-                                    "menu-close",
-                                    if matches!(menu.target, TabTarget::Space(_)) {
-                                        "Close space"
-                                    } else {
-                                        "Close tab"
-                                    },
-                                    menu.target,
-                                    TabAction::Close,
-                                    cx,
-                                )),
-                        ),
                 )
             })
     }

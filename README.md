@@ -64,8 +64,9 @@ they have not been run on this macOS host.
   A captured thumbnail card follows the cursor above page content, and a tab-shaped
   placeholder marks the insertion slot. Escape, window deactivation, or releasing
   outside a destination strip cancels the move.
-- Native pages hide while a tab menu is open and return with state retained.
+- Tab dropdowns appear above live page content without hiding any pane.
   Dismiss menus by clicking outside, pressing Escape, or selecting an action.
+  Arrow keys move between menu items; Enter selects the focused item.
 - Enter a URL, hostname, localhost address, or search phrase. `about:blank`
   opens the built-in start page. Page links requesting a new window become tabs
   in the originating pane.
@@ -120,9 +121,8 @@ default store; this is not a private-browsing mode or an isolated profile per
 space. Hidden pages stay loaded and can keep running; page suspension and memory
 budgets remain future work.
 
-Native child views cover GPUI overlays. The app hides them while a tab menu
-is open and restores them afterward; it does not composite a menu over live page
-pixels. Browser permission controls, downloads (currently denied), profiles,
+Native child views cover GPUI overlays. Tab dropdowns and drag previews use
+transparent native child surfaces above live pages. Browser permission controls, downloads (currently denied), profiles,
 passwords, browser extensions, mobile shells, and layout persistence are outside
 this milestone. Chrome extensions are not supported by this Wry backend.
 

@@ -1,3 +1,19 @@
+# Dropdown over live pages validation
+
+Run on 2026-11-04 on macOS in `bro-tab-drag-preview`.
+
+- Native smoke now verifies that all four active page surfaces remain visible
+  while a dropdown is open and after it closes. The remaining native smoke
+  checks, 13 unit tests, formatting and Clippy passed.
+- Desktop clicks selected the horizontal split action, then opened a dropdown
+  above both native pages. Visual inspection confirmed both pages and the input
+  `Keep visible behind dropdown` remained visible behind the menu.
+- Escape and clicking outside the menu dismissed its native surface. Page form
+  state remained intact. Initial app presentation still needed a zoom/restore in
+  this desktop automation session; opening and dismissing the menu afterward did
+  not require it.
+- Windows dropdown interaction and native layering remain untested on this Mac.
+
 # Live tab drag and split resize validation
 
 Run on 2026-11-04 on macOS in `bro-tab-drag-preview`.

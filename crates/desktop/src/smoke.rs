@@ -270,9 +270,16 @@ async fn run(
     })?;
     pause(cx).await;
     ensure!(
-        tabs.iter().all(|tab| !host.is_visible(*tab)),
-        "Menu left a native surface on top"
+        tabs.iter().all(|tab| host.is_visible(*tab)),
+        "Menu hid native page surfaces"
     );
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.menu_surface.is_some(),
+            "Native menu surface was not created"
+        );
+        Ok(())
+    })??;
     view.update_in(cx, |app, window, cx| {
         app.open_menu(
             TabTarget::Space(app.model.active_space),
@@ -286,7 +293,7 @@ async fn run(
         tabs.iter().all(|tab| host.is_visible(*tab)),
         "Menu dismissal failed to restore surfaces"
     );
-    checks.push("menu hides and restores native page surfaces");
+    checks.push("native dropdown keeps all page surfaces visible while open and after dismissal");
     let before_resize = eval(&host, tabs[0], "[innerWidth, innerHeight]", cx).await?;
     view.update_in(cx, |app, _, cx| {
         let geometry = app.model.active_space().layout.geometry(

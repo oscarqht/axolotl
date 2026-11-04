@@ -3,6 +3,7 @@
 //! All methods and native handles stay on GPUI's UI thread. Callbacks only enqueue
 //! events, avoiding reentrant GPUI entity updates from WebKit/WebView2 callbacks.
 
+use crate::native_webview::{BuildNativeChild, NativeWebView as WebView};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -13,7 +14,34 @@ use std::{
 use anyhow::{Context as _, Result, bail};
 use gpui::{Bounds, Pixels, Window};
 use workspace_core::TabId;
-use wry::{NewWindowResponse, PageLoadEvent, WebView, WebViewBuilder};
+use wry::{NewWindowResponse, PageLoadEvent, WebViewBuilder};
+
+const START_HTML: &str = include_str!("../assets/start.html");
+
+fn html_data_url(html: &str) -> String {
+    use base64::Engine as _;
+    format!(
+        "data:text/html;charset=utf-8;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(html)
+    )
+}
+
+fn inline_navigation(url: &str, expected: &str) -> bool {
+    url == "about:blank" || (cfg!(target_os = "windows") && url == expected)
+}
+
+// WebView2 can report NavigateToString as a data URL. Permit only the exact
+// HTML supplied by the application, rather than opening navigation to data URLs.
+pub fn with_inline_html<'a>(
+    builder: WebViewBuilder<'a>,
+    html: impl Into<String>,
+) -> WebViewBuilder<'a> {
+    let html = html.into();
+    let expected = html_data_url(&html);
+    builder
+        .with_navigation_handler(move |url| inline_navigation(&url, &expected))
+        .with_html(html)
+}
 
 #[derive(Debug, Clone)]
 pub enum BrowserEvent {
@@ -41,7 +69,7 @@ pub trait BrowserHost {
     fn is_visible(&self, tab: TabId) -> bool;
     #[cfg(feature = "smoke")]
     fn is_loaded(&self, tab: TabId) -> bool;
-    fn ensure(&self, tab: TabId, url: &str, window: &Window) -> Result<()>;
+    fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
@@ -58,6 +86,7 @@ pub trait BrowserHost {
         tab: TabId,
         title: &str,
         window: &Window,
+        cx: &gpui::App,
     ) -> Result<crate::drag_preview::DragPreview>;
     /// Request presentation after shell interactions involving native child views.
     fn request_redraw(&self);
@@ -142,7 +171,7 @@ impl BrowserHost for WryHost {
         self.visible.borrow().contains(&tab)
     }
 
-    fn ensure(&self, tab: TabId, url: &str, window: &Window) -> Result<()> {
+    fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()> {
         if self.views.borrow().contains_key(&tab) {
             return Ok(());
         }
@@ -157,6 +186,7 @@ impl BrowserHost for WryHost {
         let visible = self.visible.clone();
         let nonce = uuid::Uuid::new_v4().simple().to_string();
         let input_bridge = INPUT_BRIDGE.replace("__NONCE__", &nonce);
+        let start_url = html_data_url(START_HTML);
         let builder = WebViewBuilder::new()
             .with_visible(false)
             .with_focused(false)
@@ -167,7 +197,9 @@ impl BrowserHost for WryHost {
             .with_devtools(cfg!(debug_assertions))
             .with_accept_first_mouse(true)
             .with_initialization_script(input_bridge)
-            .with_navigation_handler(|url| allowed_url(&url))
+            .with_navigation_handler(move |url| {
+                allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
+            })
             .with_ipc_handler(move |request| {
                 if !visible.borrow().contains(&tab) {
                     return;
@@ -214,7 +246,7 @@ impl BrowserHost for WryHost {
             builder.with_url(url)
         };
         let view = builder
-            .build_as_child(window)
+            .build_native_child(window, cx)
             .context("Creating native browser child view")?;
         // `with_focused(false)` is ignored on macOS; explicitly return focus.
         view.focus_parent()
@@ -325,6 +357,7 @@ impl BrowserHost for WryHost {
         tab: TabId,
         title: &str,
         window: &Window,
+        cx: &gpui::App,
     ) -> Result<crate::drag_preview::DragPreview> {
         let source = self.views.borrow().get(&tab).cloned();
         let loaded = self.loaded.clone();
@@ -333,6 +366,7 @@ impl BrowserHost for WryHost {
             move || loaded.borrow().contains(&tab),
             title,
             window,
+            cx,
         )
     }
 
@@ -437,6 +471,26 @@ const INPUT_BRIDGE: &str = r#"
 #[cfg(test)]
 mod tests {
     use super::{allowed_url, authenticated_command};
+
+    #[test]
+    fn inline_navigation_allows_only_the_supplied_html() {
+        let expected = super::html_data_url("<h1>Trusted overlay</h1>");
+        assert!(super::inline_navigation("about:blank", &expected));
+        assert_eq!(
+            super::inline_navigation(&expected, &expected),
+            cfg!(target_os = "windows")
+        );
+        for url in [
+            super::html_data_url("<script>window.ipc.postMessage('close')</script>"),
+            "https://example.com".into(),
+            "file:///C:/Windows/win.ini".into(),
+            "javascript:alert(1)".into(),
+        ] {
+            assert!(!super::inline_navigation(&url, &expected));
+        }
+        // A permitted internal payload must not make data URLs public navigation.
+        assert!(!allowed_url(&expected));
+    }
 
     #[test]
     fn bridge_requires_nonce_and_fixed_command() {

@@ -2,6 +2,7 @@ mod app;
 mod browser;
 mod chrome_theme;
 mod drag_preview;
+mod native_webview;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;

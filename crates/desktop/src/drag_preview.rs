@@ -1,6 +1,7 @@
 //! A separate native child surface keeps the drag card above native page pixels.
 //! It has no page privileges and never navigates. Snapshot callbacks own only the
 //! image slot for that drag, so cancelled/older captures cannot affect a new drag.
+use crate::native_webview::{BuildNativeChild, NativeWebView as WebView};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -9,7 +10,7 @@ use std::{
 use anyhow::Result;
 use base64::Engine as _;
 use gpui::{Bounds, Pixels, Point, Size, Window, px, size};
-use wry::{WebView, WebViewBuilder};
+use wry::WebViewBuilder;
 
 type Snapshot = Rc<RefCell<Option<String>>>;
 
@@ -28,23 +29,28 @@ impl DragPreview {
         source_ready: impl Fn() -> bool + 'static,
         title: &str,
         window: &Window,
+        cx: &gpui::App,
     ) -> Result<Self> {
         let title = if title.is_empty() { "New tab" } else { title };
         let title = serde_json::to_string(title)?.replace('<', "\\u003c");
         let loaded = Rc::new(Cell::new(false));
         let ready = loaded.clone();
-        let view = WebViewBuilder::new()
-            .with_visible(false)
-            .with_focused(false)
-            .with_transparent(true)
-            .with_on_page_load_handler(move |event, _| {
-                ready.set(matches!(event, wry::PageLoadEvent::Finished));
-            })
-            .with_navigation_handler(|url| url == "about:blank")
-            .with_html(format!(r#"<!doctype html><meta charset="utf-8">
+        let html = format!(
+            r#"<!doctype html><meta charset="utf-8">
 <style>*{{box-sizing:border-box}}html,body{{margin:0;background:transparent}}body{{color:#dde5ed;font:12px -apple-system,Segoe UI,sans-serif}}.card{{height:100vh;background:#25303d;border:2px solid #8fddc3;border-radius:8px;overflow:hidden}}header{{height:30px;padding:6px 10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}img{{display:block;width:100%;height:146px;object-fit:cover;object-position:top;background:#f5f6f8}}p{{position:absolute;top:85px;width:100%;text-align:center;color:#8491a2}}@media(prefers-color-scheme:light){{body{{color:#243240}}.card{{background:#fff;border-color:#267c65}}}}</style>
-<div class="card"><header></header><p>Capturing page…</p><img></div><script>document.querySelector('header').textContent={title};</script>"#))
-            .build_as_child(window)?;
+<div class="card"><header></header><p>Capturing page…</p><img></div><script>document.querySelector('header').textContent={title};</script>"#
+        );
+        let view = crate::browser::with_inline_html(
+            WebViewBuilder::new()
+                .with_visible(false)
+                .with_focused(false)
+                .with_transparent(true)
+                .with_on_page_load_handler(move |event, _| {
+                    ready.set(matches!(event, wry::PageLoadEvent::Finished));
+                }),
+            html,
+        )
+        .build_native_child(window, cx)?;
         view.focus_parent()?;
         let image = Rc::new(RefCell::new(None));
         Ok(Self {
@@ -161,12 +167,13 @@ fn capture(source: &WebView, image: Snapshot) -> Result<()> {
         System::Com::{STATFLAG_NONAME, STATSTG, STREAM_SEEK_SET},
         UI::Shell::SHCreateMemStream,
     };
-    use wry::WebViewExtWindows;
     unsafe {
         let stream =
             SHCreateMemStream(None).ok_or_else(|| anyhow::anyhow!("Creating snapshot stream"))?;
         let captured = stream.clone();
+        let visibility = source.prepare_capture()?;
         let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+            drop(visibility);
             *image.borrow_mut() = Some(String::new());
             result?;
             let mut stat = STATSTG::default();
@@ -192,7 +199,7 @@ fn capture(source: &WebView, image: Snapshot) -> Result<()> {
             ));
             Ok(())
         }));
-        source.webview().CapturePreview(
+        source.webview()?.CapturePreview(
             COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
             &stream,
             &handler,

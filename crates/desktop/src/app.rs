@@ -96,10 +96,12 @@ impl BrowserApp {
                 cx.background_executor()
                     .timer(Duration::from_millis(40))
                     .await;
-                if view
-                    .update_in(cx, |this, window, cx| this.poll(window, cx))
-                    .is_err()
-                {
+                if let Err(error) = view.update_in(cx, |this, window, cx| this.poll(window, cx)) {
+                    // Native Windows calls can pump tasks during another update.
+                    // A temporary borrow conflict must not stop polling forever.
+                    if error.downcast_ref::<std::cell::BorrowMutError>().is_some() {
+                        continue;
+                    }
                     break;
                 }
             }
@@ -185,7 +187,7 @@ impl BrowserApp {
             self.report(self.host.focus_parent(self.active_tab()));
             self.focus.focus(window);
             if let Some(tab) = self.model.tab(drag.tab) {
-                let result = self.host.ensure(drag.tab, &tab.url, window);
+                let result = self.host.ensure(drag.tab, &tab.url, window, cx);
                 self.report(result);
             }
             let viewport = window.viewport_size();
@@ -215,11 +217,11 @@ impl BrowserApp {
                 .map_or("New tab", |tab| tab.title.as_str())
                 .to_owned();
             // Create the half-pane overlay first so the thumbnail remains above it.
-            match crate::split_preview::SplitPreview::new(window) {
+            match crate::split_preview::SplitPreview::new(window, cx) {
                 Ok(preview) => self.split_preview = Some(preview),
                 Err(error) => self.report(Err(error)),
             }
-            match self.host.drag_preview(drag.tab, &title, window) {
+            match self.host.drag_preview(drag.tab, &title, window, cx) {
                 Ok(preview) => self.drag_preview = Some(preview),
                 Err(error) => self.report(Err(error)),
             }
@@ -676,7 +678,7 @@ impl BrowserApp {
         }
         cx.notify();
     }
-    pub fn prepare_views(&mut self, window: &mut Window) {
+    pub fn prepare_views(&mut self, window: &mut Window, cx: &gpui::App) {
         let ids: HashSet<_> = self
             .model
             .spaces
@@ -725,7 +727,7 @@ impl BrowserApp {
             }
         }
         for (id, url) in visible {
-            let result = self.host.ensure(id, &url, window);
+            let result = self.host.ensure(id, &url, window, cx);
             self.report(result);
             self.report(self.host.show(id, true));
         }
@@ -740,6 +742,7 @@ impl BrowserApp {
                     menu.position,
                     matches!(menu.target, TabTarget::Space(_)),
                     window,
+                    cx,
                 ) {
                     Ok(surface) => self.menu_surface = Some((menu, surface)),
                     Err(error) => {

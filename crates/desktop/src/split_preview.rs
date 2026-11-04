@@ -1,24 +1,27 @@
 //! Native translucent surface above the live page; GPUI cannot cover child webviews.
+use crate::native_webview::{BuildNativeChild, NativeWebView as WebView};
 use anyhow::Result;
 use gpui::{Bounds, Window, point, px, size};
 use workspace_core::Rect;
-use wry::{WebView, WebViewBuilder};
+use wry::WebViewBuilder;
 
 pub struct SplitPreview(WebView);
 
 impl SplitPreview {
-    pub fn new(window: &Window) -> Result<Self> {
-        let view = WebViewBuilder::new()
-            .with_visible(false)
-            .with_focused(false)
-            .with_transparent(true)
-            .with_navigation_handler(|url| url == "about:blank")
-            .with_html(r#"<!doctype html><style>
+    pub fn new(window: &Window, cx: &gpui::App) -> Result<Self> {
+        let html = r#"<!doctype html><style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
 body{border:3px solid #66c9ac;background:rgba(68,179,146,.28);border-radius:8px;display:grid;place-items:center;color:#173c32;font:600 16px -apple-system,Segoe UI,sans-serif}
 span{padding:8px 14px;background:rgba(233,255,247,.9);border-radius:6px}
-</style><span>Release to split</span>"#)
-            .build_as_child(window)?;
+</style><span>Release to split</span>"#;
+        let view = crate::browser::with_inline_html(
+            WebViewBuilder::new()
+                .with_visible(false)
+                .with_focused(false)
+                .with_transparent(true),
+            html,
+        )
+        .build_native_child(window, cx)?;
         view.focus_parent()?;
         Ok(Self(view))
     }

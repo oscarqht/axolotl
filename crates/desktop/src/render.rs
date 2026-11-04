@@ -258,7 +258,7 @@ impl BrowserApp {
 impl Render for BrowserApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
-        self.prepare_views(window);
+        self.prepare_views(window, cx);
         if self.select_address && self.editing.is_some() {
             self.select_address = false;
             window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);

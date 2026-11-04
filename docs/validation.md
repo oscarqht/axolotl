@@ -1,3 +1,33 @@
+# Windows support validation
+
+Run on 2026-11-04 on Windows x64 with Rust 1.93.0 (MSVC), Visual Studio
+2022 C++ tools, Windows SDK 10.0.26100.0, and WebView2 Evergreen 156.0.4314.58.
+
+- Added `scripts/build-windows.ps1` and `scripts/run-windows.ps1` with debug,
+  release, and native smoke options. Shared setup discovers Visual Studio and
+  `fxc.exe`; it also ran successfully under Windows PowerShell 5.1.
+- Native Windows compilation, 19 unit tests, formatting, whitespace checks, and
+  Clippy with all targets/features passed. Windows CI now builds the executable
+  through the helper script. Remote CI was not run during this local check.
+- Fixed WebView2 construction reentering GPUI through its nested Windows message
+  loop. Windows child views are now created by a serial foreground worker outside
+  GPUI updates; pending geometry, visibility, and commands are applied afterward.
+- App-supplied HTML may appear as a `data:` navigation in WebView2. Start pages
+  and overlays allow their exact encoded payload; arbitrary data URLs remain
+  denied. A regression test checks the inline HTML navigation boundary.
+- Handled Wry's `SetFocus` success reported as HRESULT 0. Hidden lazy-tab
+  thumbnails temporarily render outside the parent clipping area and restore
+  the latest requested visibility and geometry when capture completes.
+- Two consecutive final programmatic native smoke runs passed on actual WebView2 documents,
+  including inline URL editing, navigation/history, menus over visible pages,
+  nested splits, tab closing, active and lazy-tab thumbnails, docking, all four
+  split edges, Escape cancellation, and retained DOM/form/history state.
+- These checks do not simulate OS mouse/keyboard input. Foreground acceptance,
+  multiple monitors, DPI changes, appearance notifications, high contrast, and
+  release performance remain manual checks. macOS was not rerun on this Windows host.
+
+Earlier platform reports follow.
+
 # Closing empty tab panes
 
 Run on 2026-11-04 in `bro-close-empty-tab-panels` on macOS.

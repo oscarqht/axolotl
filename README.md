@@ -28,22 +28,43 @@ open target/debug/Axolotl.app
 Use `scripts/package-macos.sh release` for an optimized build. This is a local
 development bundle, without distribution signing, notarization, or an installer.
 
-### Windows
+### Windows (x64)
 
 Install Rust stable with the MSVC toolchain, Visual Studio Build Tools with
 **Desktop development with C++** and a Windows SDK, plus the
 [WebView2 Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
-Run from a Visual Studio developer terminal:
+Build and run from PowerShell (the scripts also work outside a Visual Studio
+developer terminal):
 
 ```powershell
-cargo run -p axolotl --locked
+.\scripts\build-windows.ps1
+.\scripts\run-windows.ps1
+
+# Optimized build and run
+.\scripts\build-windows.ps1 -Profile release
+.\scripts\run-windows.ps1 -Profile release
+
+# Native integration check (opens a window and exits)
+.\scripts\run-windows.ps1 -SmokeTest
 ```
 
-GPUI needs the Windows SDK shader compiler (`fxc.exe`). If it cannot find it,
-set `GPUI_FXC_PATH` to its absolute path. The app sets
+The run script builds automatically when needed. Executables are written to
+`target\debug\axolotl.exe` or `target\release\axolotl.exe` with Cargo's default
+target directory. To launch an existing build directly, use
+`.\target\debug\axolotl.exe`.
+
+If PowerShell blocks local scripts, invoke them with a process-only override:
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1`
+(use `run-windows.ps1` to run).
+
+The scripts import the x64 Visual Studio developer environment and locate the
+Windows SDK shader compiler (`fxc.exe`). To override shader compiler discovery,
+set `GPUI_FXC_PATH` to its absolute path. Alternatively, run
+`cargo build -p axolotl --locked` and `cargo run -p axolotl --locked` directly
+from a configured Visual Studio developer terminal. The app sets
 `GPUI_DISABLE_DIRECT_COMPOSITION=true` before initializing GPUI so WebView2 can
-render its child windows. Windows build and interaction checks require Windows;
-they have not been run on this macOS host.
+render its child windows. WebView2 Evergreen must also be installed on any Windows
+machine running the executable. See the validation report below for tested scope.
 
 ## Use
 

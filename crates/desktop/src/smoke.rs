@@ -69,7 +69,8 @@ async fn wait_preview(
     cx: &mut AsyncWindowContext,
 ) -> Result<()> {
     let mut captured = false;
-    for _ in 0..30 {
+    // Windows may initialize a lazy page plus both overlay WebView2 controllers.
+    for _ in 0..150 {
         let response = Arc::new(Mutex::new(None));
         let target = response.clone();
         view.update_in(cx, |app, _, _| {
@@ -975,7 +976,8 @@ async fn run(
             app.finish_tab_drag(Some(position), window, cx);
             ensure!(
                 format!("{:?}", app.model) == before,
-                "Cancel changed layout"
+                "Cancel changed layout: before={before}; after={:?}",
+                app.model
             );
             ensure!(app.split_preview.is_none(), "Cancel retained placeholder");
             app.arm_tab_drag(source, moved, position - point(px(10.), px(10.)));

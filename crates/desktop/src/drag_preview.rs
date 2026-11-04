@@ -36,13 +36,14 @@ impl DragPreview {
         let view = WebViewBuilder::new()
             .with_visible(false)
             .with_focused(false)
+            .with_transparent(true)
             .with_on_page_load_handler(move |event, _| {
                 ready.set(matches!(event, wry::PageLoadEvent::Finished));
             })
             .with_navigation_handler(|url| url == "about:blank")
             .with_html(format!(r#"<!doctype html><meta charset="utf-8">
-<style>*{{box-sizing:border-box}}body{{margin:0;background:#25303d;color:#dde5ed;font:12px -apple-system,Segoe UI,sans-serif;border:2px solid #8fddc3;border-radius:8px;overflow:hidden}}header{{height:30px;padding:6px 10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}img{{display:block;width:100%;height:146px;object-fit:cover;object-position:top;background:#f5f6f8}}p{{position:absolute;top:85px;width:100%;text-align:center;color:#8491a2}}</style>
-<header></header><p>Capturing page…</p><img><script>document.querySelector('header').textContent={title};</script>"#))
+<style>*{{box-sizing:border-box}}html,body{{margin:0;background:transparent}}body{{color:#dde5ed;font:12px -apple-system,Segoe UI,sans-serif}}.card{{height:100vh;background:#25303d;border:2px solid #8fddc3;border-radius:8px;overflow:hidden}}header{{height:30px;padding:6px 10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}img{{display:block;width:100%;height:146px;object-fit:cover;object-position:top;background:#f5f6f8}}p{{position:absolute;top:85px;width:100%;text-align:center;color:#8491a2}}</style>
+<div class="card"><header></header><p>Capturing page…</p><img></div><script>document.querySelector('header').textContent={title};</script>"#))
             .build_as_child(window)?;
         view.focus_parent()?;
         let image = Rc::new(RefCell::new(None));

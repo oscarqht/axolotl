@@ -415,5 +415,161 @@ async fn run(
     })??;
     pause(cx).await;
     checks.push("targeted sibling, split and close actions; final tab and space guards; switching cancels edits");
+    // Exercise the drag handlers against retained native documents, including cancellation.
+    let (source, moved, destination, destination_tab) = view.update_in(cx, |app, window, cx| {
+        app.model = workspace_core::Workspace::default();
+        let source = app.model.focused_pane().id;
+        let moved = app.active_tab();
+        let destination = app.model.split_focused(Axis::Horizontal, "about:blank");
+        let destination_tab = app.active_tab();
+        app.sync_address(window, cx);
+        cx.notify();
+        (source, moved, destination, destination_tab)
+    })?;
+    pause(cx).await;
+    wait_title(&host, moved, "New tab · Axolotl", cx).await?;
+    wait_title(&host, destination_tab, "New tab · Axolotl", cx).await?;
+    host.navigate(moved, "https://example.com/?dock=before")?;
+    wait_title(&host, moved, "Example Domain", cx).await?;
+    eval(&host, moved, "document.body.insertAdjacentHTML('beforeend', '<input>'); document.querySelector('input').value='docked state'; window.dockIdentity={}; history.pushState({}, '', '?dock=history'); true", cx).await?;
+    host.back(moved)?;
+    pause(cx).await;
+    ensure!(
+        host.current_url(moved)?.contains("dock=before"),
+        "History fixture back failed before docking: {}",
+        host.current_url(moved)?
+    );
+    host.forward(moved)?;
+    pause(cx).await;
+    ensure!(
+        host.current_url(moved)?.contains("dock=history"),
+        "History fixture forward failed before docking"
+    );
+    let width_before = eval(&host, destination_tab, "innerWidth", cx).await?;
+    view.update_in(cx, |app, window, cx| {
+        let origin = point(px(60.), px(crate::render::TOP + 16.));
+        let destination_point = point(window.viewport_size().width / 2. + px(20.), origin.y);
+        app.arm_tab_drag(source, moved, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: origin + point(px(2.), px(0.)),
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        ensure!(!app.tab_drag_active(), "Click crossed drag threshold");
+        app.finish_tab_drag(Some(destination_point), window, cx);
+        ensure!(app.model.pane(source).is_some(), "Click moved tab");
+        app.arm_tab_drag(source, moved, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: destination_point,
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        ensure!(app.tab_drag_active(), "Drag threshold did not start drag");
+        ensure!(
+            app.tab_drop_target(destination_point, window) == Some((destination, 0)),
+            "Wrong insertion target"
+        );
+        app.finish_tab_drag(None, window, cx);
+        ensure!(
+            app.model.pane(source).is_some(),
+            "Outside release moved tab"
+        );
+        app.arm_tab_drag(source, moved, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: destination_point,
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        app.cancel_tab_drag(cx);
+        ensure!(app.model.pane(source).is_some(), "Cancel moved tab");
+        app.arm_tab_drag(source, moved, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: destination_point,
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        app.finish_tab_drag(Some(point(px(30.), px(200.))), window, cx);
+        ensure!(
+            app.model.pane(source).is_some(),
+            "Page-content release moved tab"
+        );
+        app.arm_tab_drag(source, moved, origin);
+        app.update_tab_drag(
+            &MouseMoveEvent {
+                position: destination_point,
+                pressed_button: Some(MouseButton::Left),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        app.finish_tab_drag(Some(destination_point), window, cx);
+        ensure!(app.model.pane(source).is_none(), "Emptied source retained");
+        ensure!(
+            app.active_tab() == moved && app.model.focused_pane().id == destination,
+            "Dock did not activate destination"
+        );
+        ensure!(
+            app.model.focused_pane().tabs[0].id == moved,
+            "Dock insertion wrong"
+        );
+        Ok(())
+    })??;
+    pause(cx).await;
+    ensure!(
+        eval(
+            &host,
+            moved,
+            "document.querySelector('input').value === 'docked state' && !!window.dockIdentity",
+            cx
+        )
+        .await?
+            == true,
+        "Dock recreated native document"
+    );
+    ensure!(
+        host.current_url(moved)?.contains("dock=history"),
+        "Dock lost URL"
+    );
+    host.back(moved)?;
+    pause(cx).await;
+    ensure!(
+        !host.current_url(moved)?.contains("dock=history"),
+        "Dock lost back history: {}",
+        host.current_url(moved)?
+    );
+    host.forward(moved)?;
+    pause(cx).await;
+    ensure!(
+        host.current_url(moved)?.contains("dock=history"),
+        "Dock lost forward history"
+    );
+    ensure!(
+        host.has_view(destination_tab),
+        "Dock discarded destination view"
+    );
+    ensure!(
+        eval(&host, moved, "innerWidth", cx).await?.as_f64() > width_before.as_f64(),
+        "Collapsed layout did not expand page"
+    );
+    checks
+        .push("tab drag threshold, outside/content drop and explicit cancellation preserve layout");
+    checks.push("docking retains native DOM identity, form state, URL and back/forward history; activates insertion and expands emptied source");
     Ok(checks)
 }

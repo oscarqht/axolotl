@@ -274,3 +274,89 @@ fn long_command_sequence_keeps_layout_tabs_and_focus_consistent() {
         }
     }
 }
+
+#[test]
+fn docking_inserts_activates_and_preserves_tab_identity() {
+    for index in 0..=3 {
+        let mut w = Workspace::default();
+        let source = w.focused_pane().id;
+        let moved = w.add_tab("https://example.com/state");
+        w.tab_mut(moved).unwrap().title = "Retained title".into();
+        let original = w.tab(moved).unwrap().clone();
+        let destination = w.split_focused(Axis::Horizontal, "about:blank");
+        w.add_tab("https://rust-lang.org");
+        w.add_tab("https://gpui.rs");
+        let mut expected = w
+            .focused_pane()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>();
+        expected.insert(index, moved);
+        assert!(w.move_tab(source, moved, destination, index));
+        assert_eq!(w.focused_pane().id, destination);
+        assert_eq!(w.focused_pane().active_tab, moved);
+        assert_eq!(w.tab(moved), Some(&original));
+        assert_eq!(
+            w.focused_pane()
+                .tabs
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(w.pane(source).unwrap().tabs.len(), 1);
+        assert_invariants(&w);
+    }
+}
+
+#[test]
+fn docking_last_tab_collapses_nested_source_and_expands_sibling() {
+    let mut w = Workspace::default();
+    let destination = w.focused_pane().id;
+    let sibling = w.split_focused(Axis::Horizontal, "about:blank");
+    let source = w.split_focused(Axis::Vertical, "https://example.com");
+    let moved = w.focused_pane().active_tab;
+    assert!(w.move_tab(source, moved, destination, 0));
+    assert!(w.pane(source).is_none());
+    let g = w
+        .active_space()
+        .layout
+        .geometry(Rect::new(0., 0., 1000., 800.), 6., 100.);
+    assert_eq!(g.dividers.len(), 1);
+    assert_eq!(
+        g.panes
+            .iter()
+            .find(|p| p.id == sibling)
+            .unwrap()
+            .bounds
+            .height,
+        800.
+    );
+    assert_eq!(w.focused_pane().active_tab, moved);
+    assert_invariants(&w);
+}
+
+#[test]
+fn invalid_docking_is_atomic_and_cannot_cross_spaces() {
+    let mut w = Workspace::default();
+    let source = w.focused_pane().id;
+    let moved = w.focused_pane().active_tab;
+    let destination = w.split_focused(Axis::Horizontal, "about:blank");
+    let before = w.active_space().clone();
+    for (src, tab, dst, index) in [
+        (source, moved, destination, 2),
+        (source, moved, source, 0),
+        (source, u64::MAX, destination, 0),
+        (u64::MAX, moved, destination, 0),
+        (source, moved, u64::MAX, 0),
+    ] {
+        assert!(!w.move_tab(src, tab, dst, index));
+        assert_eq!(w.active_space(), &before);
+    }
+    w.add_space("Other", "about:blank");
+    let before = w.spaces.clone();
+    assert!(!w.move_tab(source, moved, w.focused_pane().id, 0));
+    assert_eq!(w.spaces, before);
+    assert_invariants(&w);
+}

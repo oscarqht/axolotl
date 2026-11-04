@@ -187,6 +187,50 @@ impl Workspace {
         true
     }
 
+    /// Move an existing tab between panes in the active space, retaining its identity.
+    /// The insertion index is in the destination's original stack (0..=len).
+    pub fn move_tab(
+        &mut self,
+        source: PaneId,
+        tab: TabId,
+        destination: PaneId,
+        index: usize,
+    ) -> bool {
+        let space = self.active_space_mut();
+        if source == destination {
+            return false;
+        }
+        let Some(source_index) = space.panes.iter().position(|p| p.id == source) else {
+            return false;
+        };
+        let Some(destination_index) = space.panes.iter().position(|p| p.id == destination) else {
+            return false;
+        };
+        if index > space.panes[destination_index].tabs.len() {
+            return false;
+        }
+        let Some(tab_index) = space.panes[source_index]
+            .tabs
+            .iter()
+            .position(|t| t.id == tab)
+        else {
+            return false;
+        };
+        let source_pane = &mut space.panes[source_index];
+        let moved = source_pane.tabs.remove(tab_index);
+        if source_pane.active_tab == tab && !source_pane.tabs.is_empty() {
+            source_pane.active_tab = source_pane.tabs[tab_index.min(source_pane.tabs.len() - 1)].id;
+        }
+        space.panes[destination_index].tabs.insert(index, moved);
+        space.panes[destination_index].active_tab = tab;
+        space.focused_pane = destination;
+        if space.panes[source_index].tabs.is_empty() {
+            space.layout.remove_pane(source);
+            space.panes.remove(source_index);
+        }
+        true
+    }
+
     /// Closing the last tab replaces it with a fresh blank tab.
     pub fn close_tab(&mut self, pane: PaneId, tab: TabId) -> bool {
         let Some(pane_ref) = self.active_space().pane(pane) else {

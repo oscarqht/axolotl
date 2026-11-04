@@ -4,6 +4,15 @@ use gpui_component::{InteractiveElementExt, input::Input};
 use workspace_core::{Axis, PaneId, Rect};
 
 pub const TOP: f32 = 38.;
+pub const TAB_WIDTH: f32 = 204.;
+pub const TAB_GAP: f32 = 4.;
+
+pub fn tab_insertion_index(x: f32, count: usize) -> usize {
+    (((x + TAB_WIDTH / 2. + TAB_GAP) / (TAB_WIDTH + TAB_GAP))
+        .floor()
+        .max(0.) as usize)
+        .min(count)
+}
 const INK: u32 = 0xdde5ed;
 const SURFACE: u32 = 0x181e27;
 const MUTED: u32 = 0x8491a2;
@@ -25,7 +34,7 @@ impl BrowserApp {
         div()
             .id((kind, id))
             .h(px(30.))
-            .w(px(if editing { 320. } else { 204. }))
+            .w(px(if editing { 320. } else { TAB_WIDTH }))
             .flex_shrink_0()
             .flex()
             .items_center()
@@ -34,6 +43,12 @@ impl BrowserApp {
             .border_1()
             .border_color(rgb(if editing { ACCENT } else { 0x303845 }))
             .text_color(rgb(if active { INK } else { MUTED }))
+            .when(
+                self.tab_drag.is_some_and(|drag| {
+                    drag.active && target == TabTarget::Page(drag.source, drag.tab)
+                }),
+                |tab| tab.opacity(0.55),
+            )
             // Keep tab clicks from bubbling into the surrounding pane header.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(if editing {
@@ -66,7 +81,18 @@ impl BrowserApp {
                     } else {
                         title.to_owned()
                     }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, _, _| {
+                            if let TabTarget::Page(pane, tab) = target {
+                                this.arm_tab_drag(pane, tab, event.position);
+                            }
+                        }),
+                    )
                     .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                        if matches!(target, TabTarget::Page(_, _)) && this.suppress_tab_click {
+                            return;
+                        }
                         if event.click_count() == 2 {
                             this.begin_edit(target, window, cx);
                         } else {
@@ -172,7 +198,11 @@ impl BrowserApp {
                     .right_0()
                     .bg(rgb(0xf5f6f8))
                     .child(
-                        if self.menu.is_some() || self.dragging.is_some() || unavailable {
+                        if self.menu.is_some()
+                            || self.dragging.is_some()
+                            || self.tab_drag_active()
+                            || unavailable
+                        {
                             div()
                                 .size_full()
                                 .flex()
@@ -269,6 +299,9 @@ impl Render for BrowserApp {
                 ".SystemUIFont"
             })
             .track_focus(&self.focus)
+            .when(self.tab_drag_active(), |root| {
+                root.cursor(CursorStyle::ClosedHand)
+            })
             .on_action(cx.listener(|this, _: &crate::Address, window, cx| {
                 this.command(Command::Address, window, cx)
             }))
@@ -293,11 +326,13 @@ impl Render for BrowserApp {
             .on_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
                     this.menu = None;
+                    this.cancel_tab_drag(cx);
                     this.cancel_edit(window, cx);
                     cx.notify();
                 }),
             )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                this.update_tab_drag(event, window, cx);
                 if this.moving_window {
                     this.moving_window = false;
                     window.start_window_move();
@@ -322,7 +357,8 @@ impl Render for BrowserApp {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
+                cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    this.finish_tab_drag(Some(event.position), window, cx);
                     this.moving_window = false;
                     if this.dragging.take().is_some() {
                         cx.notify();
@@ -331,7 +367,8 @@ impl Render for BrowserApp {
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
+                cx.listener(|this, _, window, cx| {
+                    this.finish_tab_drag(None, window, cx);
                     this.moving_window = false;
                     if this.dragging.take().is_some() {
                         cx.notify();
@@ -376,6 +413,28 @@ impl Render for BrowserApp {
                     ),
             )
             .children(panes)
+            .when_some(
+                self.tab_drop_target(window.mouse_position(), window),
+                |root, (pane, index)| {
+                    let rect = geometry.panes.iter().find(|p| p.id == pane).unwrap().bounds;
+                    let offset = self
+                        .pane_scrolls
+                        .get(&pane)
+                        .map_or(0., |s| f32::from(s.offset().x));
+                    let x = (rect.x + 4. + index as f32 * (TAB_WIDTH + TAB_GAP) + offset - 2.)
+                        .clamp(rect.x + 2., (rect.x + rect.width - 5.).max(rect.x + 2.));
+                    root.child(
+                        div()
+                            .absolute()
+                            .left(px(x))
+                            .top(px(rect.y + 2.))
+                            .w(px(3.))
+                            .h(px(30.))
+                            .rounded_sm()
+                            .bg(rgb(ACCENT)),
+                    )
+                },
+            )
             .children(geometry.dividers.into_iter().map(|divider| {
                 let bounds = divider.bounds;
                 div()
@@ -483,5 +542,21 @@ impl Render for BrowserApp {
                         ),
                 )
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tab_insertion_index;
+
+    #[test]
+    fn insertion_uses_tab_midpoints_and_clamps_empty_strip_space() {
+        assert_eq!(tab_insertion_index(-10., 3), 0);
+        assert_eq!(tab_insertion_index(100., 3), 0);
+        assert_eq!(tab_insertion_index(110., 3), 1);
+        assert_eq!(tab_insertion_index(309., 3), 1);
+        assert_eq!(tab_insertion_index(310., 3), 2);
+        assert_eq!(tab_insertion_index(320., 3), 2);
+        assert_eq!(tab_insertion_index(10000., 3), 3);
     }
 }

@@ -1,3 +1,38 @@
+# Tab docking validation
+
+Run on 2026-11-04 on macOS in `bro-tab-panel-docking`.
+
+- `cargo test --workspace --all-features --locked`: 13 tests passed, including
+  insertion at every destination slot, identity/metadata retention, activation,
+  nested source collapse, invalid/cross-space atomic rejection, and insertion
+  midpoint calculations.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
+  formatting, and whitespace checks passed.
+- `cargo run -p axolotl --locked --features smoke -- --smoke-test`: passed on
+  actual WKWebViews. The added checks exercise the app's drag threshold, valid
+  target, outside/content release and cancellation handlers; then verify retained
+  document identity, input value, URL, back/forward history, destination activation,
+  insertion order and expansion after removing the source pane. The HTTPS history
+  fixture verifies back/forward before docking as well as after it.
+- `scripts/package-macos.sh`: native debug build and ad hoc signing passed.
+
+Actual desktop input was exercised using an isolated packaged app with its own
+bundle ID. Mouse clicks created split panels, and OS drags moved tabs to the end,
+before an existing destination tab, and between two destination tabs. Screenshots
+confirmed the moved tab active in the requested slot, retained input text
+(`Keep this while docking` and `Inserted middle`), and a full-width remaining
+panel after the source emptied. A drag released over page content retained both
+panels and their tab stacks.
+
+The desktop session repeatedly showed stale GPUI chrome until the native window
+was zoomed/restored. Native surfaces hid on interaction and the updated layout
+and page state appeared after that resize. This behavior also affects existing
+menus, as noted in the earlier report below. Thus the OS drag outcomes were
+verified, but smooth foreground redraw and the insertion marker during a held
+OS drag remain unverified. The automation API performs a complete drag in one
+call and cannot pause it for a screenshot. No forced frame-drawing workaround
+was added to normal app execution. Windows interaction remains untested.
+
 # Compact tab chrome validation
 
 Run on 2026-11-04 on macOS, using the pinned GPUI 0.2.2,

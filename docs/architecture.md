@@ -29,6 +29,15 @@ grid command constructs two vertically split columns. It retains existing panes
 up to four, creates missing panes, and merges excess panes' tabs into the first
 pane so conversion does not discard pages.
 
+Dragging a page title to another pane's tab strip moves that same tab ID into
+its indicated slot and activates it. Moving the last tab removes its source pane
+and collapses the parent split; it does not create a replacement blank tab. The
+native view remains keyed by the same ID, preserving the document and history.
+Same-pane and cross-space drops are not docking targets. The drag starts after
+five logical pixels; Escape, window deactivation, outside release, and release
+over page content cancel it. Native surfaces hide during the drag so they cannot
+intercept pointer events. The insertion marker uses the strip's scroll offset.
+
 Closing a pane closes its tabs and collapses its parent split. The final pane
 and final space are retained. Closing the last tab creates a fresh blank tab.
 Commands preserve a valid active space, focused pane, and active tab. Switching

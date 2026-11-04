@@ -532,6 +532,17 @@ async fn run(
         app.tab_action(TabTarget::Space(space), TabAction::Close, window, cx);
         ensure!(app.model.spaces.len() == 1, "Final space removed");
         let pane = app.model.focused_pane().id;
+        let others: Vec<_> = app
+            .model
+            .active_space()
+            .panes
+            .iter()
+            .filter(|p| p.id != pane)
+            .map(|p| p.id)
+            .collect();
+        for other in others {
+            app.model.close_pane(other);
+        }
         while app.model.pane(pane).unwrap().tabs.len() > 1 {
             app.model.close_tab(pane, app.active_tab());
         }
@@ -545,6 +556,93 @@ async fn run(
     })??;
     pause(cx).await;
     checks.push("targeted sibling, split and close actions; final tab and space guards; switching cancels edits");
+    // Route CloseTab through the GPUI action used by Cmd+W, with actual native views.
+    let (original, right, bottom, closed, extra) = view.update_in(cx, |app, window, cx| {
+        app.model = workspace_core::Workspace::default();
+        let original = app.model.focused_pane().id;
+        let right = app.model.split_focused(Axis::Horizontal, "about:blank");
+        let bottom = app.model.split_focused(Axis::Vertical, "about:blank");
+        let closed = app.active_tab();
+        let extra = app.model.add_tab("about:blank");
+        app.sync_address(window, cx);
+        app.focus.focus(window);
+        cx.notify();
+        (original, right, bottom, closed, extra)
+    })?;
+    pause(cx).await;
+    wait_title(&host, extra, "New tab · Axolotl", cx).await?;
+    view.update_in(cx, |_, window, cx| {
+        window.dispatch_action(Box::new(crate::CloseTab), cx)
+    })?;
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| -> Result<()> {
+        ensure!(
+            app.model.focused_pane().id == bottom && app.active_tab() == closed,
+            "Close action did not select the remaining tab in its pane"
+        );
+        Ok(())
+    })??;
+    ensure!(!host.has_view(extra), "Closed extra native view retained");
+    wait_title(&host, closed, "New tab · Axolotl", cx).await?;
+    let right_tab = view.update_in(cx, |app, _, _| app.model.pane(right).unwrap().active_tab)?;
+    let before = eval(&host, right_tab, "innerHeight", cx).await?;
+    view.update_in(cx, |_, window, cx| {
+        window.dispatch_action(Box::new(crate::CloseTab), cx)
+    })?;
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| -> Result<()> {
+        ensure!(
+            app.model.pane(bottom).is_none(),
+            "Empty nested pane retained"
+        );
+        ensure!(
+            app.model.active_space().layout.pane_ids() == [original, right],
+            "Nested split not collapsed"
+        );
+        ensure!(
+            app.model.focused_pane().id == original,
+            "Pane focus not transferred"
+        );
+        Ok(())
+    })??;
+    ensure!(!host.has_view(closed), "Removed pane native view retained");
+    ensure!(
+        eval(&host, right_tab, "innerHeight", cx).await?.as_f64() > before.as_f64(),
+        "Surviving native pane did not expand"
+    );
+    // Close the first leaf as well, leaving the final pane for the blank guard.
+    view.update_in(cx, |_, window, cx| {
+        window.dispatch_action(Box::new(crate::CloseTab), cx)
+    })?;
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| -> Result<()> {
+        ensure!(
+            app.model.active_space().layout == workspace_core::Layout::Pane(right),
+            "Root split not collapsed"
+        );
+        ensure!(
+            app.active_tab() == right_tab,
+            "Focus did not reach final pane"
+        );
+        Ok(())
+    })??;
+    view.update_in(cx, |_, window, cx| {
+        window.dispatch_action(Box::new(crate::CloseTab), cx)
+    })?;
+    pause(cx).await;
+    let fresh = view.update_in(cx, |app, _, _| -> Result<TabId> {
+        ensure!(
+            app.model.focused_pane().id == right && app.active_tab() != right_tab,
+            "Final pane was not retained with a fresh tab"
+        );
+        Ok(app.active_tab())
+    })??;
+    wait_title(&host, fresh, "New tab · Axolotl", cx).await?;
+    ensure!(
+        !host.has_view(right_tab),
+        "Final closed native view retained"
+    );
+    checks.push("CloseTab action selects tabs, collapses nested/root splits, transfers focus, expands native panes and replaces final tab");
     // Exercise the drag handlers against retained native documents, including cancellation.
     let (source, moved, destination, destination_tab) = view.update_in(cx, |app, window, cx| {
         app.model = workspace_core::Workspace::default();

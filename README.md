@@ -60,7 +60,8 @@ they have not been run on this macOS host.
   vertically (stacked), or closes the tab. Space menus act on that space and its
   focused pane; page menus act on that page and its pane, even when inactive.
 - New siblings and split panes open the start page. Closing the last page tab
-  replaces it with a fresh start page; the final space remains.
+  removes its pane and collapses the split when other panes remain. The final
+  pane is retained with a fresh start page; the final space remains.
 - Drag the thin divider between panes to resize; page content stays visible and
   follows the divider. Drag a page title to another pane's tab strip to dock it.
   A captured thumbnail card follows the cursor above page content, and a tab-shaped

@@ -1,3 +1,28 @@
+# Closing empty tab panes
+
+Run on 2026-11-04 in `bro-close-empty-tab-panels` on macOS.
+
+- `cargo test --workspace --all-features --locked`: 18 tests passed. Added
+  coverage checks active/inactive tab selection, nested and root split collapse,
+  focus transfer, invalid/cross-space closes, and fresh blank replacement in the
+  final pane even when another space exists.
+- Formatting, whitespace checks and Clippy with all targets/features passed.
+- Native WKWebView smoke passed through the GPUI `CloseTab` action used by
+  Cmd+W. It checks remaining-tab selection, nested/root pane removal, focus
+  transfer, disposal of closed native views, expanded surviving page dimensions,
+  and a freshly loaded start page in the final pane.
+- An isolated ad hoc signed desktop build received actual Cmd+T/Cmd+W input.
+  Closing a nested pane removed its native page and expanded the sibling; closing
+  down to one pane expanded it across the window; closing the final tab loaded a
+  fresh empty start page. The test app was quit afterward.
+- Full foreground input acceptance remains limited: tab chrome sometimes stayed
+  stale until window zoom/restore, and automation focus/shortcut delivery was
+  inconsistent. In one check, editing a right-page field through accessibility
+  did not make it the model's focused pane; Cmd+W closed the left pane. This run
+  therefore does not establish reliable pointer/keyboard focus routing in every
+  foreground case. No unrelated focus/redraw workaround was added. Windows
+  desktop input was not tested.
+
 # Tab edge split validation
 
 Run on 2026-11-04 on macOS in `bro-tab-edge-splits`.

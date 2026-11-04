@@ -85,6 +85,91 @@ fn tab_stacks_retain_identity_and_replace_last_closed_tab() {
 }
 
 #[test]
+fn closing_last_tab_collapses_nested_panes_and_transfers_focus() {
+    let mut w = Workspace::default();
+    let original = w.focused_pane().id;
+    let right = w.split_focused(Axis::Horizontal, "about:blank");
+    let bottom = w.split_focused(Axis::Vertical, "about:blank");
+    let closed = w.focused_pane().active_tab;
+    assert!(w.close_tab(bottom, closed));
+    assert!(w.pane(bottom).is_none());
+    assert!(w.tab(closed).is_none());
+    assert_eq!(w.active_space().layout.pane_ids(), [original, right]);
+    assert_eq!(w.focused_pane().id, original);
+    let geometry = w
+        .active_space()
+        .layout
+        .geometry(Rect::new(0., 0., 1000., 800.), 6., 100.);
+    assert_eq!(geometry.dividers.len(), 1);
+    assert_eq!(
+        geometry
+            .panes
+            .iter()
+            .find(|p| p.id == right)
+            .unwrap()
+            .bounds
+            .height,
+        800.
+    );
+    // Closing an unfocused pane must preserve the current focus.
+    let right_tab = w.pane(right).unwrap().active_tab;
+    assert!(w.close_tab(right, right_tab));
+    assert_eq!(w.active_space().layout, Layout::Pane(original));
+    assert_eq!(w.focused_pane().id, original);
+    assert_invariants(&w);
+}
+
+#[test]
+fn closing_tabs_selects_neighbor_and_preserves_nonempty_pane() {
+    let mut w = Workspace::default();
+    let pane = w.split_focused(Axis::Horizontal, "about:blank");
+    let first = w.focused_pane().active_tab;
+    let middle = w.add_tab("https://example.com/middle");
+    let last = w.add_tab("https://example.com/last");
+    w.switch_tab(pane, middle);
+    assert!(w.close_tab(pane, middle));
+    assert_eq!(w.focused_pane().active_tab, last);
+    assert!(w.close_tab(pane, first));
+    assert_eq!(w.focused_pane().active_tab, last);
+    assert_eq!(w.active_space().panes.len(), 2);
+    assert_invariants(&w);
+}
+
+#[test]
+fn closing_final_pane_tab_keeps_space_and_invalid_closes_are_atomic() {
+    let mut w = Workspace::default();
+    let home = w.active_space;
+    let home_pane = w.focused_pane().id;
+    let home_tab = w.focused_pane().active_tab;
+    let other = w.add_space("Other", "https://example.com");
+    let pane = w.focused_pane().id;
+    let tab = w.focused_pane().active_tab;
+    let before = w.spaces.clone();
+    for (pane, tab) in [
+        (home_pane, home_tab),
+        (pane, home_tab),
+        (u64::MAX, tab),
+        (pane, u64::MAX),
+    ] {
+        assert!(!w.close_tab(pane, tab));
+        assert_eq!(w.spaces, before);
+    }
+    assert!(w.close_tab(pane, tab));
+    assert_eq!(w.active_space, other);
+    assert_eq!(w.active_space().layout, Layout::Pane(pane));
+    assert_eq!(w.focused_pane().id, pane);
+    assert_ne!(w.focused_pane().active_tab, tab);
+    assert_eq!(w.focused_pane().active_tab().url, "about:blank");
+    assert_eq!(w.focused_pane().active_tab().title, "");
+    assert!(w.tab(tab).is_none());
+    assert_eq!(
+        w.spaces.iter().find(|s| s.id == home),
+        before.iter().find(|s| s.id == home)
+    );
+    assert_invariants(&w);
+}
+
+#[test]
 fn grid_preserves_all_tabs_even_when_consolidating_extra_panes() {
     let mut workspace = Workspace::default();
     let mut tabs = vec![workspace.focused_pane().active_tab];

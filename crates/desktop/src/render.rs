@@ -150,7 +150,6 @@ impl BrowserApp {
     ) -> AnyElement {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let pane = self.model.pane(pane_id).expect("layout pane exists");
-        let focused = self.model.focused_pane().id == pane_id;
         let tab = pane.active_tab;
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let unavailable = page.is_none();
@@ -200,12 +199,6 @@ impl BrowserApp {
                     .flex()
                     .items_center()
                     .px_1()
-                    .border_b_1()
-                    .border_color(rgb(if focused {
-                        colors.accent
-                    } else {
-                        colors.border
-                    }))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {

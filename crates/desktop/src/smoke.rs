@@ -392,6 +392,40 @@ async fn run(
     let new_tab = view.update_in(cx, |app, _, _| app.active_tab())?;
     wait_title(&host, new_tab, "New tab · Axolotl", cx).await?;
     view.update_in(cx, |app, window, cx| {
+        ensure!(
+            app.editing == Some(TabTarget::Page(app.model.focused_pane().id, new_tab)),
+            "New tab did not enter URL editing"
+        );
+        app.address.update(cx, |input, cx| {
+            ensure!(
+                input.focus_handle(cx).is_focused(window),
+                "New tab URL lost focus"
+            );
+            input.replace("example.com", window, cx);
+            ensure!(
+                input.value() == "example.com",
+                "Typing did not replace the blank URL"
+            );
+            cx.emit(gpui_component::input::InputEvent::PressEnter { secondary: false });
+            Ok(())
+        })
+    })??;
+    pause(cx).await;
+    wait_title(&host, new_tab, "Example Domain", cx).await?;
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.active_tab() == new_tab,
+            "Enter navigated a different tab"
+        );
+        ensure!(
+            app.model.tab(new_tab).unwrap().url == "https://example.com/",
+            "New tab URL was not normalized"
+        );
+        ensure!(app.editing.is_none(), "Enter left URL editing open");
+        Ok(())
+    })??;
+    checks.push("new tab retains URL focus after native creation; typing replaces selection and Enter navigates");
+    view.update_in(cx, |app, window, cx| {
         app.command(Command::CloseTab, window, cx)
     })?;
     pause(cx).await;

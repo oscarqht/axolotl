@@ -1,8 +1,32 @@
 use crate::browser::{BrowserEvent, BrowserHost, WryHost};
 use gpui::{prelude::*, *};
 use gpui_component::input::{InputEvent, InputState};
-use std::{collections::HashSet, rc::Rc, time::Duration};
-use workspace_core::{Axis, Divider, PaneId, Rect, TabId, Workspace, normalize_url};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    time::Duration,
+};
+use workspace_core::{Axis, Divider, PaneId, Rect, SpaceId, TabId, Workspace, normalize_url};
+
+/// The chrome level is part of the target: the same page can appear in both strips.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabTarget {
+    Space(SpaceId),
+    Page(PaneId, TabId),
+}
+
+#[derive(Clone, Copy)]
+pub enum TabAction {
+    NewSibling,
+    Split(Axis),
+    Close,
+}
+
+#[derive(Clone, Copy)]
+pub struct TabMenu {
+    pub target: TabTarget,
+    pub position: Point<Pixels>,
+}
 
 #[derive(Clone, Copy)]
 pub enum Command {
@@ -13,10 +37,7 @@ pub enum Command {
     Back,
     Forward,
     Split(Axis),
-    Grid,
     NewSpace,
-    Menu,
-    ClosePane,
     NextPane,
 }
 
@@ -25,22 +46,34 @@ pub struct BrowserApp {
     pub host: Rc<dyn BrowserHost>,
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
-    pub menu: bool,
+    pub menu: Option<TabMenu>,
+    pub editing: Option<TabTarget>,
+    pub select_address: bool,
+    pub moving_window: bool,
+    pub space_scroll: ScrollHandle,
+    pub pane_scrolls: HashMap<PaneId, ScrollHandle>,
     pub dragging: Option<Divider>,
     pub status: String,
-    pub maximized: Option<PaneId>,
     pub poll_count: u8,
 }
 
 impl BrowserApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let address = cx.new(|cx| InputState::new(window, cx).default_value("about:blank"));
-        cx.subscribe_in(&address, window, |this, input, event, window, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                let value = input.read(cx).value().to_string();
-                this.navigate(&value, window, cx);
-            }
-        })
+        cx.subscribe_in(
+            &address,
+            window,
+            |this, input, event, window, cx| match event {
+                InputEvent::PressEnter { .. } => {
+                    let value = input.read(cx).value().to_string();
+                    this.navigate(&value, window, cx);
+                }
+                InputEvent::Blur if !input.read(cx).focus_handle(cx).is_focused(window) => {
+                    this.cancel_edit(window, cx)
+                }
+                _ => {}
+            },
+        )
         .detach();
         cx.spawn_in(window, async |view, cx| {
             loop {
@@ -61,10 +94,14 @@ impl BrowserApp {
             host: Rc::new(WryHost::new()),
             address,
             focus: cx.focus_handle(),
-            menu: false,
+            menu: None,
+            editing: None,
+            select_address: false,
+            moving_window: false,
+            space_scroll: ScrollHandle::new(),
+            pane_scrolls: HashMap::new(),
             dragging: None,
             status: String::new(),
-            maximized: None,
             poll_count: 0,
         }
     }
@@ -78,28 +115,149 @@ impl BrowserApp {
     pub fn active_tab(&self) -> TabId {
         self.model.focused_pane().active_tab
     }
+    fn reveal_focused(&self) {
+        if let Some(index) = self
+            .model
+            .spaces
+            .iter()
+            .position(|s| s.id == self.model.active_space)
+        {
+            self.space_scroll.scroll_to_item(index);
+        }
+        let pane = self.model.focused_pane();
+        if let Some(scroll) = self.pane_scrolls.get(&pane.id)
+            && let Some(index) = pane.tabs.iter().position(|t| t.id == pane.active_tab)
+        {
+            scroll.scroll_to_item(index);
+        }
+    }
     pub fn sync_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing.is_some() {
+            return;
+        }
         let url = self.model.focused_pane().active_tab().url.clone();
         self.address
             .update(cx, |input, cx| input.set_value(url, window, cx));
     }
+    pub fn cancel_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing.take().is_some() {
+            self.sync_address(window, cx);
+            cx.notify();
+        }
+    }
+    pub fn select_target(
+        &mut self,
+        target: TabTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.report(self.host.focus_parent(self.active_tab()));
+        if self.editing != Some(target) {
+            self.cancel_edit(window, cx);
+        }
+        self.menu = None;
+        match target {
+            TabTarget::Space(id) => {
+                self.model.switch_space(id);
+            }
+            TabTarget::Page(pane, tab) => {
+                self.model.switch_tab(pane, tab);
+            }
+        }
+        if self.editing.is_none() {
+            self.focus.focus(window);
+        }
+        self.sync_address(window, cx);
+        self.reveal_focused();
+        cx.notify();
+    }
+    pub fn begin_edit(&mut self, target: TabTarget, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_target(target, window, cx);
+        self.editing = None;
+        self.sync_address(window, cx);
+        self.editing = Some(target);
+        self.address.update(cx, |input, cx| input.focus(window, cx));
+        // The input is mounted only while editing. Select after the next render
+        // has registered its action handlers, rather than dispatching to the old tab title.
+        self.select_address = true;
+        cx.notify();
+    }
+    pub fn open_menu(
+        &mut self,
+        target: TabTarget,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.menu.is_some_and(|menu| menu.target == target) {
+            self.menu = None;
+        } else {
+            self.cancel_edit(window, cx);
+            self.report(self.host.focus_parent(self.active_tab()));
+            self.report(self.host.hide_all());
+            self.focus.focus(window);
+            self.menu = Some(TabMenu { target, position });
+        }
+        cx.notify();
+    }
+    pub fn tab_action(
+        &mut self,
+        target: TabTarget,
+        action: TabAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_target(target, window, cx);
+        self.cancel_edit(window, cx);
+        match action {
+            TabAction::NewSibling => match target {
+                TabTarget::Space(_) => self.command(Command::NewSpace, window, cx),
+                TabTarget::Page(_, _) => self.command(Command::NewTab, window, cx),
+            },
+            TabAction::Split(axis) => self.command(Command::Split(axis), window, cx),
+            TabAction::Close => {
+                match target {
+                    TabTarget::Space(id) => {
+                        self.model.close_space(id);
+                    }
+                    TabTarget::Page(pane, tab) => {
+                        self.model.close_tab(pane, tab);
+                    }
+                }
+                self.sync_address(window, cx);
+            }
+        }
+        cx.notify();
+    }
     pub fn focus_pane(&mut self, pane: PaneId, window: &mut Window, cx: &mut Context<Self>) {
+        if pane != self.model.focused_pane().id {
+            self.cancel_edit(window, cx);
+        }
         self.model.focus_pane(pane);
         self.sync_address(window, cx);
         cx.notify();
     }
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu = None;
+        if !matches!(command, Command::Address) {
+            if self.editing.is_some() {
+                self.focus.focus(window);
+            }
+            self.cancel_edit(window, cx);
+        }
         match command {
             Command::Address => {
-                self.report(self.host.focus_parent(self.active_tab()));
-                self.address.update(cx, |input, cx| input.focus(window, cx));
-                window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
+                let target = self.editing.unwrap_or(TabTarget::Page(
+                    self.model.focused_pane().id,
+                    self.active_tab(),
+                ));
+                self.begin_edit(target, window, cx);
             }
             Command::NewTab => {
                 self.report(self.host.focus_parent(self.active_tab()));
+                self.focus.focus(window);
                 self.model.add_tab("about:blank");
                 self.sync_address(window, cx);
-                self.command(Command::Address, window, cx);
             }
             Command::CloseTab => {
                 self.report(self.host.focus_parent(self.active_tab()));
@@ -112,24 +270,12 @@ impl BrowserApp {
             Command::Back => self.report(self.host.back(self.active_tab())),
             Command::Forward => self.report(self.host.forward(self.active_tab())),
             Command::Split(axis) => {
-                self.maximized = None;
                 self.model.split_focused(axis, "about:blank");
-                self.sync_address(window, cx);
-            }
-            Command::Grid => {
-                self.maximized = None;
-                self.model.grid("about:blank");
                 self.sync_address(window, cx);
             }
             Command::NewSpace => {
                 let name = format!("Space {}", self.model.spaces.len() + 1);
                 self.model.add_space(&name, "about:blank");
-                self.maximized = None;
-                self.sync_address(window, cx);
-            }
-            Command::ClosePane => {
-                self.model.close_pane(self.model.focused_pane().id);
-                self.maximized = None;
                 self.sync_address(window, cx);
             }
             Command::NextPane => {
@@ -143,27 +289,24 @@ impl BrowserApp {
                 self.focus_pane(next, window, cx);
                 self.report(self.host.focus(self.active_tab()));
             }
-            Command::Menu => {
-                self.menu = !self.menu;
-                if self.menu {
-                    self.report(self.host.focus_parent(self.active_tab()));
-                    self.report(self.host.hide_all());
-                    self.focus.focus(window);
-                }
-            }
         }
+        self.reveal_focused();
         cx.notify();
     }
     fn navigate(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
         match normalize_url(value) {
             Ok(url) => {
                 self.status.clear();
+                if self.editing.is_none() {
+                    return;
+                }
                 let tab = self.active_tab();
                 if let Some(tab) = self.model.tab_mut(tab) {
                     tab.url = url.clone();
                 }
                 self.report(self.host.navigate(tab, &url));
-                self.sync_address(window, cx);
+                self.cancel_edit(window, cx);
+                self.report(self.host.focus(tab));
             }
             Err(error) => self.status = error.to_string(),
         }
@@ -187,6 +330,9 @@ impl BrowserApp {
         for event in events {
             match event {
                 BrowserEvent::Focused(tab) => {
+                    // Native child focus is outside GPUI's focus tree, so it may
+                    // not emit InputEvent::Blur (including clicks in the same pane).
+                    self.cancel_edit(window, cx);
                     let pane = self
                         .model
                         .active_space()
@@ -227,6 +373,7 @@ impl BrowserApp {
                         .find(|p| p.tabs.iter().any(|t| t.id == source))
                         .map(|p| p.id);
                     if let Some(pane) = pane {
+                        self.cancel_edit(window, cx);
                         self.model.focus_pane(pane);
                         self.model.add_tab(&url);
                         self.sync_address(window, cx);
@@ -238,12 +385,12 @@ impl BrowserApp {
                         .active_space()
                         .panes
                         .iter()
-                        .find(|p| p.active_tab == tab && self.maximized.is_none_or(|id| id == p.id))
+                        .find(|p| p.active_tab == tab)
                         .map(|p| p.id);
                     let Some(pane) = pane else {
                         continue;
                     };
-                    if self.menu || self.dragging.is_some() {
+                    if self.menu.is_some() || self.dragging.is_some() {
                         continue;
                     }
                     self.model.focus_pane(pane);
@@ -272,12 +419,23 @@ impl BrowserApp {
             .map(|t| t.id)
             .collect();
         self.host.retain(&ids);
+        let panes: HashSet<_> = self
+            .model
+            .spaces
+            .iter()
+            .flat_map(|s| &s.panes)
+            .map(|p| p.id)
+            .collect();
+        self.pane_scrolls.retain(|id, _| panes.contains(id));
+        for id in panes {
+            self.pane_scrolls.entry(id).or_default();
+        }
         let viewport = window.viewport_size();
         let content = Rect::new(
-            6.,
-            86.,
-            (f32::from(viewport.width) - 12.).max(0.),
-            (f32::from(viewport.height) - 110.).max(0.),
+            0.,
+            crate::render::TOP,
+            f32::from(viewport.width),
+            (f32::from(viewport.height) - crate::render::TOP).max(0.),
         );
         let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
         let visible: Vec<_> = self
@@ -286,25 +444,29 @@ impl BrowserApp {
             .panes
             .iter()
             .filter(|p| {
-                self.maximized == Some(p.id)
-                    || geometry
-                        .panes
-                        .iter()
-                        .any(|r| r.id == p.id && r.bounds.height > 36. && r.bounds.width > 2.)
+                geometry
+                    .panes
+                    .iter()
+                    .any(|r| r.id == p.id && r.bounds.height > 36. && r.bounds.width > 2.)
             })
-            .filter(|p| self.maximized.is_none_or(|id| id == p.id))
             .map(|p| (p.active_tab, p.active_tab().url.clone()))
             .collect();
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {
-            if !visible.iter().any(|(tab, _)| tab == id) || self.menu || self.dragging.is_some() {
+            if !visible.iter().any(|(tab, _)| tab == id)
+                || self.menu.is_some()
+                || self.dragging.is_some()
+            {
                 self.report(self.host.show(*id, false));
             }
         }
         for (id, url) in visible {
             let result = self.host.ensure(id, &url, window);
             self.report(result);
-            self.report(self.host.show(id, !self.menu && self.dragging.is_none()));
+            self.report(
+                self.host
+                    .show(id, self.menu.is_none() && self.dragging.is_none()),
+            );
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Opt-in native integration checks. No external desktop automation or private data.
 use crate::{
-    app::{BrowserApp, Command},
+    app::{BrowserApp, Command, TabAction, TabTarget},
     browser::BrowserHost,
 };
 use anyhow::{Context as _, Result, ensure};
@@ -117,6 +117,27 @@ async fn run(
     ];
 
     view.update_in(cx, |app, window, cx| {
+        app.begin_edit(TabTarget::Space(app.model.active_space), window, cx);
+    })?;
+    pause(cx).await;
+    view.update_in(cx, |app, window, cx| {
+        app.address.update(cx, |input, cx| {
+            input.replace("https://example.com/draft", window, cx)
+        });
+        ensure!(
+            app.address.read(cx).value().as_ref() == "https://example.com/draft",
+            "Inline edit did not select the existing URL after mounting"
+        );
+        app.cancel_edit(window, cx);
+        ensure!(
+            app.model.focused_pane().active_tab().url == "about:blank",
+            "Space edit cancellation navigated"
+        );
+        Ok(())
+    })??;
+    checks.push("space inline input mounts with full URL selected; cancel preserves document");
+
+    view.update_in(cx, |app, window, cx| {
         app.command(Command::Split(Axis::Horizontal), window, cx)
     })?;
     pause(cx).await;
@@ -187,7 +208,10 @@ async fn run(
         "Nested split missing"
     );
     checks.push("nested horizontal and vertical splits");
-    view.update_in(cx, |app, window, cx| app.command(Command::Grid, window, cx))?;
+    view.update_in(cx, |app, _, cx| {
+        app.model.grid("about:blank");
+        cx.notify();
+    })?;
     pause(cx).await;
     let tabs = view.update_in(cx, |app, _, _| {
         app.model
@@ -206,13 +230,27 @@ async fn run(
         );
     }
     checks.push("four nonempty native browser surfaces in grid");
-    view.update_in(cx, |app, window, cx| app.command(Command::Menu, window, cx))?;
+    view.update_in(cx, |app, window, cx| {
+        app.open_menu(
+            TabTarget::Space(app.model.active_space),
+            point(px(160.), px(30.)),
+            window,
+            cx,
+        )
+    })?;
     pause(cx).await;
     ensure!(
         tabs.iter().all(|tab| !host.is_visible(*tab)),
         "Menu left a native surface on top"
     );
-    view.update_in(cx, |app, window, cx| app.command(Command::Menu, window, cx))?;
+    view.update_in(cx, |app, window, cx| {
+        app.open_menu(
+            TabTarget::Space(app.model.active_space),
+            point(px(160.), px(30.)),
+            window,
+            cx,
+        )
+    })?;
     pause(cx).await;
     ensure!(
         tabs.iter().all(|tab| host.is_visible(*tab)),
@@ -263,5 +301,119 @@ async fn run(
     pause(cx).await;
     ensure!(!host.has_view(new_tab), "Closed tab native view retained");
     checks.push("tab creation and native view disposal");
+    // Exercise the same target-bound handlers used by both compact tab strips.
+    view.update_in(cx, |app, window, cx| {
+        let pane = app.model.focused_pane().id;
+        let target = TabTarget::Page(pane, app.active_tab());
+        let original = app.model.focused_pane().active_tab().url.clone();
+        app.begin_edit(target, window, cx);
+        app.address.update(cx, |input, cx| {
+            input.set_value("https://example.com/unfinished", window, cx)
+        });
+        app.cancel_edit(window, cx);
+        ensure!(
+            app.model.focused_pane().active_tab().url == original,
+            "Cancel navigated"
+        );
+        app.begin_edit(target, window, cx);
+        app.address.update(cx, |input, cx| {
+            input.set_value("https://example.com", window, cx)
+        });
+        app.address.update(cx, |_, cx| {
+            cx.emit(gpui_component::input::InputEvent::PressEnter { secondary: false })
+        });
+        Ok(())
+    })??;
+    pause(cx).await;
+    view.update_in(cx, |app, window, cx| {
+        app.command(Command::Address, window, cx);
+        app.address.update(cx, |input, cx| {
+            input.set_value("https://example.com/escape", window, cx)
+        });
+    })?;
+    pause(cx).await;
+    cx.update(|window, cx| window.dispatch_action(Box::new(gpui_component::input::Escape), cx))?;
+    pause(cx).await;
+    ensure!(
+        view.update_in(cx, |app, _, _| app.editing.is_none())?,
+        "Escape action did not dismiss inline input"
+    );
+    checks.push("Escape action routes from focused inline input to shell");
+    let edited = view.update_in(cx, |app, _, _| app.active_tab())?;
+    wait_title(&host, edited, "Example Domain", cx).await?;
+    ensure!(
+        view.update_in(cx, |app, _, _| app.editing.is_none())?,
+        "Enter left inline editor open"
+    );
+    checks.push("inline URL cancellation and Enter navigation on native page");
+
+    view.update_in(cx, |app, window, cx| {
+        let space = app.model.active_space;
+        let pane = app.model.focused_pane().id;
+        let target = TabTarget::Page(pane, app.active_tab());
+        app.begin_edit(TabTarget::Space(space), window, cx);
+        let other = app
+            .model
+            .active_space()
+            .panes
+            .iter()
+            .find(|p| p.id != pane)
+            .unwrap()
+            .id;
+        app.focus_pane(other, window, cx);
+        ensure!(app.editing.is_none(), "Pane switch kept unfinished edit");
+        let before = app.model.pane(pane).unwrap().tabs.len();
+        app.tab_action(target, TabAction::NewSibling, window, cx);
+        ensure!(
+            app.model.focused_pane().id == pane
+                && app.model.pane(pane).unwrap().tabs.len() == before + 1,
+            "Sibling targeted wrong pane"
+        );
+        app.tab_action(
+            TabTarget::Page(pane, app.active_tab()),
+            TabAction::Close,
+            window,
+            cx,
+        );
+        app.tab_action(TabTarget::Space(space), TabAction::NewSibling, window, cx);
+        let sibling = app.model.active_space;
+        app.tab_action(
+            TabTarget::Space(space),
+            TabAction::Split(Axis::Vertical),
+            window,
+            cx,
+        );
+        ensure!(
+            app.model.active_space == space,
+            "Space split targeted current space instead of menu space"
+        );
+        ensure!(
+            app.model
+                .spaces
+                .iter()
+                .find(|s| s.id == sibling)
+                .unwrap()
+                .panes
+                .len()
+                == 1,
+            "Space split changed sibling"
+        );
+        app.tab_action(TabTarget::Space(sibling), TabAction::Close, window, cx);
+        app.tab_action(TabTarget::Space(space), TabAction::Close, window, cx);
+        ensure!(app.model.spaces.len() == 1, "Final space removed");
+        let pane = app.model.focused_pane().id;
+        while app.model.pane(pane).unwrap().tabs.len() > 1 {
+            app.model.close_tab(pane, app.active_tab());
+        }
+        let last = app.active_tab();
+        app.tab_action(TabTarget::Page(pane, last), TabAction::Close, window, cx);
+        ensure!(
+            app.active_tab() != last && app.model.focused_pane().active_tab().url == "about:blank",
+            "Final tab not replaced"
+        );
+        Ok(())
+    })??;
+    pause(cx).await;
+    checks.push("targeted sibling, split and close actions; final tab and space guards; switching cancels edits");
     Ok(checks)
 }

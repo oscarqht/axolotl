@@ -6,9 +6,14 @@ mod smoke;
 
 use app::BrowserApp;
 use gpui::{prelude::*, *};
-use gpui_component::Root;
+use gpui_component::{Root, Theme, ThemeMode};
 
-actions!(axolotl, [Quit, Address, NewTab, CloseTab, Reload, NextPane]);
+actions!(
+    axolotl,
+    [
+        Quit, Address, NewTab, CloseTab, Reload, NextPane, Back, Forward
+    ]
+);
 
 fn main() {
     eprintln!("Axolotl: initializing platform");
@@ -20,6 +25,7 @@ fn main() {
     Application::new().run(|cx: &mut App| {
         eprintln!("Axolotl: platform launched");
         gpui_component::init(cx);
+        Theme::change(ThemeMode::Dark, None, cx);
         cx.on_action(|_: &Quit, cx| cx.quit());
         let modifier = if cfg!(target_os = "macos") {
             "cmd"
@@ -33,6 +39,9 @@ fn main() {
             KeyBinding::new(&format!("{modifier}-w"), CloseTab, None),
             KeyBinding::new(&format!("{modifier}-r"), Reload, None),
             KeyBinding::new("f6", NextPane, None),
+            KeyBinding::new("escape", gpui_component::input::Escape, None),
+            KeyBinding::new("alt-left", Back, None),
+            KeyBinding::new("alt-right", Forward, None),
         ]);
         cx.set_menus(vec![
             Menu {
@@ -60,12 +69,14 @@ fn main() {
                 window_min_size: Some(size(px(640.), px(420.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Axolotl".into()),
-                    ..Default::default()
+                    appears_transparent: true,
+                    traffic_light_position: Some(point(px(12.), px(13.))),
                 }),
                 ..Default::default()
             },
             |window, cx| {
                 let app = cx.new(|cx| BrowserApp::new(window, cx));
+                app.read(cx).focus.focus(window);
                 #[cfg(feature = "smoke")]
                 if std::env::args().any(|arg| arg == "--smoke-test") {
                     smoke::start(&app, window, cx);

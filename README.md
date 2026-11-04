@@ -64,8 +64,12 @@ they have not been run on this macOS host.
 - Drag the thin divider between panes to resize; page content stays visible and
   follows the divider. Drag a page title to another pane's tab strip to dock it.
   A captured thumbnail card follows the cursor above page content, and a tab-shaped
-  placeholder marks the insertion slot. Escape, window deactivation, or releasing
-  outside a destination strip cancels the move.
+  placeholder marks the insertion slot. Drag into the outer third of a pane's
+  page content to preview a half-pane split on that edge; release to move the tab
+  there. Corners choose the nearest normalized edge (ties prefer top/bottom).
+  Splitting within the source pane requires multiple tabs. Empty source panes
+  collapse; the moved page keeps its form state and history. Escape, window
+  deactivation, a center drop, or an outside drop cancels the move.
 - Tab dropdowns appear above live page content without hiding any pane.
   Dismiss menus by clicking outside, pressing Escape, or selecting an action.
   Arrow keys move between menu items; Enter selects the focused item.
@@ -103,6 +107,7 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test
 
 For visual inspection of a held drag state, append `--smoke-hold-preview` after
 `--smoke-test`; it holds the captured card and insertion placeholder for 20 seconds.
+Use `--smoke-hold-split` to hold each of the four native split previews for 10 seconds.
 
 This checks actual native documents and host operations programmatically. It
 does **not** synthesize OS mouse or keyboard input. The smoke test explicitly

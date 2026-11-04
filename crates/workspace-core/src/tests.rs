@@ -360,3 +360,88 @@ fn invalid_docking_is_atomic_and_cannot_cross_spaces() {
     assert_eq!(w.spaces, before);
     assert_invariants(&w);
 }
+
+#[test]
+fn edge_targets_use_content_thirds_and_normalized_corner_distance() {
+    let r = Rect::new(20., 80., 900., 300.);
+    for (x, y, expected) in [
+        (0.1, 0.5, Some(SplitEdge::Left)),
+        (0.9, 0.5, Some(SplitEdge::Right)),
+        (0.5, 0.1, Some(SplitEdge::Top)),
+        (0.5, 0.9, Some(SplitEdge::Bottom)),
+        (0.1, 0.2, Some(SplitEdge::Left)),
+        (0.2, 0.1, Some(SplitEdge::Top)),
+        (0., 0., Some(SplitEdge::Top)),
+        (0.25, 0.25, Some(SplitEdge::Top)),
+        (0.75, 0.25, Some(SplitEdge::Top)),
+        (0.25, 0.75, Some(SplitEdge::Bottom)),
+        (0.75, 0.75, Some(SplitEdge::Bottom)),
+        (0.5, 0.5, None),
+        (-0.01, 0.5, None),
+        (1., 0.5, None),
+        (0.5, -0.01, None),
+    ] {
+        assert_eq!(
+            SplitEdge::at(r, r.x + x * r.width, r.y + y * r.height),
+            expected
+        );
+    }
+    assert_eq!(SplitEdge::at(r, f32::NAN, 100.), None);
+    assert_eq!(SplitEdge::at(Rect::default(), 0., 0.), None);
+    assert_eq!(
+        SplitEdge::Right.preview(r),
+        Rect::new(470., 80., 450., 300.)
+    );
+    assert_eq!(
+        SplitEdge::Bottom.preview(r),
+        Rect::new(20., 230., 900., 150.)
+    );
+}
+
+#[test]
+fn edge_splits_retain_tabs_focus_order_and_collapse_nested_sources() {
+    for edge in [
+        SplitEdge::Left,
+        SplitEdge::Right,
+        SplitEdge::Top,
+        SplitEdge::Bottom,
+    ] {
+        let mut w = Workspace::default();
+        let source = w.focused_pane().id;
+        let tab = w.focused_pane().active_tab;
+        let before = w.clone();
+        assert_eq!(w.split_tab(source, tab, source, edge), None);
+        assert_eq!(format!("{w:?}"), format!("{before:?}"));
+        w.add_tab("https://example.com/retained");
+        w.tab_mut(tab).unwrap().title = "Retained title".into();
+        let original = w.tab(tab).unwrap().clone();
+        let new = w.split_tab(source, tab, source, edge).unwrap();
+        assert_eq!(w.tab(tab), Some(&original));
+        assert_eq!(w.focused_pane().id, new);
+        assert_eq!(w.focused_pane().active_tab, tab);
+        let ids = w.active_space().layout.pane_ids();
+        assert_eq!(
+            ids,
+            if edge.is_first() {
+                vec![new, source]
+            } else {
+                vec![source, new]
+            }
+        );
+        let destination = w.split_focused(Axis::Vertical, "https://example.com/target");
+        let moved = w.split_tab(new, tab, destination, edge).unwrap();
+        assert!(w.pane(new).is_none());
+        assert_eq!(w.focused_pane().id, moved);
+        assert_eq!(w.tab(tab), Some(&original));
+        assert_eq!(w.active_space().panes.len(), 3);
+        assert_invariants(&w);
+        let before = w.clone();
+        assert_eq!(w.split_tab(source, tab, destination, edge), None);
+        assert_eq!(w.split_tab(moved, tab, u64::MAX, edge), None);
+        assert_eq!(format!("{w:?}"), format!("{before:?}"));
+        w.add_space("Other", "about:blank");
+        let before = w.clone();
+        assert_eq!(w.split_tab(moved, tab, destination, edge), None);
+        assert_eq!(format!("{w:?}"), format!("{before:?}"));
+    }
+}

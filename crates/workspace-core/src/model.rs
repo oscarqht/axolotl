@@ -1,4 +1,4 @@
-use crate::{Axis, Layout};
+use crate::{Axis, Layout, SplitEdge};
 
 pub type SpaceId = u64;
 pub type PaneId = u64;
@@ -229,6 +229,49 @@ impl Workspace {
             space.panes.remove(source_index);
         }
         true
+    }
+
+    /// Move the existing tab into a new half of the destination leaf atomically.
+    pub fn split_tab(
+        &mut self,
+        source: PaneId,
+        tab: TabId,
+        destination: PaneId,
+        edge: SplitEdge,
+    ) -> Option<PaneId> {
+        let space = self.active_space();
+        let source_pane = space.pane(source)?;
+        if !source_pane.tabs.iter().any(|t| t.id == tab)
+            || (source == destination && source_pane.tabs.len() == 1)
+            || space.pane(destination).is_none()
+        {
+            return None;
+        }
+        let id = self.allocate();
+        let split = self.allocate();
+        let space = self.active_space_mut();
+        let (first, second) = if edge.is_first() {
+            (id, destination)
+        } else {
+            (destination, id)
+        };
+        space.layout.replace_pane(
+            destination,
+            Layout::Split {
+                id: split,
+                axis: edge.axis(),
+                ratio: 0.5,
+                first: Box::new(Layout::Pane(first)),
+                second: Box::new(Layout::Pane(second)),
+            },
+        );
+        space.panes.push(Pane {
+            id,
+            tabs: Vec::new(),
+            active_tab: tab,
+        });
+        assert!(self.move_tab(source, tab, id, 0));
+        Some(id)
     }
 
     /// Closing the last tab replaces it with a fresh blank tab.

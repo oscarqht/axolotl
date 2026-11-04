@@ -6,7 +6,9 @@ use std::{
     rc::Rc,
     time::Duration,
 };
-use workspace_core::{Axis, Divider, PaneId, Rect, SpaceId, TabId, Workspace, normalize_url};
+use workspace_core::{
+    Axis, Divider, PaneId, Rect, SpaceId, SplitEdge, TabId, Workspace, normalize_url,
+};
 
 /// The chrome level is part of the target: the same page can appear in both strips.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +68,7 @@ pub struct BrowserApp {
     pub tab_drag: Option<TabDrag>,
     pub suppress_tab_click: bool,
     pub drag_preview: Option<crate::drag_preview::DragPreview>,
+    pub split_preview: Option<crate::split_preview::SplitPreview>,
     pub status: String,
     pub poll_count: u8,
 }
@@ -131,6 +134,7 @@ impl BrowserApp {
             tab_drag: None,
             suppress_tab_click: false,
             drag_preview: None,
+            split_preview: None,
             status: String::new(),
             poll_count: 0,
         }
@@ -142,6 +146,7 @@ impl BrowserApp {
 
     pub fn cancel_tab_drag(&mut self, cx: &mut Context<Self>) {
         self.drag_preview = None;
+        self.split_preview = None;
         self.host.request_redraw();
         if self.tab_drag.take().is_some() {
             cx.notify();
@@ -207,8 +212,14 @@ impl BrowserApp {
             let title = self
                 .model
                 .tab(drag.tab)
-                .map_or("New tab", |tab| tab.title.as_str());
-            match self.host.drag_preview(drag.tab, title, window) {
+                .map_or("New tab", |tab| tab.title.as_str())
+                .to_owned();
+            // Create the half-pane overlay first so the thumbnail remains above it.
+            match crate::split_preview::SplitPreview::new(window) {
+                Ok(preview) => self.split_preview = Some(preview),
+                Err(error) => self.report(Err(error)),
+            }
+            match self.host.drag_preview(drag.tab, &title, window) {
                 Ok(preview) => self.drag_preview = Some(preview),
                 Err(error) => self.report(Err(error)),
             }
@@ -217,6 +228,7 @@ impl BrowserApp {
             let result = preview.update(event.position, window.viewport_size());
             self.report(result);
         }
+        self.update_split_preview(window);
         if self.tab_drag_active() {
             self.host.request_redraw();
             cx.notify();
@@ -265,6 +277,45 @@ impl BrowserApp {
         })
     }
 
+    pub fn split_drop_target(
+        &self,
+        position: Point<Pixels>,
+        window: &Window,
+    ) -> Option<(PaneId, SplitEdge, Rect)> {
+        let drag = self.tab_drag.filter(|drag| drag.active)?;
+        let viewport = window.viewport_size();
+        let geometry = self.model.active_space().layout.geometry(
+            Rect::new(
+                0.,
+                crate::render::TOP,
+                f32::from(viewport.width),
+                (f32::from(viewport.height) - crate::render::TOP).max(0.),
+            ),
+            6.,
+            100.,
+        );
+        geometry.panes.iter().find_map(|pane| {
+            if pane.id == drag.source && self.model.pane(drag.source)?.tabs.len() < 2 {
+                return None;
+            }
+            let r = pane.bounds;
+            let content = Rect::new(r.x, r.y + 34., r.width, (r.height - 34.).max(0.));
+            let edge = SplitEdge::at(content, f32::from(position.x), f32::from(position.y))?;
+            Some((pane.id, edge, edge.preview(content)))
+        })
+    }
+
+    fn update_split_preview(&mut self, window: &Window) {
+        let bounds = self
+            .tab_drag
+            .and_then(|drag| self.split_drop_target(drag.position, window))
+            .map(|(_, _, r)| r);
+        if let Some(preview) = &self.split_preview {
+            let result = preview.update(bounds);
+            self.report(result);
+        }
+    }
+
     pub fn finish_tab_drag(
         &mut self,
         position: Option<Point<Pixels>>,
@@ -272,14 +323,24 @@ impl BrowserApp {
         cx: &mut Context<Self>,
     ) {
         self.drag_preview = None;
+        self.split_preview = None;
         self.host.request_redraw();
         let target = position.and_then(|position| self.tab_drop_target(position, window));
+        let split = position.and_then(|position| self.split_drop_target(position, window));
         if let Some(drag) = self.tab_drag.take() {
-            if let Some((pane, index)) = target
-                && self.model.move_tab(drag.source, drag.tab, pane, index)
-            {
+            let moved = if let Some((pane, index)) = target {
+                self.model.move_tab(drag.source, drag.tab, pane, index)
+            } else if let Some((pane, edge, _)) = split {
+                self.model
+                    .split_tab(drag.source, drag.tab, pane, edge)
+                    .is_some()
+            } else {
+                false
+            };
+            if moved {
                 self.sync_address(window, cx);
                 self.reveal_focused();
+                self.report(self.host.focus(drag.tab));
             }
             cx.notify();
         }
@@ -514,6 +575,7 @@ impl BrowserApp {
             );
             self.report(result);
         }
+        self.update_split_preview(window);
         let mut events = self.host.drain_events();
         self.poll_count = (self.poll_count + 1) % 12;
         if self.poll_count == 0 {

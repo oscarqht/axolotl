@@ -33,9 +33,15 @@ Dragging a page title to another pane's tab strip moves that same tab ID into
 its indicated slot and activates it. Moving the last tab removes its source pane
 and collapses the parent split; it does not create a replacement blank tab. The
 native view remains keyed by the same ID, preserving the document and history.
-Same-pane and cross-space drops are not docking targets. The drag starts after
-five logical pixels; Escape, window deactivation, outside release, and release
-over page content cancel it. Native surfaces remain visible during the drag.
+Cross-space drops and same-pane tab-strip drops are not docking targets.
+The drag starts after five logical pixels. Each pane's page content (excluding
+its 34-pixel tab strip) offers split targets in its outer thirds. Corner targets
+use the nearest normalized edge, preferring top/bottom on exact ties. A center
+or outside drop cancels. A sole-tab pane cannot split itself; multi-tab panes can.
+A valid edge drop replaces the target leaf with a nested 50/50 split, retaining
+the moved tab ID and native document, focusing it and collapsing an empty source.
+Escape and window deactivation abort the drag without layout changes.
+Native surfaces remain visible during the drag.
 A tab-sized placeholder occupies the destination insertion slot, using the same
 fixed widths, gaps and scroll offset as hit testing. The latest drag-event position
 is shared by the card and placeholder, including in the native smoke test.
@@ -107,6 +113,12 @@ During tab dragging and divider resizing, active pages remain visible and the
 normal geometry canvas continues updating their bounds. The shell retains the
 initial drag's mouse events; the native preview is offset from the cursor and
 flips at window edges so it cannot cover the drop position.
+
+The split placeholder is a translucent native Wry child above page surfaces,
+covering the selected half of the target's content. Its bounds and drop action
+use the same edge hit test. It hides in the center, over tab bars or outside valid
+panes, and is disposed on cancellation/drop. The thumbnail is created after this
+surface so it remains visible above the placeholder.
 
 The drag card is a separate native Wry child created after the page surfaces,
 placing it above their pixels. It displays an escaped title and a frozen PNG from

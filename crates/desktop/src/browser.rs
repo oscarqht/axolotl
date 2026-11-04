@@ -196,6 +196,12 @@ impl BrowserHost for WryHost {
             })
             .with_devtools(cfg!(debug_assertions))
             .with_accept_first_mouse(true)
+            // Apply on every document, including subframes on WKWebView and
+            // WebView2. Keep this separate from the privileged input bridge.
+            .with_initialization_script_for_main_only(
+                include_str!("../assets/hide-scrollbars.js"),
+                false,
+            )
             .with_initialization_script(input_bridge)
             .with_navigation_handler(move |url| {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)

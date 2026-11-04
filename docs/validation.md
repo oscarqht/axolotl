@@ -1,3 +1,34 @@
+# Hidden native tab scrollbars
+
+Run on 2026-11-05 in `bro-hide-tab-scrollbars` on macOS arm64 with Rust
+1.91.1 and Xcode 27.2.
+
+- Shared page-view initialization injects scrollbar-only CSS for each document
+  and subframe. Standard `scrollbar-width` and WebKit/Chromium scrollbar pseudo
+  elements hide both axes, without changing overflow, dimensions, or input
+  handling. New nested elements inherit the stylesheet's rules automatically.
+- Constructed stylesheets avoid inline-style CSP restrictions on current engines;
+  older engines fall back to a style element installed when the document root
+  exists. That fallback is subject to the website's inline-style CSP. Document
+  styles do not pierce encapsulated shadow roots or native engine controls.
+  Website-drawn scrollbar widgets remain outside scope.
+- All 19 unit tests passed. Formatting, whitespace checks, JavaScript syntax
+  checks, `cargo check --workspace --all-targets --all-features --locked`, and
+  strict Clippy with all targets/features passed. The smoke-enabled executable
+  built and the full native WKWebView smoke test passed.
+- New native smoke assertions check root and dynamically inserted nested
+  scrollbars, both-axis programmatic scrolling, unchanged nested overflow, and
+  absence of nested scrollbar gutters. They run in the initial tab, a new split
+  tab, after HTTPS navigation, and after reload into a new document. Existing
+  navigation/history, tab/split, docking, and retained-state checks also passed.
+- An additional JavaScript harness checked preservation of existing adopted
+  sheets and both immediate/deferred style-element fallback paths.
+- Windows WebView2 was not built or run on this macOS host. Subframe injection,
+  restrictive-CSP pages, and older-engine fallback were not exercised in a native
+  engine. OS wheel, trackpad, and keyboard scrolling and visual appearance while
+  scrolling remain manual checks; the native smoke test does not synthesize OS
+  input, and reported OS activation unavailable.
+
 # Windows spaces header controls
 
 Run on 2026-11-04 on Windows x64.

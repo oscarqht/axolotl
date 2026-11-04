@@ -63,6 +63,24 @@ async fn eval(host: &Host, tab: TabId, script: &str, cx: &mut AsyncWindowContext
     anyhow::bail!("Native web engine evaluation timed out")
 }
 
+async fn check_scrollbars(host: &Host, tab: TabId, cx: &mut AsyncWindowContext) -> Result<()> {
+    let result = eval(host, tab, include_str!("../assets/smoke-scrollbars.js"), cx).await?;
+    for check in [
+        "rootHidden",
+        "nestedHidden",
+        "rootScrolls",
+        "nestedScrolls",
+        "overflowPreserved",
+        "noNestedGutter",
+    ] {
+        ensure!(
+            result[check] == true,
+            "Scrollbar check {check} failed: {result}"
+        );
+    }
+    Ok(())
+}
+
 async fn wait_preview(
     view: &WeakEntity<BrowserApp>,
     title: &str,
@@ -186,6 +204,7 @@ async fn run(
         cx,
     )
     .await?;
+    check_scrollbars(&host, first, cx).await?;
     let mut checks = vec![
         "OS theme at startup; native light/dark appearance changes update shell and split borders",
         "real native web-engine document loaded",
@@ -228,6 +247,7 @@ async fn run(
             == "retained first page",
         "Split lost existing page state"
     );
+    check_scrollbars(&host, second, cx).await?;
     host.focus(second)?;
     let focus = eval(&host, second, "document.hasFocus()", cx).await?;
     checks.push(if focus == true {
@@ -253,6 +273,23 @@ async fn run(
             == "retained first page",
         "Navigation affected adjacent page"
     );
+    check_scrollbars(&host, second, cx).await?;
+    // A marker ensures the reload created a new document before checking again.
+    eval(&host, second, "window.axolotlBeforeReload = true", cx).await?;
+    host.reload(second)?;
+    for _ in 0..50 {
+        pause(cx).await;
+        if eval(&host, second, "!window.axolotlBeforeReload", cx).await? == true {
+            break;
+        }
+    }
+    wait_title(&host, second, "Example Domain", cx).await?;
+    ensure!(
+        eval(&host, second, "!window.axolotlBeforeReload", cx).await? == true,
+        "Reload did not replace the document"
+    );
+    check_scrollbars(&host, second, cx).await?;
+    checks.push("native scrollbars hidden in existing/new tabs and after navigation/reload; root and nested elements still scroll on both axes");
     host.navigate(second, "https://example.com/?axolotl=history")?;
     wait_title(&host, second, "Example Domain", cx).await?;
     host.back(second)?;

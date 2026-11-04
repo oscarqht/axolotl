@@ -1,5 +1,6 @@
 mod app;
 mod browser;
+mod chrome_theme;
 mod drag_preview;
 mod render;
 #[cfg(feature = "smoke")]
@@ -8,7 +9,7 @@ mod tab_menu;
 
 use app::BrowserApp;
 use gpui::{prelude::*, *};
-use gpui_component::{Root, Theme, ThemeMode};
+use gpui_component::Root;
 
 actions!(
     axolotl,
@@ -27,7 +28,6 @@ fn main() {
     Application::new().run(|cx: &mut App| {
         eprintln!("Axolotl: platform launched");
         gpui_component::init(cx);
-        Theme::change(ThemeMode::Dark, None, cx);
         cx.on_action(|_: &Quit, cx| cx.quit());
         let modifier = if cfg!(target_os = "macos") {
             "cmd"

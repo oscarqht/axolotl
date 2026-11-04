@@ -51,6 +51,7 @@ impl NativeTabMenu {
 .menu{{position:absolute;left:clamp(4px,{x}px,calc(100vw - 232px));top:clamp(38px,{y}px,calc(100vh - 146px));width:224px;padding:4px;border:1px solid #465366;border-radius:8px;background:#25303d;box-shadow:0 12px 28px #0004}}
 button{{display:block;width:100%;height:32px;padding:0 8px;border:0;border-radius:4px;background:transparent;color:#dde5ed;text-align:left;font:12px -apple-system,Segoe UI,sans-serif;cursor:pointer}}
 button:hover,button:focus-visible{{background:#3a4859;outline:none}}
+@media(prefers-color-scheme:light){{.menu{{background:#fff;border-color:#c9d2dc;box-shadow:0 12px 28px #24324026}}button{{color:#243240}}button:hover,button:focus-visible{{background:#dae2e9}}}}
 </style><div class="menu" role="menu"><button role="menuitem" data-action="new">{sibling}</button><button role="menuitem" data-action="horizontal">Split horizontally  ↔</button><button role="menuitem" data-action="vertical">Split vertically  ↕</button><button role="menuitem" data-action="close">{close}</button></div>
 <script>
 const send=window.ipc.postMessage.bind(window.ipc);

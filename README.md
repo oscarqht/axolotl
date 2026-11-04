@@ -50,6 +50,8 @@ they have not been run on this macOS host.
 - The native titlebar and separate navigation toolbar are hidden. On macOS,
   native traffic lights sit before the first space tab. Drag the empty area to
   the right of the space tabs to move the window; resize from its edges.
+- Tab bars, split borders, inline URL fields, dropdowns and drag cards follow the
+  OS light/dark appearance and update while the app is running.
 - Space tabs show the title of their focused page; each pane has its own page
   tabs. Double-click either title to edit that page's URL in place. Enter visits,
   Escape cancels, and switching tabs, spaces, panes, or leaving the input cancels

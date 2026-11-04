@@ -162,3 +162,13 @@ adapter, platform lifecycle integration, and touch interactions. Phone layouts
 may expose one pane at a time while retaining the shared tree. This prototype
 does not establish GPUI mobile support or ship Android/iOS adapters. Persistence
 and schema/version migration also remain future work.
+
+## System appearance
+
+The component theme initializes from OS appearance rather than forcing dark mode.
+`BrowserApp` observes native window appearance changes, synchronizes the component
+theme, and requests shell presentation. `ChromeColors` supplies matching light and
+dark colors for space/page tabs, text, focus and insertion indicators, split
+dividers, and shell backgrounds. Inline inputs use the same component theme.
+Native dropdowns and preview cards use `prefers-color-scheme` media queries.
+Web pages retain their own appearance rules.

@@ -108,6 +108,13 @@ impl BrowserApp {
             }
         })
         .detach();
+        gpui_component::Theme::sync_system_appearance(Some(window), cx);
+        cx.observe_window_appearance(window, |this, window, cx| {
+            gpui_component::Theme::sync_system_appearance(Some(window), cx);
+            this.host.request_redraw();
+            cx.notify();
+        })
+        .detach();
         Self {
             model: Workspace::new("about:blank"),
             host: Rc::new(WryHost::new()),

@@ -1,3 +1,19 @@
+# System appearance validation
+
+Run on 2026-11-04 on macOS in `bro-tab-drag-preview`.
+
+- Native smoke verifies startup theme equals OS window appearance, then applies
+  window-local AppKit dark/light/dark overrides. Real appearance notifications
+  update the component theme and shell/divider palettes; clearing the override
+  returns to OS appearance. No system preference is changed by the test.
+- Desktop screenshots confirmed readable light and dark tab bars in the same
+  running app. The extended `--smoke-hold-theme` visual run later failed the
+  existing URL-cancellation fixture after inspection; the regular unattended
+  smoke passed. This visual mode is diagnostic, not a clean full-suite result.
+- Formatting, 13 unit tests, and all-target/all-feature Clippy passed.
+- Windows native appearance notifications and high-contrast modes remain
+  unverified on this Mac.
+
 # Dropdown over live pages validation
 
 Run on 2026-11-04 on macOS in `bro-tab-drag-preview`.

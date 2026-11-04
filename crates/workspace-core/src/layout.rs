@@ -7,6 +7,74 @@ pub enum Axis {
     Vertical,
 }
 
+/// Side selected by a page-content edge drop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplitEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl SplitEdge {
+    pub fn axis(self) -> Axis {
+        match self {
+            Self::Left | Self::Right => Axis::Horizontal,
+            _ => Axis::Vertical,
+        }
+    }
+
+    pub fn is_first(self) -> bool {
+        matches!(self, Self::Left | Self::Top)
+    }
+
+    /// Normalized distances make corner selection independent of pane aspect ratio.
+    pub fn at(bounds: Rect, x: f32, y: f32) -> Option<Self> {
+        if bounds.width <= 0. || bounds.height <= 0. || !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        let x = (x - bounds.x) / bounds.width;
+        let y = (y - bounds.y) / bounds.height;
+        if !(0. ..1.).contains(&x) || !(0. ..1.).contains(&y) {
+            return None;
+        }
+        let dx = x.min(1. - x);
+        let dy = y.min(1. - y);
+        if dx > 1. / 3. && dy > 1. / 3. {
+            return None;
+        }
+        Some(if dy <= dx {
+            if y < 0.5 {
+                Self::Top
+            } else {
+                Self::Bottom
+            }
+        } else if x < 0.5 {
+            Self::Left
+        } else {
+            Self::Right
+        })
+    }
+
+    pub fn preview(self, mut bounds: Rect) -> Rect {
+        match self {
+            Self::Left | Self::Right => {
+                bounds.width /= 2.;
+                if self == Self::Right {
+                    bounds.x += bounds.width;
+                }
+            }
+            Self::Top | Self::Bottom => {
+                bounds.height /= 2.;
+                if self == Self::Bottom {
+                    bounds.y += bounds.height;
+                }
+            }
+        }
+        bounds
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Layout {
     Pane(PaneId),

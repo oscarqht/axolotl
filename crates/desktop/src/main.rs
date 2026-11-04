@@ -5,6 +5,7 @@ mod drag_preview;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;
+mod split_preview;
 mod tab_menu;
 
 use app::BrowserApp;

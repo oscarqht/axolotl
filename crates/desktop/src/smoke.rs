@@ -675,7 +675,12 @@ async fn run(
             window,
             cx,
         );
-        app.finish_tab_drag(Some(point(px(30.), px(200.))), window, cx);
+        let center = point(
+            window.viewport_size().width / 4.,
+            px(crate::render::TOP + 34.)
+                + (window.viewport_size().height - px(crate::render::TOP + 34.)) / 2.,
+        );
+        app.finish_tab_drag(Some(center), window, cx);
         ensure!(
             app.model.pane(source).is_some(),
             "Page-content release moved tab"
@@ -742,5 +747,154 @@ async fn run(
     checks
         .push("tab drag threshold, outside/content drop and explicit cancellation preserve layout");
     checks.push("docking retains native DOM identity, form state, URL and back/forward history; activates insertion and expands emptied source");
+    // Exercise actual native pages through the same split drag handlers on every side.
+    for edge in [
+        workspace_core::SplitEdge::Left,
+        workspace_core::SplitEdge::Right,
+        workspace_core::SplitEdge::Top,
+        workspace_core::SplitEdge::Bottom,
+    ] {
+        let (source, destination, position) = view.update_in(cx, |app, window, cx| {
+            let source = app.model.focused_pane().id;
+            // First iteration splits within the multi-tab source; later iterations
+            // move its sole tab to a nested target and collapse the empty source.
+            let destination = if edge == workspace_core::SplitEdge::Left {
+                source
+            } else {
+                destination
+            };
+            let viewport = window.viewport_size();
+            let geometry = app.model.active_space().layout.geometry(
+                workspace_core::Rect::new(
+                    0.,
+                    crate::render::TOP,
+                    f32::from(viewport.width),
+                    f32::from(viewport.height) - crate::render::TOP,
+                ),
+                6.,
+                100.,
+            );
+            let r = geometry
+                .panes
+                .iter()
+                .find(|p| p.id == destination)
+                .unwrap()
+                .bounds;
+            let content = workspace_core::Rect::new(r.x, r.y + 34., r.width, r.height - 34.);
+            let (x, y) = match edge {
+                workspace_core::SplitEdge::Left => (0.1, 0.5),
+                workspace_core::SplitEdge::Right => (0.9, 0.5),
+                workspace_core::SplitEdge::Top => (0.5, 0.1),
+                workspace_core::SplitEdge::Bottom => (0.5, 0.9),
+            };
+            let position = point(
+                px(content.x + content.width * x),
+                px(content.y + content.height * y),
+            );
+            let origin = point(px(r.x + 60.), px(r.y + 16.));
+            app.arm_tab_drag(source, moved, origin);
+            app.update_tab_drag(
+                &MouseMoveEvent {
+                    position,
+                    pressed_button: Some(MouseButton::Left),
+                    ..Default::default()
+                },
+                window,
+                cx,
+            );
+            ensure!(
+                app.split_drop_target(position, window)
+                    .map(|(p, e, _)| (p, e))
+                    == Some((destination, edge)),
+                "Wrong edge target"
+            );
+            ensure!(
+                app.split_preview.is_some(),
+                "Missing native split placeholder"
+            );
+            Ok((source, destination, position))
+        })??;
+        pause(cx).await;
+        ensure!(
+            eval(
+                &host,
+                moved,
+                "document.querySelector('input').value === 'docked state' && !!window.dockIdentity",
+                cx
+            )
+            .await?
+                == true,
+            "Preview changed native document"
+        );
+        if std::env::args().any(|arg| arg == "--smoke-hold-split") {
+            eprintln!("AXOLOTL_SPLIT_READY: {edge:?}");
+            for _ in 0..50 {
+                pause(cx).await;
+            }
+        }
+        let before = view.update_in(cx, |app, _, _| format!("{:?}", app.model))?;
+        cx.update(|window, cx| {
+            window.dispatch_action(Box::new(gpui_component::input::Escape), cx)
+        })?;
+        pause(cx).await;
+        view.update_in(cx, |app, window, cx| {
+            ensure!(app.tab_drag.is_none(), "Escape did not abort drag");
+            // A mouse-up after Escape must be inert.
+            app.finish_tab_drag(Some(position), window, cx);
+            ensure!(
+                format!("{:?}", app.model) == before,
+                "Cancel changed layout"
+            );
+            ensure!(app.split_preview.is_none(), "Cancel retained placeholder");
+            app.arm_tab_drag(source, moved, position - point(px(10.), px(10.)));
+            app.update_tab_drag(
+                &MouseMoveEvent {
+                    position,
+                    pressed_button: Some(MouseButton::Left),
+                    ..Default::default()
+                },
+                window,
+                cx,
+            );
+            app.finish_tab_drag(Some(position), window, cx);
+            ensure!(
+                app.active_tab() == moved && app.model.focused_pane().id != destination,
+                "Split did not focus moved tab"
+            );
+            if source != destination {
+                ensure!(
+                    app.model.pane(source).is_none(),
+                    "Split retained empty source"
+                );
+            }
+            ensure!(app.split_preview.is_none(), "Drop retained placeholder");
+            Ok(())
+        })??;
+        pause(cx).await;
+        ensure!(
+            eval(
+                &host,
+                moved,
+                "document.querySelector('input').value === 'docked state' && !!window.dockIdentity",
+                cx
+            )
+            .await?
+                == true,
+            "Split recreated document"
+        );
+        host.back(moved)?;
+        pause(cx).await;
+        ensure!(
+            !host.current_url(moved)?.contains("dock=history"),
+            "Split lost back history"
+        );
+        host.forward(moved)?;
+        pause(cx).await;
+        ensure!(
+            host.current_url(moved)?.contains("dock=history"),
+            "Split lost forward history"
+        );
+    }
+    checks.push("all four native edge splits, same-pane and nested cross-pane moves, empty-source collapse, cancellation and retained DOM/form/history");
     Ok(checks)
 }

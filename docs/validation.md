@@ -1,3 +1,36 @@
+# Tab edge split validation
+
+Run on 2026-11-04 on macOS in `bro-tab-edge-splits`.
+
+- All 15 workspace unit tests, formatting, whitespace checks and all-target,
+  all-feature Clippy passed. Added core cases cover normalized corner distances,
+  vertical tie preference, center/outside rejection, all four edge orders,
+  same-pane multi-tab splitting, sole-tab rejection, nested source collapse,
+  focus/identity retention and invalid/cross-space atomic rejection.
+- Native WKWebView smoke passed, including all four split directions through
+  the app's drag handlers, same-pane and nested cross-pane movement, empty-source
+  collapse, and retained DOM identity, form state, URL and back/forward history.
+  It dispatches the real Escape action during each split preview and verifies
+  that the later mouse release has no effect. Existing tab-strip docking passes.
+- An isolated, ad hoc signed app was exercised with actual desktop input. A
+  typed value `Retained through edge splits` survived left, right, top and bottom
+  drops. Cross-pane moves collapsed their empty sources. A center drop and a
+  sole-tab self-edge drop left the layout unchanged. Adding a second tab then
+  dragging it to its own content edge created a nested split with the value
+  retained and the moved page focused. These drag outcomes appeared without
+  zoom/restore.
+- Held smoke screenshots confirmed a translucent right-half and bottom-half
+  placeholder above live page pixels, with the thumbnail above the placeholder.
+  The desktop adapter performs each OS drag atomically; it cannot pause a held
+  OS drag or inject Escape midway. Held-preview visuals and Escape routing were
+  therefore checked with the native smoke, separately from desktop drops.
+- The existing initial/occluded compositor limitation was encountered in the
+  first diagnostic held run; zooming exposed the current chrome. A subsequent
+  held run displayed the overlays directly. This change does not claim a general
+  fix for the baseline foreground/occlusion behavior.
+- Windows native overlay layering, DPI and desktop interaction remain untested
+  on this Mac.
+
 # System appearance validation
 
 Run on 2026-11-04 on macOS in `bro-tab-drag-preview`.

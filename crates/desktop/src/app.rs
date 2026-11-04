@@ -41,6 +41,14 @@ pub enum Command {
     NextPane,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TabDrag {
+    pub source: PaneId,
+    pub tab: TabId,
+    pub origin: Point<Pixels>,
+    pub active: bool,
+}
+
 pub struct BrowserApp {
     pub model: Workspace,
     pub host: Rc<dyn BrowserHost>,
@@ -53,6 +61,8 @@ pub struct BrowserApp {
     pub space_scroll: ScrollHandle,
     pub pane_scrolls: HashMap<PaneId, ScrollHandle>,
     pub dragging: Option<Divider>,
+    pub tab_drag: Option<TabDrag>,
+    pub suppress_tab_click: bool,
     pub status: String,
     pub poll_count: u8,
 }
@@ -89,6 +99,12 @@ impl BrowserApp {
             }
         })
         .detach();
+        cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() {
+                this.cancel_tab_drag(cx);
+            }
+        })
+        .detach();
         Self {
             model: Workspace::new("about:blank"),
             host: Rc::new(WryHost::new()),
@@ -101,8 +117,116 @@ impl BrowserApp {
             space_scroll: ScrollHandle::new(),
             pane_scrolls: HashMap::new(),
             dragging: None,
+            tab_drag: None,
+            suppress_tab_click: false,
             status: String::new(),
             poll_count: 0,
+        }
+    }
+
+    pub fn tab_drag_active(&self) -> bool {
+        self.tab_drag.is_some_and(|drag| drag.active)
+    }
+
+    pub fn cancel_tab_drag(&mut self, cx: &mut Context<Self>) {
+        if self.tab_drag.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    pub fn arm_tab_drag(&mut self, source: PaneId, tab: TabId, origin: Point<Pixels>) {
+        self.suppress_tab_click = false;
+        self.tab_drag = Some(TabDrag {
+            source,
+            tab,
+            origin,
+            active: false,
+        });
+    }
+
+    pub fn update_tab_drag(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(drag) = self.tab_drag else { return };
+        if !event.dragging() {
+            self.cancel_tab_drag(cx);
+            return;
+        }
+        let delta = event.position - drag.origin;
+        if !drag.active && (f32::from(delta.x).powi(2) + f32::from(delta.y).powi(2)) >= 25. {
+            self.cancel_edit(window, cx);
+            self.menu = None;
+            self.tab_drag.as_mut().unwrap().active = true;
+            self.suppress_tab_click = true;
+            self.report(self.host.focus_parent(self.active_tab()));
+            self.focus.focus(window);
+            self.report(self.host.hide_all());
+        }
+        if self.tab_drag_active() {
+            cx.notify();
+        }
+    }
+
+    /// Hit testing shares the exact fixed tab width/gap and scroll offset with rendering.
+    pub fn tab_drop_target(
+        &self,
+        position: Point<Pixels>,
+        window: &Window,
+    ) -> Option<(PaneId, usize)> {
+        let drag = self.tab_drag.filter(|drag| drag.active)?;
+        let viewport = window.viewport_size();
+        let geometry = self.model.active_space().layout.geometry(
+            Rect::new(
+                0.,
+                crate::render::TOP,
+                f32::from(viewport.width),
+                (f32::from(viewport.height) - crate::render::TOP).max(0.),
+            ),
+            6.,
+            100.,
+        );
+        geometry.panes.iter().find_map(|pane| {
+            let r = pane.bounds;
+            let x = f32::from(position.x);
+            let y = f32::from(position.y);
+            if pane.id == drag.source
+                || x < r.x + 4.
+                || x >= r.x + r.width - 4.
+                || y < r.y
+                || y >= r.y + 34.
+            {
+                return None;
+            }
+            let offset = self
+                .pane_scrolls
+                .get(&pane.id)
+                .map_or(0., |s| f32::from(s.offset().x));
+            let count = self.model.pane(pane.id)?.tabs.len();
+            Some((
+                pane.id,
+                crate::render::tab_insertion_index(x - r.x - 4. - offset, count),
+            ))
+        })
+    }
+
+    pub fn finish_tab_drag(
+        &mut self,
+        position: Option<Point<Pixels>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let target = position.and_then(|position| self.tab_drop_target(position, window));
+        if let Some(drag) = self.tab_drag.take() {
+            if let Some((pane, index)) = target
+                && self.model.move_tab(drag.source, drag.tab, pane, index)
+            {
+                self.sync_address(window, cx);
+                self.reveal_focused();
+            }
+            cx.notify();
         }
     }
 
@@ -390,7 +514,7 @@ impl BrowserApp {
                     let Some(pane) = pane else {
                         continue;
                     };
-                    if self.menu.is_some() || self.dragging.is_some() {
+                    if self.menu.is_some() || self.dragging.is_some() || self.tab_drag_active() {
                         continue;
                     }
                     self.model.focus_pane(pane);
@@ -456,6 +580,7 @@ impl BrowserApp {
             if !visible.iter().any(|(tab, _)| tab == id)
                 || self.menu.is_some()
                 || self.dragging.is_some()
+                || self.tab_drag_active()
             {
                 self.report(self.host.show(*id, false));
             }
@@ -463,10 +588,10 @@ impl BrowserApp {
         for (id, url) in visible {
             let result = self.host.ensure(id, &url, window);
             self.report(result);
-            self.report(
-                self.host
-                    .show(id, self.menu.is_none() && self.dragging.is_none()),
-            );
+            self.report(self.host.show(
+                id,
+                self.menu.is_none() && self.dragging.is_none() && !self.tab_drag_active(),
+            ));
         }
     }
 }

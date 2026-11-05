@@ -34,3 +34,24 @@ test('opaque WebM is left native', () => {
   bytes[alphaMode + 3] = 0;
   assert.equal(demux(bytes), null);
 });
+for (const [codec, name] of [['vp8', 'alpha-vp8.webm'], ['vp9', 'alpha-vp9.webm']]) {
+  test(`bundled ${codec} software decoder preserves alpha without WebCodecs`, async () => {
+    const base = path.join(__dirname, '../crates/desktop/assets/vendor/ogv/ogv-decoder-video-' + codec + '-wasm');
+    const track = demux(fixture(name));
+    const decoder = await require(base + '.js')({wasmBinary: fs.readFileSync(base + '.wasm'), videoFormat: {width: 160, height: 120, displayWidth: 160, displayHeight: 120}});
+    decoder.init(() => {});
+    try {
+      for (const {data} of track.frames) {
+        let valid;
+        decoder.processFrame(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), ok => { valid = ok; });
+        assert.equal(valid, 1);
+        const frame = decoder.frameBuffer;
+        const alpha = (x, y) => frame.y.bytes[(y + frame.format.cropTop) * frame.y.stride + x + frame.format.cropLeft];
+        assert.ok(alpha(0, 0) < 8);
+        assert.ok(alpha(125, 50) >= 120 && alpha(125, 50) <= 136);
+        assert.ok(alpha(85, 50) > 245);
+        decoder.recycleFrame(frame); decoder.frameBuffer = null;
+      }
+    } finally { decoder._ogv_video_decoder_destroy(); }
+  });
+}

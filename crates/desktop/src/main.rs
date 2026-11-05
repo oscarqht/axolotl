@@ -75,6 +75,8 @@ mod space_drag;
 mod space_menu;
 mod space_shortcuts;
 mod split_preview;
+#[cfg(target_os = "macos")]
+mod webm_alpha;
 mod window_state;
 
 use app::BrowserApp;

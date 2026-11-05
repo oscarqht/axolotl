@@ -1,0 +1,44 @@
+<!doctype html><meta charset="utf-8"><title>WebM texture regression</title>
+<style>body{font:16px system-ui;color:white;background:#192834;margin:24px}.row{display:flex;gap:16px;flex-wrap:wrap}section{width:300px}canvas{width:96px;height:160px;background:repeating-conic-gradient(#eee 0% 25%,#638671 0% 50%) 0/20px 20px}h2{font-size:14px}p{margin:4px}</style>
+<h1>Detached video → Canvas / WebGL / WebGL2</h1><p>All backgrounds must show the checkerboard.</p><div class="row" id="tiles"></div>
+<script>
+window.textureChecks=null; window.textureFailure=null; window.textureVideos=[];
+const real=new URLSearchParams(location.search).has('real');
+const clips=real?['character-idle','character-reading','character-sleep','character-typing','character-typing-variant','character-wave','dog-idle','dog-sleep-1','dog-sleep-2'].map(n=>['/real-assets/'+n+'.webm',n]):[['alpha-vp9.webm','VP9'],['alpha-vp8.webm','VP8']];
+function gpu(canvas,type) {
+ const gl=canvas.getContext(type,{alpha:true,premultipliedAlpha:false,preserveDrawingBuffer:true}); if(!gl)throw Error(type+' unavailable');
+ const program=gl.createProgram();
+ for(const [kind,code] of [[gl.VERTEX_SHADER,'attribute vec2 p;varying vec2 uv;void main(){uv=vec2((p.x+1.)/2.,(1.-p.y)/2.);gl_Position=vec4(p,0.,1.);}'],[gl.FRAGMENT_SHADER,'precision mediump float;varying vec2 uv;uniform sampler2D tex;void main(){gl_FragColor=texture2D(tex,uv);}']]){const shader=gl.createShader(kind);gl.shaderSource(shader,code);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));gl.attachShader(program,shader);}
+ gl.linkProgram(program);gl.useProgram(program);gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);const position=gl.getAttribLocation(program,'p');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
+ gl.bindTexture(gl.TEXTURE_2D,gl.createTexture());gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+ let initialized=false,width=0,height=0;
+ return video=>{if(initialized&&width===video.videoWidth&&height===video.videoHeight)gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,video);else{gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);initialized=true;width=video.videoWidth;height=video.videoHeight;}gl.drawArrays(gl.TRIANGLES,0,6);const pixel=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);const error=gl.getError();if(error)throw Error(type+' error '+error);return pixel[3];};
+}
+(async()=>{
+ const entries=[];
+ const shared1=document.createElement('canvas'),shared2=document.createElement('canvas');shared1.width=shared2.width=160;shared1.height=shared2.height=real?284:120;const draw1=gpu(shared1,'webgl'),draw2=gpu(shared2,'webgl2');
+ for(const [src,name] of clips){
+  const video=document.createElement('video');video.muted=true;video.loop=true;video.playsInline=true;video.src=src;textureVideos.push(video); // deliberately never inserted into DOM
+  const section=document.createElement('section');section.innerHTML='<h2>'+name+'</h2><p>Canvas · GL1 · GL2</p>';tiles.append(section);
+  const canvas=document.createElement('canvas');canvas.width=160;canvas.height=real?284:120;section.append(canvas);const context=canvas.getContext('2d',{willReadFrequently:true});
+  const gl1=document.createElement('canvas'),gl2=document.createElement('canvas');gl1.width=gl2.width=160;gl1.height=gl2.height=canvas.height;section.append(gl1,gl2);
+  const preview1=gl1.getContext('2d'),preview2=gl2.getContext('2d');
+  entries.push({video,name,context,preview1,preview2,canvas}); await video.play();
+ }
+ let previous=[]; window.textureChanges=0;
+ function frame(){try{
+  const checks=[];
+  for(const {video,name,context,preview1,preview2,canvas} of entries){
+   if(video.readyState<2)continue; context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(video,0,0,canvas.width,canvas.height);
+   const rgba=context.getImageData(0,0,canvas.width,canvas.height).data;
+   let opaque=0,signature=2166136261;for(let i=3;i<rgba.length;i+=4)if(rgba[i]>245)opaque++;for(let i=0;i<rgba.length;i+=64)signature=Math.imul(signature^rgba[i]^rgba[i+3],16777619);
+   const alpha1=draw1(video),alpha2=draw2(video);preview1.clearRect(0,0,160,canvas.height);preview2.clearRect(0,0,160,canvas.height);preview1.drawImage(shared1,0,0);preview2.drawImage(shared2,0,0);
+   checks.push({name,canvas:rgba[3],gl:alpha1,gl2:alpha2,opaque,signature,detached:!video.isConnected,time:video.currentTime});
+  }
+  window.textureChecks=checks;
+  if(checks.length===clips.length&&previous.length&&checks.some((v,i)=>v.signature!==previous[i]))window.textureChanges++;
+  previous=checks.map(v=>v.signature);requestAnimationFrame(frame);
+ }catch(e){window.textureFailure=String(e.stack||e);}}
+ frame();
+})().catch(e=>window.textureFailure=String(e.stack||e));
+</script>

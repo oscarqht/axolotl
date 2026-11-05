@@ -424,12 +424,12 @@ impl BrowserHost for WryHost {
         let notifications = include_str!("../assets/notifications.js").replace("__NONCE__", &nonce);
         let start_url = html_data_url(START_HTML);
         #[cfg(target_os = "macos")]
-        let webm_alpha = include_str!("../assets/webm-alpha.js");
+        let webm_alpha = crate::webm_alpha::script();
         #[cfg(not(target_os = "macos"))]
-        let webm_alpha = "";
+        let webm_alpha = String::new();
         #[cfg(feature = "smoke")]
         let webm_alpha = if std::env::args().any(|arg| arg == "--smoke-video-baseline") {
-            ""
+            String::new()
         } else {
             webm_alpha
         };

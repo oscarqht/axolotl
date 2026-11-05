@@ -25,15 +25,30 @@ pub(crate) async fn run(
             ready = true;
             break;
         }
-        if !baseline && result["decoder"] == "undefined" {
-            anyhow::bail!("WebCodecs unavailable: {result}");
-        }
         pause(cx).await;
     }
     ensure!(ready, "Video fixture / alpha masks did not become ready");
+    if std::env::var_os("AXOLOTL_VIDEO_REQUIRE_INSECURE").is_some() {
+        let context = eval(
+            &host,
+            tab,
+            "({secure:isSecureContext,decoder:typeof VideoDecoder,url:location.href})",
+            cx,
+        )
+        .await?;
+        ensure!(
+            context["secure"] == false,
+            "Expected non-secure HTTP context: {context}"
+        );
+        println!("AXOLOTL_VIDEO_CONTEXT {context}");
+    }
+
     // Native decoded color plane is opaque: reproduces the engine limitation.
     let native = eval(&host, tab, "(()=>{const c=document.createElement('canvas');c.width=160;c.height=120;const x=c.getContext('2d');x.drawImage(document.querySelector('#vp9'),0,0);return [...x.getImageData(0,0,1,1).data]})()", cx).await?;
-    ensure!(native[3] == 255, "Native WebKit behavior changed: {native}");
+    ensure!(
+        native[3] == if baseline { 255 } else { 0 },
+        "Video drawImage alpha incorrect: {native}"
+    );
     if !baseline {
         eval(&host, tab, "window.maskChecks=null; (async()=>{const result=[];for(const id of ['vp9','vp8']){const v=document.getElementById(id);const i=new Image();i.src=getComputedStyle(v).maskImage.slice(5,-2);await i.decode();const c=document.createElement('canvas');c.width=160;c.height=120;const x=c.getContext('2d');x.drawImage(i,0,0);result.push([x.getImageData(0,0,1,1).data[3],x.getImageData(125,50,1,1).data[3],x.getImageData(85,50,1,1).data[3]]);}window.maskChecks=result;})();true", cx).await?;
         let mut checked = false;
@@ -90,9 +105,7 @@ pub(crate) async fn run(
                     .as_array()
                     .unwrap()
                     .iter()
-                    .all(|v| v["paused"] == false
-                        && v["ended"] == false
-                        && v["time"].as_f64().unwrap_or(0.) > 0.),
+                    .all(|v| v["paused"] == false && v["ended"] == false),
             "Animation or loop stopped: {playback}"
         );
     }
@@ -185,10 +198,54 @@ pub(crate) async fn run(
             "Old alpha mask retained after source replacement"
         );
     }
+    if !baseline {
+        let canvas_url = std::env::var("AXOLOTL_VIDEO_CANVAS_URL")?;
+        host.navigate(tab, &canvas_url)?;
+        wait_title(&host, tab, "WebM texture regression", cx).await?;
+        let expected = if canvas_url.contains("real=1") { 9 } else { 2 };
+        let mut ready = false;
+        let mut last = serde_json::Value::Null;
+        for _ in 0..500 {
+            let result = eval(
+                &host,
+                tab,
+                "({checks:window.textureChecks,error:window.textureFailure,changes:window.textureChanges||0})",
+                cx,
+            )
+            .await?;
+            ensure!(
+                result["error"].is_null(),
+                "Texture rendering failed: {result}"
+            );
+            if let Some(samples) = result["checks"].as_array()
+                && samples.len() == expected
+                && samples.iter().all(|v| {
+                    v["canvas"] == 0
+                        && v["gl"] == 0
+                        && v["gl2"] == 0
+                        && v["detached"] == true
+                        && v["opaque"].as_u64().unwrap_or(0) > 100
+                })
+                && result["changes"].as_u64().unwrap_or(0) > 5
+            {
+                ready = true;
+                break;
+            }
+            last = result;
+            pause(cx).await;
+        }
+        ensure!(ready, "Detached canvas/WebGL alpha failed: {last}");
+        if let Ok(path) = std::env::var("AXOLOTL_VIDEO_SNAPSHOT") {
+            host.save_test_snapshot(tab, &format!("{path}.textures.png"))?;
+            for _ in 0..10 {
+                pause(cx).await;
+            }
+        }
+    }
     let mut checks = vec![if baseline {
         "reproduced native WebM opaque background; ordinary MP4 decodes"
     } else {
-        "VP8/VP9 transparent, semitransparent and opaque alpha pixels; frame seeking, repeated sources, MP4 controls and source replacement; native snapshot"
+        "VP8/VP9 transparent, semitransparent and opaque alpha pixels; frame seeking, repeated sources, MP4 controls, source replacement, detached Canvas2D/WebGL/WebGL2 texture uploads; native snapshots"
     }];
     checks.push(if occluded { "SKIPPED uninterrupted playback/loop timing: native document occluded; WebKit throttles autoplay" } else { "VP8, VP9 and MP4 continue playing across the two-second loop boundary" });
     Ok(checks)

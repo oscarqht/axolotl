@@ -178,7 +178,8 @@ state; `--smoke-test` never reads or writes the real profile.
 
 On macOS, decorative VP8/VP9 WebM animations receive an alpha compatibility
 fallback so transparent regions reveal the page beneath them. It preserves the
-original video playback API and shares masks across repeated assets. See
+original video playback API, supports canvas/WebGL video textures and HTTP pages,
+and shares masks across repeated assets. See
 [transparent WebM support](docs/webm-alpha-macos.md) for supported sources,
 resource limits, native before/after snapshots, and the regression runner.
 

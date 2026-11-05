@@ -1,9 +1,9 @@
-// WebKit drops WebM BlockAdditional alpha. Decode that elementary stream with
-// WebCodecs, then mask the *original* video, retaining its layout and media API.
+// WebKit drops WebM BlockAdditional alpha. Decode that stream with bundled
+// libvpx, mask DOM videos, and composite RGBA for canvas/WebGL video uploads.
 // No native fetch/IPC: CSP, same-origin and CORS continue to apply.
 (() => {
   'use strict';
-  const MAX_BYTES = 32 * 1024 * 1024, MAX_PIXELS = 32 * 1024 * 1024;
+  const MAX_BYTES = 32 * 1024 * 1024, MAX_PIXELS = 64 * 1024 * 1024;
   function demux(bytes) {
     const data = new Uint8Array(bytes);
     if (data.length > MAX_BYTES) throw Error('WebM too large');
@@ -99,9 +99,26 @@
     return frames.length ? {...track, frames} : null;
   }
   if (typeof module === 'object' && module.exports) { module.exports = {demux}; return; }
-  if (!globalThis.VideoDecoder || !globalThis.EncodedVideoChunk || !HTMLVideoElement.prototype.requestVideoFrameCallback) return;
-  const states = new Map(), resources = new Map();
-  let pixels = 0, maskBytes = 0;
+  if (typeof alphaCodecs === 'undefined' || !globalThis.WebAssembly) return;
+  const states = new WeakMap(), tracked = new Set(), watched = new WeakSet(), resources = new Map();
+  const nativeDraw = CanvasRenderingContext2D.prototype.drawImage;
+  let pixels = 0, maskBytes = 0, decodeQueue = Promise.resolve();
+  function remember(video, state) {
+    state.ref = new WeakRef(video); tracked.add(state.ref); states.set(video, state);
+  }
+  function* videos() {
+    for (const ref of tracked) {
+      const video = ref.deref();
+      if (video) yield video; else tracked.delete(ref);
+    }
+  }
+  function release(resource) {
+    if (--resource.refs !== 0) return;
+    resources.delete(resource.key); resource.abort.abort();
+    pixels -= resource.pixels; maskBytes -= resource.bytes;
+    resource.images.clear();
+  }
+  const finalized = new FinalizationRegistry(release);
   async function read(url, signal, credentials) {
     const response = await fetch(url, {signal, credentials});
     if (!response.ok || +response.headers.get('content-length') > MAX_BYTES) throw Error('WebM fetch');
@@ -121,25 +138,22 @@
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     return bytes;
   }
+  function restoreMask(video, state) {
+    if (!state.applied) return;
+    for (const [name, value, priority] of state.styles) {
+      if (value) video.style.setProperty(name, value, priority);
+      else video.style.removeProperty(name);
+    }
+    state.applied = false;
+  }
   function dispose(video) {
     const state = states.get(video);
     if (!state) return;
     states.delete(video);
-    const resource = state.resource;
-    if (resource && --resource.refs === 0) {
-      resources.delete(resource.key);
-      resource.abort.abort();
-      if (resource.decoder?.state !== 'closed') resource.decoder?.close();
-      pixels -= resource.pixels;
-      maskBytes -= resource.bytes;
-    }
+    tracked.delete(state.ref); finalized.unregister(state);
+    if (state.resource) release(state.resource);
     if (state.callback) video.cancelVideoFrameCallback(state.callback);
-    if (state.applied) {
-      for (const [name, value, priority] of state.styles) {
-        if (value) video.style.setProperty(name, value, priority);
-        else video.style.removeProperty(name);
-      }
-    }
+    restoreMask(video, state);
   }
   async function loadMasks(resource, url, credentials) {
     const track = demux(await read(url, resource.abort.signal, credentials));
@@ -147,39 +161,40 @@
     const amount = track.frames.length * track.width * track.height;
     if (pixels + amount > 4 * MAX_PIXELS) throw Error('Document alpha budget');
     pixels += amount; resource.pixels = amount;
-    const config = {codec: track.codec, codedWidth: track.width, codedHeight: track.height};
-    if (!(await VideoDecoder.isConfigSupported(config)).supported) throw Error('Alpha codec unavailable');
-    if (resource.abort.signal.aborted) return null;
+    const codec = track.codec === 'vp8' ? 'vp8' : 'vp9';
+    const wasmBinary = Uint8Array.from(atob(alphaWasm[codec]), c => c.charCodeAt(0));
+    const decoder = await alphaCodecs[codec]({wasmBinary, videoFormat: {width: track.width, height: track.height, displayWidth: track.width, displayHeight: track.height}});
     const canvas = document.createElement('canvas');
     canvas.width = track.width; canvas.height = track.height;
-    const ctx = canvas.getContext('2d', {willReadFrequently: true});
-    const masks = []; let failure;
-    const decoder = resource.decoder = new VideoDecoder({
-      error(error) { failure = error; },
-      output(frame) {
-        try {
-          ctx.drawImage(frame, 0, 0);
-          const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          for (let i = 0; i < image.data.length; i += 4) image.data[i + 3] = image.data[i];
-          ctx.putImageData(image, 0, 0);
-          const mask = canvas.toDataURL();
-          if (maskBytes + mask.length * 2 > MAX_BYTES) throw Error('Mask budget');
-          resource.bytes += mask.length * 2; maskBytes += mask.length * 2;
-          masks.push({time: frame.timestamp / 1000000, mask});
-        } catch (error) { failure = error; }
-        finally { frame.close(); }
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(track.width, track.height), masks = [];
+    decoder.init(() => {});
+    try {
+      for (let i = 0; i < track.frames.length; i++) {
+        if (resource.abort.signal.aborted) return null;
+        const frame = track.frames[i], packet = frame.data;
+        let valid;
+        decoder.processFrame(packet.buffer.slice(packet.byteOffset, packet.byteOffset + packet.byteLength), ok => { valid = ok; });
+        const decoded = decoder.frameBuffer;
+        if (!valid || !decoded) throw Error('Alpha decode failed');
+        const {cropLeft, cropTop} = decoded.format;
+        for (let y = 0; y < track.height; y++) {
+          for (let x = 0; x < track.width; x++) {
+            const offset = (y * track.width + x) * 4;
+            image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = 255;
+            image.data[offset + 3] = decoded.y.bytes[(y + cropTop) * decoded.y.stride + x + cropLeft];
+          }
+        }
+        ctx.putImageData(image, 0, 0);
+        const mask = canvas.toDataURL();
+        if (maskBytes + mask.length * 2 > 64 * 1024 * 1024) throw Error('Mask budget');
+        resource.bytes += mask.length * 2; maskBytes += mask.length * 2;
+        masks.push({time: frame.timestamp / 1000000, mask});
+        decoder.recycleFrame(decoded); decoder.frameBuffer = null;
+        // Yield between small batches; unrelated page input remains responsive.
+        if (i % 4 === 3) await new Promise(resolve => setTimeout(resolve, 0));
       }
-    });
-    decoder.configure(config);
-    for (let i = 0; i < track.frames.length; i++) {
-      if (resource.abort.signal.aborted) return null;
-      const frame = track.frames[i];
-      decoder.decode(new EncodedVideoChunk({type: frame.key ? 'key' : 'delta', timestamp: frame.timestamp, data: frame.data}));
-      if (i % 16 === 15) await new Promise(resolve => setTimeout(resolve, 0));
-      if (failure) throw failure;
-    }
-    await decoder.flush(); decoder.close(); resource.decoder = null;
-    if (failure) throw failure;
+    } finally { decoder._ogv_video_decoder_destroy(); }
     if (!masks.length || resource.abort.signal.aborted) return null;
     // A page may prohibit data: images in CSP. Fail before applying a mask
     // rather than making its video invisible with an unloadable CSS image.
@@ -194,24 +209,26 @@
     dispose(video);
     if (!/\.webm(?:[?#]|$)|^data:video\/webm|^blob:/i.test(url) && ![...video.querySelectorAll('source')].some(s => s.src === url && s.type.includes('webm'))) return;
     // Native controls and existing masks must not themselves become masked.
-    if (video.controls || getComputedStyle(video).maskImage !== 'none') return;
-    const state = {url, styles: [], applied: false};
-    states.set(video, state);
+    if (video.isConnected && getComputedStyle(video).maskImage !== 'none') return;
+    const state = {url, styles: [], applied: false, connected: video.isConnected, generation: 0};
+    remember(video, state);
     try {
       const credentials = video.crossOrigin === 'use-credentials' ? 'include' : 'same-origin';
       const key = credentials + ':' + url;
       let resource = resources.get(key);
       if (!resource) {
-        if (resources.size >= 4) throw Error('Too many alpha resources');
-        resource = {key, refs: 0, pixels: 0, bytes: 0, abort: new AbortController()};
+        if (resources.size >= 16) throw Error('Too many alpha resources');
+        resource = {key, refs: 0, pixels: 0, bytes: 0, images: new Map(), abort: new AbortController()};
         resources.set(key, resource);
-        resource.promise = loadMasks(resource, url, credentials);
+        // Serialize decoders so many poses cannot allocate WASM heaps at once.
+        resource.promise = decodeQueue.then(() => resource.abort.signal.aborted ? null : loadMasks(resource, url, credentials));
+        decodeQueue = resource.promise.then(() => {}, () => {});
       }
-      resource.refs++; state.resource = resource;
+      resource.refs++; state.resource = resource; finalized.register(video, resource, state);
       const decoded = await resource.promise;
       if (states.get(video) !== state) return;
       if (!decoded) {
-        dispose(video); states.set(video, {url, styles: [], applied: false}); return;
+        dispose(video); remember(video, {url, styles: [], applied: false}); return;
       }
       const {track, masks} = decoded;
       // Engines that already expose alpha must not have it applied twice.
@@ -219,19 +236,21 @@
       probe.width = track.width; probe.height = track.height;
       const context = probe.getContext('2d', {willReadFrequently: true});
       try {
-        context.drawImage(video, 0, 0);
+        nativeDraw.call(context, video, 0, 0);
         const rgba = context.getImageData(0, 0, probe.width, probe.height).data;
         for (let i = 3; i < rgba.length; i += 4) if (rgba[i] < 255) {
-          dispose(video); states.set(video, {url, styles: [], applied: false}); return;
+          dispose(video); remember(video, {url, styles: [], applied: false}); return;
         }
       } catch { /* A cross-origin native video can be tainted even when the alpha fetch passed CORS. */ }
       const properties = ['mask-image', 'mask-size', 'mask-position', 'mask-repeat', 'mask-mode'];
       state.styles = properties.map(name => [name, video.style.getPropertyValue(name), video.style.getPropertyPriority(name)]);
       let last = -1;
       function paint(time) {
-        if (video.controls) { dispose(video); return; }
         let index = 0;
         for (let i = 1; i < masks.length && masks[i].time <= time + 0.001; i++) index = i;
+        state.index = index;
+        if (video.controls) { restoreMask(video, state); return; }
+        if (!video.isConnected) return;
         const css = getComputedStyle(video), fit = css.objectFit;
         let sizing = fit === 'fill' ? '100% 100%' : fit;
         if (fit === 'none' || fit === 'scale-down') {
@@ -242,32 +261,112 @@
         video.style.setProperty('mask-position', css.objectPosition);
         video.style.setProperty('mask-repeat', 'no-repeat');
         video.style.setProperty('mask-mode', 'alpha');
-        if (last !== index) video.style.setProperty('mask-image', `url("${masks[index].mask}")`);
+        if (!state.applied || last !== index) video.style.setProperty('mask-image', `url("${masks[index].mask}")`);
         last = index; state.applied = true;
       }
       state.paint = paint;
+      state.decoded = decoded;
+      state.compose = time => {
+        paint(time);
+        if (state.captureTime === time || state.pending || video.readyState < 2) return;
+        const index = state.index;
+        let entry = resource.images.get(index);
+        if (!entry) {
+          const image = new Image(); image.src = masks[index].mask;
+          entry = {image, ready: image.decode()};
+          resource.images.set(index, entry);
+          while (resource.images.size > 3) resource.images.delete(resource.images.keys().next().value);
+        }
+        state.captureTime = time; state.pending = true;
+        const generation = state.generation;
+        const frame = state.spare || document.createElement('canvas');
+        frame.width = track.width; frame.height = track.height;
+        const context = frame.getContext('2d');
+        // Capture color now, before awaiting PNG decoding, so the matte and
+        // color always belong to the same frame even if native playback advances.
+        nativeDraw.call(context, video, 0, 0);
+        entry.ready.then(() => {
+          if (states.get(video) !== state || state.generation !== generation) return;
+          context.globalCompositeOperation = 'destination-in';
+          nativeDraw.call(context, entry.image, 0, 0);
+          context.globalCompositeOperation = 'source-over';
+          state.spare = state.output; state.output = frame;
+        }).catch(() => {}).finally(() => { if (state.generation === generation) state.pending = false; });
+      };
       const tick = (_, metadata) => {
         if (states.get(video) !== state) return;
-        paint(metadata.mediaTime);
+        state.compose(metadata.mediaTime);
         if (states.get(video) === state) state.callback = video.requestVideoFrameCallback(tick);
       };
-      paint(video.currentTime);
+      state.compose(video.currentTime);
       if (states.get(video) === state) state.callback = video.requestVideoFrameCallback(tick);
     } catch {
       // Unsupported, inaccessible or malformed sources retain native playback.
       if (states.get(video) === state) {
         dispose(video);
-        states.set(video, {url, styles: [], applied: false});
+        remember(video, {url, styles: [], applied: false});
       }
     }
   }
-  document.addEventListener('loadeddata', event => { if (event.target instanceof HTMLVideoElement) void attach(event.target); }, true);
-  document.addEventListener('seeked', event => states.get(event.target)?.paint?.(event.target.currentTime), true);
-  document.addEventListener('emptied', event => dispose(event.target), true);
+  function watch(video) {
+    if (watched.has(video)) return;
+    watched.add(video);
+    video.addEventListener('loadeddata', () => { void attach(video); });
+    video.addEventListener('seeked', () => {
+      const state = states.get(video);
+      if (state) { state.generation++; state.captureTime = undefined; state.pending = false; state.compose?.(video.currentTime); }
+    });
+    video.addEventListener('emptied', () => dispose(video));
+  }
+  function source(video) {
+    if (!(video instanceof HTMLVideoElement)) return video;
+    watch(video);
+    if (video.readyState >= 2) void attach(video);
+    const state = states.get(video);
+    state?.compose?.(video.currentTime);
+    return state?.output || video;
+  }
+  // A detached video never dispatches load events to document. Catch explicit
+  // playback and texture uploads, without changing play()'s native promise.
+  const nativePlay = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function(...args) {
+    if (this instanceof HTMLVideoElement) { watch(this); if (this.readyState >= 2) void attach(this); }
+    return Reflect.apply(nativePlay, this, args);
+  };
+  function wrap(prototype, name, index) {
+    if (!prototype?.[name]) return;
+    const original = prototype[name];
+    prototype[name] = function(...args) {
+      if (index === undefined) {
+        for (let i = 0; i < args.length; i++) if (args[i] instanceof HTMLVideoElement) args[i] = source(args[i]);
+      } else if (args[index] instanceof HTMLVideoElement) args[index] = source(args[index]);
+      return Reflect.apply(original, this, args);
+    };
+  }
+  wrap(CanvasRenderingContext2D.prototype, 'drawImage', 0);
+  wrap(CanvasRenderingContext2D.prototype, 'createPattern', 0);
+  if (globalThis.OffscreenCanvasRenderingContext2D) {
+    wrap(OffscreenCanvasRenderingContext2D.prototype, 'drawImage', 0);
+    wrap(OffscreenCanvasRenderingContext2D.prototype, 'createPattern', 0);
+  }
+  for (const type of [globalThis.WebGLRenderingContext, globalThis.WebGL2RenderingContext]) {
+    for (const method of ['texImage2D', 'texSubImage2D', 'texImage3D', 'texSubImage3D']) wrap(type?.prototype, method);
+  }
+  if (globalThis.createImageBitmap) {
+    const original = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = function(image, ...args) { return Reflect.apply(original, this, [source(image), ...args]); };
+  }
+  document.addEventListener('loadeddata', event => {
+    if (event.target instanceof HTMLVideoElement) { watch(event.target); void attach(event.target); }
+  }, true);
   new MutationObserver(() => {
-    for (const video of states.keys()) if (!video.isConnected || video.controls) dispose(video);
-    for (const video of document.querySelectorAll('video')) if (video.readyState >= 2) void attach(video);
+    for (const video of videos()) {
+      const state = states.get(video);
+      if (state?.connected && !video.isConnected) dispose(video);
+      else if (state && video.isConnected) { state.connected = true; state.paint?.(video.currentTime); }
+    }
+    for (const video of document.querySelectorAll('video')) if (video.readyState >= 2) { watch(video); void attach(video); }
   }).observe(document, {subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'controls']});
-  addEventListener('pagehide', () => { for (const video of states.keys()) dispose(video); });
+  addEventListener('pagehide', () => { for (const video of videos()) dispose(video); });
   addEventListener('pageshow', () => { for (const video of document.querySelectorAll('video')) if (video.readyState >= 2) void attach(video); });
 })();

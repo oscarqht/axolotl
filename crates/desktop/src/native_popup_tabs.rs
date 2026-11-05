@@ -58,7 +58,8 @@ impl BrowserApp {
                             self.sync_address(window, cx);
                         }
                         Err(error) => {
-                            self.model.close_tab(self.model.focused_pane().id, tab);
+                            let pane = self.model.focused_pane().id;
+                            self.model.close_tab(pane, tab);
                             self.report(Err(error));
                             self.host.unload(*pending);
                         }

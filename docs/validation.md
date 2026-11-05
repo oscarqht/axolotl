@@ -1,3 +1,30 @@
+# macOS website passkey integration
+
+Run on 2026-11-05 in `bro-macos-passkey-support` on macOS 27.0.1.
+
+- Added browser permission management through AuthenticationServices. WKWebView
+  continues to own website WebAuthn requests, origin checks and provider UI.
+  OS version and the running task's entitlement are checked before manager use.
+  Unknown states fail closed; a nonblocking 60-second timeout releases pending
+  state. App-level cleanup does not depend on the requesting window surviving.
+- `cargo test --workspace --all-features --locked`: 30 passed (9 desktop,
+  21 core), including two permission-state/gating regressions.
+- Passed: six JavaScript bridge tests, workspace formatting, whitespace checks,
+  strict Clippy with all targets/features, native debug build, ad-hoc packaging
+  and `codesign --verify --strict`. Signing preflight rejected missing files,
+  malformed entitlements and entitlement inputs combined with ad-hoc signing.
+- Opened this worktree's packaged app through native computer use, clicked
+  Axolotl → Enable Passkeys…, and observed the missing-entitlement alert.
+- `cargo run -p axolotl --locked --features smoke -- --smoke-test`: passed.
+  This is a programmatic native WKWebView test; it reported OS activation
+  unavailable and does not synthesize OS mouse/keyboard input.
+- No local provisioning profiles were present. Apple-approved signing, actual
+  passkey registration/assertion, provider availability, cancellation/denial,
+  permission persistence and window closure during a system permission request
+  remain interactive checks. Older macOS and Windows were not exercised.
+  See [setup and manual acceptance checks](passkeys-macos.md). The local ad-hoc
+  bundle is not evidence of successful website passkey authentication.
+
 # Plus-button address autofocus
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

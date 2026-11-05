@@ -2,6 +2,26 @@
 set -eu
 cd "$(dirname "$0")/.."
 profile="${1:-debug}"
+identity="${AXOLOTL_SIGNING_IDENTITY:--}"
+entitlements="${AXOLOTL_ENTITLEMENTS:-}"
+provisioning="${AXOLOTL_PROVISIONING_PROFILE:-}"
+bundle_id="${AXOLOTL_BUNDLE_ID:-dev.axolotl.prototype}"
+# Check opt-in signing inputs before spending time building. Never attach the
+# restricted entitlement to an ad-hoc signature or leave an old profile behind.
+if [ "$identity" != '-' ]; then
+  if [ ! -f "$entitlements" ] || [ ! -f "$provisioning" ]; then
+    echo 'Provisioned signing requires AXOLOTL_ENTITLEMENTS and AXOLOTL_PROVISIONING_PROFILE files. See docs/passkeys-macos.md.' >&2
+    exit 2
+  fi
+  plutil -lint "$entitlements" >/dev/null
+  if [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.web-browser.public-key-credential' "$entitlements")" != true ]; then
+    echo 'The browser passkey entitlement must be true.' >&2
+    exit 2
+  fi
+elif [ -n "$entitlements" ] || [ -n "$provisioning" ]; then
+  echo 'Passkey signing inputs require AXOLOTL_SIGNING_IDENTITY (not ad-hoc signing).' >&2
+  exit 2
+fi
 case "$profile" in
   debug) cargo build -p axolotl --locked ;;
   release) cargo build -p axolotl --locked --release ;;
@@ -26,5 +46,13 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
 </dict></plist>
 PLIST
-codesign --force --sign - "$bundle"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$bundle/Contents/Info.plist"
+rm -f "$bundle/Contents/embedded.provisionprofile"
+if [ "$identity" = '-' ]; then
+  codesign --force --sign - "$bundle"
+else
+  cp "$provisioning" "$bundle/Contents/embedded.provisionprofile"
+  codesign --force --options runtime --timestamp --sign "$identity" --entitlements "$entitlements" "$bundle"
+fi
+codesign --verify --strict "$bundle"
 printf 'Built %s\n' "$bundle"

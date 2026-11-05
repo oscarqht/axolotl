@@ -9,6 +9,8 @@ mod floating_bar;
 #[cfg(test)]
 mod gesture_tests;
 #[cfg(target_os = "macos")]
+mod macos_passkeys;
+#[cfg(target_os = "macos")]
 mod macos_quit;
 mod native_webview;
 mod panel_controls;
@@ -61,10 +63,16 @@ fn main() {
             KeyBinding::new("alt-left", Back, None),
             KeyBinding::new("alt-right", Forward, None),
         ]);
+        #[cfg(target_os = "macos")]
+        cx.on_action(|_: &macos_passkeys::EnablePasskeys, cx| macos_passkeys::enable(cx));
         cx.set_menus(vec![
             Menu {
                 name: "Axolotl".into(),
-                items: vec![MenuItem::action("Quit Axolotl", Quit)],
+                items: vec![
+                    #[cfg(target_os = "macos")]
+                    MenuItem::action("Enable Passkeys…", macos_passkeys::EnablePasskeys),
+                    MenuItem::action("Quit Axolotl", Quit),
+                ],
             },
             Menu {
                 name: "Edit".into(),

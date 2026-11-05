@@ -28,6 +28,11 @@ open target/debug/Axolotl.app
 Use `scripts/package-macos.sh release` for an optimized build. This is a local
 development bundle, without distribution signing, notarization, or an installer.
 
+Website passkeys use WKWebView and the macOS credential provider. Choose
+**Axolotl → Enable Passkeys…** to request browser access on macOS 13.3 or later.
+This requires Apple-approved signing and provisioning; the default ad-hoc build
+reports the missing entitlement. See [macOS passkey setup and testing](docs/passkeys-macos.md).
+
 ### Windows (x64)
 
 Install Rust stable with the MSVC toolchain, Visual Studio Build Tools with

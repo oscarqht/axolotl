@@ -99,6 +99,8 @@ mod smoke_pins;
 mod smoke_popup_transition;
 #[cfg(feature = "smoke")]
 mod smoke_protection;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_quit;
 #[cfg(feature = "smoke")]
 mod smoke_responsiveness;
 #[cfg(feature = "smoke")]
@@ -255,6 +257,8 @@ fn main() {
                 smoke_space_menu::session_probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_persistence::probe(&app, window, cx);
+                #[cfg(all(feature = "smoke", target_os = "macos"))]
+                smoke_quit::probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 if std::env::args()
                     .any(|arg| arg == "--smoke-test" || arg == "--smoke-sleep-session")

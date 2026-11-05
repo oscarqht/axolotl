@@ -25,6 +25,18 @@ scripts/package-macos.sh
 open target/debug/Axolotl.app
 ```
 
+For a single build-and-launch command, use:
+
+```sh
+scripts/package-macos.sh && open target/debug/Axolotl.app
+```
+
+Use `cargo run` on its own for a terminal development run. In
+`cargo run -p axolotl --locked && open target/debug/Axolotl.app`, the `open`
+command runs after you quit the Cargo-launched app successfully, launching the
+app again. Cargo also does not refresh the executable inside an existing `.app`;
+the packaging script rebuilds and copies that executable before signing it.
+
 Use `scripts/package-macos.sh release` for an optimized build. This is a local
 development bundle, without distribution signing, notarization, or an installer.
 
@@ -229,6 +241,17 @@ session but no Accessibility permission:
 ```sh
 cargo build -p axolotl --locked --features smoke
 python3 scripts/test-window-state.py target/debug/axolotl
+```
+
+The macOS quit regression checks Cmd+Q through AppKit's event queue and the
+actual **Quit Axolotl** menu target, both with and without audible video PiP.
+Each isolated process must exit successfully, save its complete session, and
+restore the same tabs on relaunch. It needs a GUI session but no Accessibility
+permission:
+
+```sh
+cargo build -p axolotl --locked --features smoke
+python3 scripts/test-macos-quit.py target/debug/axolotl
 ```
 
 

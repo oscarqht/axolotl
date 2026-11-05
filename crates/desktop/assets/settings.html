@@ -69,9 +69,6 @@ footer{border-top:1px solid var(--border);padding:14px 28px;color:var(--muted);f
 </section>
 <section id="panel-media" role="tabpanel" aria-labelledby="tab-media" hidden>
 <h2>Tabs &amp; media</h2>
-<div class="field"><label><input id="auto-picture-in-picture" type="checkbox" style="width:auto" aria-describedby="pip-hint pip-error"> Automatic picture-in-picture</label>
-<p id="pip-hint">Keep an audible video playing in a floating window when switching tabs or spaces hides it. Return the video when its tab is visible again.</p>
-<p id="pip-error" role="alert" hidden></p></div>
 <div class="field"><label><input id="auto-sleep" type="checkbox" style="width:auto"> Automatically sleep hidden tabs</label>
 <label for="sleep-minutes">Inactive timeout (minutes)</label><input id="sleep-minutes" type="number" min="1" step="1" required>
 <p id="sleep-error" role="alert" hidden></p><p>Sleeping unloads the page. Click to reload it. Unsaved page state may be lost. Keep Alive protects tabs from automatic sleep and Sleep Space.</p></div>
@@ -105,9 +102,6 @@ window.protectionState=state=>{
 protectionState(window.settingsState.protection);
 document.querySelector('#protection-enabled').onchange=event=>send('protection',event.target.checked);
 document.querySelector('#update-filters').onclick=()=>send('update-filters');
-const autoPictureInPicture=document.querySelector('#auto-picture-in-picture');
-autoPictureInPicture.checked=window.settingsState.autoPictureInPicture;
-autoPictureInPicture.onchange=()=>send('auto-picture-in-picture',autoPictureInPicture.checked);
 const autoSleep=document.querySelector('#auto-sleep'), sleepMinutes=document.querySelector('#sleep-minutes');
 autoSleep.checked=window.settingsState.autoSleep;sleepMinutes.value=window.settingsState.sleepMinutes;
 let appliedMinutes=window.settingsState.sleepMinutes;

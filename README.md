@@ -219,15 +219,10 @@ pause, resume, retry and persistent history are not supported.
 
 Native UI performance measurements and methodology: [performance report](docs/performance.md).
 
-Automatic picture-in-picture is enabled by default. Switching tabs or spaces
-floats the largest audible playing video; revisiting its tab returns it. Change
-this in **Settings → Automatic picture-in-picture**. See [behavior and native
-checks](docs/settings.md#automatic-picture-in-picture).
-
 ## Checks
 
 ```sh
-node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs scripts/test-auto-pip.cjs
+node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -244,7 +239,7 @@ python3 scripts/test-window-state.py target/debug/axolotl
 ```
 
 The macOS quit regression checks Cmd+Q through AppKit's event queue and the
-actual **Quit Axolotl** menu target, both with and without audible video PiP.
+actual **Quit Axolotl** menu target.
 Each isolated process must exit successfully, save its complete session, and
 restore the same tabs on relaunch. It needs a GUI session but no Accessibility
 permission:
@@ -261,9 +256,6 @@ exits. It requires a GUI session and HTTPS access to example.com:
 
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
-
-# Audible video PiP, return/dismissal, split/space visibility, frames and lifecycle
-cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-auto-pip
 
 # macOS native HTTP/JavaScript browser identity regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-identity

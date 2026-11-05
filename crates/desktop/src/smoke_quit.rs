@@ -34,11 +34,6 @@ pub fn probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
             if !mode.ends_with("-existing") {
                 crate::smoke::wait_title(&host, tab, "New tab · Axolotl", cx).await?;
             }
-            if mode.contains("pip") {
-                crate::smoke_auto_pip::videos(&host, tab, cx).await?;
-                view.update_in(cx, |app, _, cx| { app.model.add_tab("about:blank"); cx.notify(); })?;
-                crate::smoke_auto_pip::state(&view, Some(tab), cx).await?;
-            }
             view.update_in(cx, |app, _, _| {
                 app.model.set_custom_title(tab, "Quit regression saved tab");
             })?;

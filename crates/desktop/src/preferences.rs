@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use workspace_core::{NavigationError, SearchEngine, normalize_url};
 
 pub struct Preferences {
-    pub automatic_picture_in_picture: bool,
     pub auto_sleep: bool,
     pub sleep_minutes: u64,
     pub search_engine: SearchEngine,
@@ -35,9 +34,6 @@ impl Preferences {
             })
             .unwrap_or_default();
         Self {
-            automatic_picture_in_picture: value["automatic_picture_in_picture"]
-                .as_bool()
-                .unwrap_or(true),
             auto_sleep: value["auto_sleep"].as_bool().unwrap_or(true),
             sleep_minutes: value["sleep_minutes"]
                 .as_u64()
@@ -93,11 +89,6 @@ impl Preferences {
         self.save()
     }
 
-    pub fn set_automatic_picture_in_picture(&mut self, enabled: bool) -> std::io::Result<()> {
-        self.automatic_picture_in_picture = enabled;
-        self.save()
-    }
-
     pub fn set_sleep(&mut self, enabled: bool, minutes: u64) -> std::io::Result<()> {
         if minutes == 0 {
             return Err(std::io::Error::new(
@@ -114,7 +105,6 @@ impl Preferences {
             return Ok(());
         };
         let json = serde_json::json!({
-            "automatic_picture_in_picture": self.automatic_picture_in_picture,
             "auto_sleep": self.auto_sleep,
             "sleep_minutes": self.sleep_minutes,
             "search_engine": self.search_engine.id(),
@@ -322,35 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn automatic_picture_in_picture_defaults_and_persists() {
-        let dir = std::env::temp_dir().join(format!("axolotl-pip-prefs-{}", uuid::Uuid::new_v4()));
-        let path = dir.join("settings.json");
-        assert!(Preferences::load(Some(path.clone())).automatic_picture_in_picture);
-        std::fs::create_dir_all(&dir).unwrap();
-        for json in [
-            "{bad",
-            "{}",
-            "null",
-            r#"{"automatic_picture_in_picture":null}"#,
-            r#"{"automatic_picture_in_picture":"false"}"#,
-            r#"{"automatic_picture_in_picture":0}"#,
-        ] {
-            std::fs::write(&path, json).unwrap();
-            assert!(Preferences::load(Some(path.clone())).automatic_picture_in_picture);
-        }
-        let mut prefs = Preferences::load(Some(path.clone()));
-        prefs.set_sleep(false, 7).unwrap();
-        for enabled in [false, true] {
-            prefs.set_automatic_picture_in_picture(enabled).unwrap();
-            let restored = Preferences::load(Some(path.clone()));
-            assert_eq!(restored.automatic_picture_in_picture, enabled);
-            assert!(!restored.auto_sleep);
-            assert_eq!(restored.sleep_minutes, 7);
-        }
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
     fn write_failure_preserves_immediate_choice() {
         let dir = std::env::temp_dir()
             .join(["axolotl-preferences-", &uuid::Uuid::new_v4().to_string()].concat());
@@ -359,8 +320,6 @@ mod tests {
         let mut prefs = Preferences::load(Some(dir.clone()));
         assert!(prefs.set_search_engine(SearchEngine::Bing).is_err());
         assert_eq!(prefs.search_engine, SearchEngine::Bing);
-        assert!(prefs.set_automatic_picture_in_picture(false).is_err());
-        assert!(!prefs.automatic_picture_in_picture);
         assert!(prefs.set_homepage_url("https://example.com").is_err());
         assert_eq!(prefs.homepage_url, "https://example.com/");
         std::fs::remove_dir_all(dir).unwrap();

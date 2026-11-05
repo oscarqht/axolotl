@@ -191,15 +191,6 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-performance") {
         return crate::smoke_performance::run(view, cx).await;
     }
-    if std::env::args().any(|arg| arg == "--smoke-auto-pip-layout") {
-        return crate::smoke_auto_pip_layout::run(view, cx).await;
-    }
-    if std::env::args().any(|arg| arg == "--smoke-auto-pip-youtube") {
-        return crate::smoke_auto_pip_youtube::run(view, cx).await;
-    }
-    if std::env::args().any(|arg| arg == "--smoke-auto-pip") {
-        return crate::smoke_auto_pip::run(view, cx).await;
-    }
     if std::env::args().any(|arg| arg == "--smoke-sleep") {
         return crate::smoke_sleep::run(view, cx).await;
     }

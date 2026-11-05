@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check native Cmd+Q/menu process exit, with/without PiP, and restored tabs.
+"""Check native Cmd+Q/menu process exit, and restored tabs.
 
 Usage: cargo build -p axolotl --locked --features smoke
        python3 scripts/test-macos-quit.py target/debug/axolotl
@@ -24,7 +24,7 @@ def session(output):
 
 def main():
     binary = str(Path(sys.argv[1]).resolve())
-    for mode in ['key', 'menu', 'key-pip', 'menu-pip']:
+    for mode in ['key', 'menu']:
         with tempfile.TemporaryDirectory(prefix=f'axolotl-quit-{mode}-') as directory:
             env = dict(os.environ, AXOLOTL_DATA_DIR=directory)
 

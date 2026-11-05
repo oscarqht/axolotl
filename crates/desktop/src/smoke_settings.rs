@@ -77,32 +77,7 @@ pub(crate) async fn run(
             == true,
         "Sleep settings defaults missing"
     );
-    ensure!(
-        dialog_eval(view, "autoPictureInPicture.checked", cx).await? == true,
-        "Automatic picture-in-picture default missing"
-    );
-    dialog_eval(
-        view,
-        "document.querySelector('#tab-media').click();autoPictureInPicture.click();true",
-        cx,
-    )
-    .await?;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| !app
-            .preferences
-            .automatic_picture_in_picture)?,
-        "Automatic picture-in-picture toggle IPC failed"
-    );
-    dialog_eval(view, "send('auto-picture-in-picture','true');true", cx).await?;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| !app
-            .preferences
-            .automatic_picture_in_picture)?,
-        "Invalid automatic picture-in-picture IPC changed preference"
-    );
-    dialog_eval(view,"autoSleep.checked=false;sleepMinutes.value='7';autoSleep.dispatchEvent(new Event('change'));true",cx).await?;
+    dialog_eval(view,"document.querySelector('#tab-media').click();autoSleep.checked=false;sleepMinutes.value='7';autoSleep.dispatchEvent(new Event('change'));true",cx).await?;
     pause(cx).await;
     view.update_in(cx, |app, _, _| {
         ensure!(
@@ -304,16 +279,6 @@ pub(crate) async fn run(
         dialog_eval(view, "homepage.value", cx).await? == "https://example.com/",
         "Reopened dialog lost homepage"
     );
-    ensure!(
-        dialog_eval(view, "!autoPictureInPicture.checked", cx).await? == true,
-        "Reopened dialog lost automatic picture-in-picture choice"
-    );
-    dialog_eval(view, "autoPictureInPicture.click();true", cx).await?;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| app.preferences.automatic_picture_in_picture)?,
-        "Automatic picture-in-picture did not re-enable"
-    );
     dialog_eval(
         view,
         "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
@@ -363,6 +328,6 @@ pub(crate) async fn run(
         Ok(())
     })??;
     Ok(vec![
-        "native settings: automatic picture-in-picture default, toggle, invalid IPC and reopen state; homepage editing, validation, reset, new tabs/spaces and replacement tabs, Google default, three providers, immediate changes, invalid IPC rejection, live theme updates, modal focus wrap, close/Escape dismissal, focus restoration, menu action, unchanged workspace and live page",
+        "native settings: homepage editing, validation, reset, new tabs/spaces and replacement tabs, Google default, three providers, immediate changes, invalid IPC rejection, live theme updates, modal focus wrap, close/Escape dismissal, focus restoration, menu action, unchanged workspace and live page",
     ])
 }

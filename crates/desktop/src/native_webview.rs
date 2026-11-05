@@ -294,53 +294,6 @@ mod windows_view {
             }
             Ok(())
         }
-        /// Move the existing child HWND without recreating its live media/DOM.
-        /// Return its original native parent so PiP can restore it before close.
-        pub fn reparent_for_picture_in_picture(&self, window: &gpui::Window) -> Result<isize> {
-            use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::GetParent};
-            use wry::WebViewExtWindows;
-            let RawWindowHandle::Win32(target) = HasWindowHandle::window_handle(window)?.as_raw()
-            else {
-                return Err(anyhow!("PiP requires a Win32 window"));
-            };
-            let view = self
-                .0
-                .borrow()
-                .view
-                .clone()
-                .ok_or_else(|| anyhow!("PiP source is not ready"))?;
-            let original = unsafe {
-                let mut container = HWND::default();
-                view.controller().ParentWindow(&mut container)?;
-                GetParent(container)?
-            };
-            view.reparent(target.hwnd.get())?;
-            Ok(original.0 as isize)
-        }
-        pub fn restore_picture_in_picture_parent(&self, original: isize) -> Result<()> {
-            use wry::WebViewExtWindows;
-            self.call(move |view| view.reparent(original))
-        }
-        #[cfg(feature = "smoke")]
-        pub fn test_picture_in_picture_state(&self) -> serde_json::Value {
-            use windows::Win32::{
-                Foundation::HWND,
-                UI::WindowsAndMessaging::{GetParent, IsWindowVisible},
-            };
-            use wry::WebViewExtWindows;
-            let Some(view) = self.0.borrow().view.clone() else {
-                return serde_json::json!({"ready":false});
-            };
-            let mut container = HWND::default();
-            let parent = unsafe {
-                if view.controller().ParentWindow(&mut container).is_err() {
-                    return serde_json::json!({"ready":false});
-                }
-                GetParent(container).ok()
-            };
-            serde_json::json!({"ready":true,"visible":unsafe{IsWindowVisible(container).as_bool()},
-                "parent":parent.map(|p|p.0 as isize),"bounds":view.bounds().ok().map(|b|format!("{b:?}"))})
-        }
         #[cfg(feature = "smoke")]
         pub fn test_panel_clip_state(&self) -> Result<serde_json::Value> {
             use windows::Win32::{

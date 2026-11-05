@@ -399,7 +399,6 @@ mod windows_view {
             let script = script.to_owned();
             self.call(move |view| view.evaluate_script(&script))
         }
-        #[cfg(feature = "smoke")]
         pub fn evaluate_script_with_callback(
             &self,
             script: &str,

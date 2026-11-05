@@ -168,7 +168,7 @@ pub struct Protection {
     path: Option<PathBuf>,
     pending: Option<mpsc::Receiver<Result<Candidate>>>,
     candidate: Option<Candidate>,
-    last_attempt: Instant,
+    last_attempt: Option<Instant>,
     pub last_updated: u64,
     pub status: String,
     pub revision: u64,
@@ -237,7 +237,7 @@ impl Protection {
             path,
             pending: None,
             candidate: None,
-            last_attempt: Instant::now() - Duration::from_secs(DAY),
+            last_attempt: None,
             last_updated: updated,
             status: if updated == 0 {
                 "Bundled EasyList + EasyPrivacy".into()
@@ -303,7 +303,7 @@ impl Protection {
         if self.pending.is_some() || self.candidate.is_some() {
             return;
         }
-        self.last_attempt = Instant::now();
+        self.last_attempt = Some(Instant::now());
         self.status = "Checking EasyList + EasyPrivacy…".into();
         let (tx, rx) = mpsc::channel();
         self.pending = Some(rx);
@@ -316,7 +316,9 @@ impl Protection {
         if self.pending.is_none()
             && self.candidate.is_none()
             && now().saturating_sub(self.last_updated) >= DAY
-            && self.last_attempt.elapsed().as_secs() >= DAY
+            && self
+                .last_attempt
+                .is_none_or(|attempt| attempt.elapsed().as_secs() >= DAY)
             && !std::env::args().any(|a| a == "--smoke-test")
         {
             self.update();
@@ -399,6 +401,14 @@ fn download() -> Result<Candidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restoring_without_cache_uses_bundled_filters() {
+        let protection = Protection::load(None);
+        assert!(protection.policy.enabled);
+        assert!(protection.rules.converted > 1000);
+        assert_eq!(protection.last_updated, 0);
+    }
+
     #[test]
     fn bundled_rules_block_ads_trackers_and_preserve_content() {
         let rules = Rules::parse(&[EASYLIST.into(), EASYPRIVACY.into()]).unwrap();

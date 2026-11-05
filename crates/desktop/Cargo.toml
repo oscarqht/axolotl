@@ -34,5 +34,6 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-web-kit = { version = "0.3", default-features = false, features = ["WKSnapshotConfiguration", "WKWebView", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKUserScript", "WKWebViewConfiguration"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.56"
 webview2-com = "0.38"
 windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

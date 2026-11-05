@@ -133,3 +133,82 @@ for an OS click (up to 60 seconds). The restart script supplies a temporary data
 directory; do not run `--smoke-sleep-session` directly against a real profile.
 macOS native checks do not establish Windows runtime behavior; run them again
 on a Windows desktop using WebView2.
+
+## Default browser and external links
+
+**Default browser** reports the OS selection for both HTTP and HTTPS. A partial
+selection is shown when Axolotl owns only one protocol. **Make default** starts
+the OS-approved selection flow; it never silently overrides the user's choice.
+Status refreshes while Settings is open and when the window becomes active.
+There is no startup prompt. Errors include instructions for retrying or choosing
+Axolotl in the system's default-app settings.
+macOS refuses Make default when the running copy is not listed by LaunchServices
+(for example, a bundle inside the temporary directory); move it to Applications
+and reopen it before retrying. Only the observed OS association is called default.
+
+On macOS, run the packaged `Axolotl.app` from a permanent location (usually
+Applications). `scripts/package-macos.sh` declares HTTP/HTTPS URL types and
+registers the bundle with LaunchServices. A bare `cargo run` executable cannot
+register as a browser. Make default uses `NSWorkspace`'s asynchronous default
+application request on macOS 12 and later; older versions provide manual System
+Preferences instructions. Keep a stable bundle identifier when distributing
+updates (`AXOLOTL_BUNDLE_ID` remains supported).
+
+On Windows, keep the executable in a permanent location and run it once.
+Axolotl registers its ProgID, quoted URL command, browser client, HTTP/HTTPS
+capabilities, and RegisteredApplications entry under **HKEY_CURRENT_USER**.
+No administrator rights or installer are required. Make default repairs these
+entries and opens `ms-settings:defaultapps?registeredAppUser=Axolotl`.
+Choose **Set default**, or assign both HTTP and HTTPS, then return to Axolotl.
+The effective association is queried through `QueryCurrentDefault`; registration
+alone does not count as being the default. No `UserChoice` values are written.
+Moving the executable requires running it again to update its registered path.
+
+OS-opened HTTP/HTTPS links and absolute HTTP/HTTPS command-line arguments open
+as new tabs in the focused panel of the active space. Multiple links retain
+request order and the last tab becomes active. Existing tabs, other panels,
+spaces, pins, and restored sessions are preserved. Incoming links dismiss app
+popovers and Settings, then activate the browser window. Files, search terms,
+and executable/custom schemes are ignored at this external entry point.
+
+Each data directory has one process owner. Additional executable launches pass
+URLs to that owner over an authenticated loopback connection and exit after
+acknowledgement. Retried deliveries carry the same request ID and open once;
+separate user actions on the same URL still open separate tabs. A file lock
+prevents concurrent session writers and is released after exit or a crash.
+macOS Apple events are queued before launch finishes and consumed after session
+restoration. An app using a different `AXOLOTL_DATA_DIR` has an isolated instance.
+
+### Native acceptance checks
+
+```sh
+cargo test --workspace --locked
+cargo build -p axolotl --features smoke --locked
+python3 scripts/test-external-urls.py target/debug/axolotl
+cargo run -p axolotl --features smoke --locked -- --smoke-test --smoke-settings
+```
+
+The process check uses a temporary profile with two spaces and a split panel.
+It verifies cold/running executable launches, multiple URLs, separate repeated
+requests, unsafe scheme rejection, focused-panel routing, foreground activation,
+and session preservation on restart. Unit tests also retry an identical delivery
+ID and recover an abandoned endpoint. Passing a packaged **smoke-build** `.app`
+to the Python check additionally exercises cold and running macOS Apple events.
+This includes a forced second bundle launch, which forwards its startup Apple
+events through a temporary windowless event loop rather than restoring a second
+session. Empty secondary executable launches exit after the startup event grace
+period. The native check also minimizes the owner before sending running URLs.
+The Settings smoke check exercises status delivery, modal focus, and the bare
+macOS executable's actionable Make default error without changing OS defaults.
+
+On each native OS, also verify the user-consent flow manually: select Make
+default, cancel and retry, complete the OS selection, return to Settings, and
+confirm both protocols. Change either association in system settings and check
+that Axolotl reports the partial state. Test a link clicked in another app with
+Axolotl stopped, running, and minimized. Windows checks require a Windows desktop
+with WebView2 and the Windows SDK to build; cross-compilation alone does not
+verify registry registration, Default apps UI, or foreground behavior.
+
+API references: [Apple NSWorkspace default application request](https://developer.apple.com/documentation/appkit/nsworkspace/setdefaultapplication(at:toopenurlswithscheme:completion:)),
+[Windows Default Programs registration](https://learn.microsoft.com/en-us/windows/win32/shell/default-programs),
+and [launching Windows Default Apps settings](https://learn.microsoft.com/en-us/windows/uwp/launch-resume/launch-default-apps-settings).

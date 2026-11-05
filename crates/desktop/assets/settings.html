@@ -44,11 +44,30 @@ input{width:100%;padding:8px}.field{margin-top:22px}
 <div class="field"><label><input id="auto-sleep" type="checkbox" style="width:auto"> Automatically sleep hidden tabs</label>
 <label for="sleep-minutes">Inactive timeout (minutes)</label><input id="sleep-minutes" type="number" min="1" step="1" required>
 <p id="sleep-error" role="alert" hidden></p><p>Sleeping unloads the page. Click to reload it. Unsaved page state may be lost. Keep Alive protects tabs from automatic sleep and Sleep Space.</p></div>
+<div class="field">
+<label>Default browser</label>
+<p id="default-browser-status" role="status" aria-live="polite">Checking default browser…</p>
+<button id="make-default" style="width:auto;height:auto;font-size:13px;padding:8px;margin-top:10px">Make default</button>
+<p id="default-browser-message"></p>
+<p id="default-browser-error" role="alert" hidden></p>
+</div>
 </section>
 <script>
 const select=document.querySelector('select'), closeButton=document.querySelector('#close');
 const homepage=document.querySelector('#homepage-url');
 const send=(type,value)=>window.ipc.postMessage(JSON.stringify({type,value}));
+window.defaultBrowserState=state=>{
+ const button=document.querySelector('#make-default'),status=document.querySelector('#default-browser-status'),error=document.querySelector('#default-browser-error');
+ status.textContent=state.isDefault===true?'Axolotl is your default browser for HTTP and HTTPS.':state.isDefault===null?'Could not check your default browser.':state.http||state.https?'Axolotl handles '+(state.http?'HTTP':'HTTPS')+'. Choose Make default to enable both.':'Axolotl is not your default browser.';
+ button.disabled=!state.supported||state.pending||state.isDefault===true;
+ button.textContent=state.pending?'Waiting for macOS…':'Make default';
+ document.querySelector('#default-browser-message').textContent=state.message;
+ error.textContent=state.error;error.hidden=!state.error;
+};
+defaultBrowserState(window.settingsState.defaultBrowser);
+document.querySelector('#make-default').onclick=()=>send('default-browser');
+window.addEventListener('focus',()=>send('refresh-default-browser'));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)send('refresh-default-browser')});
 window.applyTheme=theme=>{for(const [key,value] of Object.entries(theme))document.documentElement.style.setProperty('--'+key,value);document.documentElement.style.colorScheme=theme.scheme};
 applyTheme(window.settingsState.theme);
 window.protectionState=state=>{

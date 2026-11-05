@@ -570,6 +570,7 @@ dependencies = [
  "uuid",
  "webview2-com",
  "windows 0.61.3",
+ "winreg",
  "workspace-core",
  "wry",
 ]

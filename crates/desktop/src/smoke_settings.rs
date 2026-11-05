@@ -45,6 +45,10 @@ pub(crate) async fn run(
     cx: &mut AsyncWindowContext,
 ) -> Result<Vec<&'static str>> {
     let (host, tab, before) = view.update_in(cx, |app, window, cx| {
+        assert!(
+            app.settings.is_none() && app.default_browser.state["pending"] == false,
+            "Startup must not prompt for a default browser"
+        );
         app.settings_focus.focus(window);
         let snapshot = app.model.to_json();
         app.open_settings(false, window, cx);
@@ -52,6 +56,7 @@ pub(crate) async fn run(
     })?;
     pause(cx).await;
     pause(cx).await;
+    ensure!(dialog_eval(view, "!document.querySelector('#default-browser-status').textContent.includes('Checking') && document.querySelector('#make-default').textContent==='Make default'", cx).await? == true, "Default-browser state was not delivered to Settings");
     let state = dialog_eval(view, "({role:document.querySelector('#settings').getAttribute('role'),modal:document.querySelector('#settings').getAttribute('aria-modal'),focused:document.activeElement===select,value:select.value,options:[...select.options].map(o=>o.textContent),fits:document.querySelector('#settings').getBoundingClientRect().right<=innerWidth})", cx).await?;
     ensure!(
         state["role"] == "dialog"
@@ -106,6 +111,7 @@ pub(crate) async fn run(
         let expected = if shift {
             vec![
                 "close",
+                "make-default",
                 "sleep-minutes",
                 "auto-sleep",
                 "clear-history",
@@ -126,17 +132,46 @@ pub(crate) async fn run(
                 "clear-history",
                 "auto-sleep",
                 "sleep-minutes",
+                "make-default",
                 "close",
                 "search-engine",
             ]
         };
         for id in expected {
+            if id == "make-default"
+                && dialog_eval(view, "document.querySelector('#make-default').disabled", cx).await?
+                    == true
+            {
+                continue;
+            }
             let focused = dialog_eval(view, &format!("document.dispatchEvent(new KeyboardEvent('keydown',{{key:'Tab',shiftKey:{shift},bubbles:true,cancelable:true}}));document.activeElement.id"), cx).await?;
             ensure!(
                 focused == id,
                 "Tab failed to cycle inside dialog: {focused}"
             );
         }
+    }
+    #[cfg(target_os = "macos")]
+    if !objc2_foundation::NSBundle::mainBundle()
+        .bundlePath()
+        .to_string()
+        .ends_with(".app")
+        || std::env::args().any(|arg| arg == "--smoke-unlisted-browser")
+    {
+        let expected = if std::env::args().any(|arg| arg == "--smoke-unlisted-browser") {
+            "Move Axolotl.app to Applications"
+        } else {
+            "packaged Axolotl.app"
+        };
+        // Exercise real button/IPC/error handling without changing OS defaults.
+        dialog_eval(
+            view,
+            "document.querySelector('#make-default').click();true",
+            cx,
+        )
+        .await?;
+        pause(cx).await;
+        ensure!(dialog_eval(view, &format!("!document.querySelector('#default-browser-error').hidden && document.querySelector('#default-browser-error').textContent.includes({}) && !document.querySelector('#make-default').disabled", serde_json::to_string(expected)?), cx).await? == true, "Make default did not display an actionable packaging error");
     }
     dialog_eval(view, "homepage.value='https://example.com';homepage.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true", cx).await?;
     pause(cx).await;

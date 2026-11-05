@@ -8,8 +8,10 @@ mod browsing_history;
 mod chrome_theme;
 #[cfg(target_os = "macos")]
 mod copy_url;
+mod default_browser;
 mod docking;
 mod drag_preview;
+mod external_urls;
 mod floating_bar;
 #[cfg(test)]
 mod gesture_tests;
@@ -42,6 +44,8 @@ mod smoke;
 mod smoke_copy_url;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
+#[cfg(feature = "smoke")]
+mod smoke_external_urls;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_google_popup;
 #[cfg(feature = "smoke")]
@@ -102,13 +106,35 @@ pub struct SelectSpace {
 }
 
 fn main() {
+    let instance = match external_urls::SingleInstance::start() {
+        Ok(Some(instance)) => instance,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("Axolotl: could not deliver launch request: {error:#}");
+            std::process::exit(1);
+        }
+    };
+    #[cfg(target_os = "windows")]
+    if !(cfg!(feature = "smoke")
+        && std::env::args().any(|arg| arg.starts_with("--smoke") || arg.contains("-probe")))
+        && let Err(error) = default_browser::register()
+    {
+        eprintln!(
+            "Axolotl: browser registration failed: {error:#}. Retry with Make default in Settings."
+        );
+    }
     eprintln!("Axolotl: initializing platform");
     // WebView2 child HWNDs require GPUI's non-DirectComposition window path.
     #[cfg(target_os = "windows")]
     unsafe {
         std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "true");
     }
-    Application::new().run(|cx: &mut App| {
+    let incoming = instance.incoming.clone();
+    let application = Application::new();
+    // Install before AppKit starts dispatching cold-launch Apple events.
+    application.on_open_urls(move |urls| external_urls::enqueue(&incoming, urls));
+    application.run(move |cx: &mut App| {
+        cx.set_global(external_urls::Incoming(instance));
         eprintln!("Axolotl: platform launched");
         gpui_component::init(cx);
         #[cfg(target_os = "macos")]
@@ -186,6 +212,8 @@ fn main() {
                 #[cfg(target_os = "macos")]
                 macos_titlebar::install(window).expect("configure native titlebar input");
                 let app = cx.new(|cx| BrowserApp::new(window, cx, saved_window));
+                #[cfg(feature = "smoke")]
+                smoke_external_urls::probe(&app, window, cx);
                 app.read(cx).focus.focus(window);
                 #[cfg(all(feature = "smoke", target_os = "macos"))]
                 window_state::probe(&app, window, cx);

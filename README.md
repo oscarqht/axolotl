@@ -151,6 +151,13 @@ and restored tabs are unchanged. Use an HTTP/HTTPS URL; leave the field blank or
 enter `about:blank` to use the built-in start page. Press Enter or leave the field
 to apply. Preferences are saved separately from the workspace session.
 
+Settings also shows whether Axolotl is the default browser for HTTP and HTTPS.
+**Make default** requests the macOS confirmation or opens Windows Default apps;
+there is no startup prompt. External web links open in new tabs in the focused
+panel of the active space and bring the existing app window forward. macOS needs
+the packaged `.app`; Windows registers the current user's executable on launch.
+See [default-browser setup and checks](docs/settings.md#default-browser-and-external-links).
+
 | Shortcut | Action |
 | --- | --- |
 | Cmd/Ctrl+Q | Quit the app (Cmd+Q also works while native web content has focus) |

@@ -2,6 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 profile="${1:-debug}"
+target_dir="${CARGO_TARGET_DIR:-target}"
 identity="${AXOLOTL_SIGNING_IDENTITY:--}"
 entitlements="${AXOLOTL_ENTITLEMENTS:-}"
 provisioning="${AXOLOTL_PROVISIONING_PROFILE:-}"
@@ -27,10 +28,10 @@ case "$profile" in
   release) cargo build -p axolotl --locked --release ;;
   *) echo 'Usage: scripts/package-macos.sh [debug|release]' >&2; exit 2 ;;
 esac
-bundle="target/$profile/Axolotl.app"
+bundle="$target_dir/$profile/Axolotl.app"
 mkdir -p "$bundle/Contents/MacOS"
 rm -f "$bundle/Contents/MacOS/axolotl"
-cp "target/$profile/axolotl" "$bundle/Contents/MacOS/Axolotl"
+cp "$target_dir/$profile/axolotl" "$bundle/Contents/MacOS/Axolotl"
 cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -42,6 +43,12 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>Web URLs</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>CFBundleURLSchemes</key><array><string>http</string><string>https</string></array>
+</dict></array>
+<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
 </dict></plist>
@@ -55,4 +62,6 @@ else
   codesign --force --options runtime --timestamp --sign "$identity" --entitlements "$entitlements" "$bundle"
 fi
 codesign --verify --strict "$bundle"
+# Advertise browser capabilities without changing the user's default.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$bundle"
 printf 'Built %s\n' "$bundle"

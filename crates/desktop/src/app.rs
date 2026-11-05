@@ -106,6 +106,7 @@ pub struct BrowserApp {
     pub history_popup: Option<crate::history_suggestions::HistoryPopup>,
     pub preferences: crate::preferences::Preferences,
     pub settings: Option<crate::settings::SettingsDialog>,
+    pub(crate) default_browser: crate::default_browser::Integration,
     pub link_popup: Option<crate::link_popup::LinkPopup>,
     pub(crate) pending_page_focus: Option<TabId>,
     pub settings_focus: FocusHandle,
@@ -196,6 +197,9 @@ impl BrowserApp {
                 this.cancel_space_drag(cx);
             } else {
                 this.notifications.remove(&this.active_tab());
+                if this.settings.is_some() {
+                    this.default_browser.refresh();
+                }
                 cx.notify();
             }
         })
@@ -256,6 +260,7 @@ impl BrowserApp {
             history_popup: None,
             preferences,
             settings: None,
+            default_browser: crate::default_browser::Integration::new(),
             link_popup: None,
             pending_page_focus: None,
             settings_focus: cx.focus_handle(),
@@ -283,6 +288,33 @@ impl BrowserApp {
             notifications: HashMap::new(),
             favicons: HashMap::new(),
         }
+    }
+
+    pub(crate) fn open_external_urls(
+        &mut self,
+        urls: Vec<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let urls = crate::external_urls::http_urls(urls);
+        if !urls.is_empty() {
+            self.close_settings(window, cx);
+            self.dismiss_history();
+            self.dismiss_pin(window, cx);
+            self.close_link_popup(window, cx);
+            self.cancel_tab_drag(cx);
+            self.cancel_space_drag(cx);
+            self.space_menu = None;
+            self.cancel_edit(window, cx);
+            for url in urls {
+                self.model.add_tab(&url);
+            }
+            self.sync_address(window, cx);
+            self.pending_page_focus = Some(self.active_tab());
+        }
+        window.activate_window();
+        cx.activate(true);
+        cx.notify();
     }
 
     pub fn report(&mut self, result: anyhow::Result<()>) {
@@ -553,6 +585,14 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Runs only after BrowserApp::new has restored the complete workspace.
+        let batches: Vec<_> = cx
+            .try_global::<crate::external_urls::Incoming>()
+            .map(|incoming| incoming.0.incoming.lock().unwrap().drain(..).collect())
+            .unwrap_or_default();
+        for urls in batches {
+            self.open_external_urls(urls, window, cx);
+        }
         // AppKit can finish changing fullscreen state after the last resize.
         // Invalidate the header even when no further bounds event arrives.
         let fullscreen = window.is_fullscreen();

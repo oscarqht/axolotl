@@ -11,6 +11,7 @@ use workspace_core::SearchEngine;
 use wry::{NewWindowResponse, WebViewBuilder};
 
 pub struct SettingsDialog {
+    default_browser_state: Value,
     pub(crate) view: Option<NativeWebView>,
     events: Option<Receiver<Value>>,
     previous_focus: Option<FocusHandle>,
@@ -50,7 +51,9 @@ impl BrowserApp {
         self.dragging = None;
         self.moving_window = false;
         self.space_menu = None;
+        self.default_browser.refresh();
         self.settings = Some(SettingsDialog {
+            default_browser_state: Value::Null,
             view: None,
             events: None,
             previous_focus,
@@ -85,7 +88,7 @@ impl BrowserApp {
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
                 let (sender, events) = mpsc::channel();
-                let state = serde_json::json!({"autoSleep": self.preferences.auto_sleep, "sleepMinutes": self.preferences.sleep_minutes, "engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state});
+                let state = serde_json::json!({"autoSleep": self.preferences.auto_sleep, "sleepMinutes": self.preferences.sleep_minutes, "engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state, "defaultBrowser": self.default_browser.state});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -105,6 +108,13 @@ impl BrowserApp {
                 dialog.theme = current_theme.clone();
             }
             let view = dialog.view.as_ref().unwrap();
+            if dialog.default_browser_state != self.default_browser.state {
+                view.evaluate_script(&format!(
+                    "window.defaultBrowserState?.({})",
+                    self.default_browser.state
+                ))?;
+                dialog.default_browser_state = self.default_browser.state.clone();
+            }
             if dialog.protection_state != protection_state {
                 view.evaluate_script(&format!("window.protectionState?.({protection_state})"))?;
                 dialog.protection_state = protection_state;
@@ -126,6 +136,12 @@ impl BrowserApp {
     }
 
     pub(crate) fn poll_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.default_browser.poll(self.settings.is_some());
+        if let Some(dialog) = &self.settings
+            && dialog.default_browser_state != self.default_browser.state
+        {
+            cx.notify();
+        }
         let events: Vec<_> = self
             .settings
             .as_ref()
@@ -137,6 +153,14 @@ impl BrowserApp {
                 break;
             }
             match event["type"].as_str().unwrap_or("") {
+                "default-browser" => {
+                    self.default_browser.make_default();
+                    cx.notify();
+                }
+                "refresh-default-browser" => {
+                    self.default_browser.refresh();
+                    cx.notify();
+                }
                 "new-space" => {
                     self.close_settings(window, cx);
                     self.command(crate::app::Command::NewSpace, window, cx);

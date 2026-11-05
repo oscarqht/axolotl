@@ -50,6 +50,8 @@ struct WorkspaceDto {
 struct SpaceDto {
     id: u64,
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    custom_title: Option<String>,
     focused_pane: u64,
     layout: LayoutDto,
     panes: Vec<PaneDto>,
@@ -166,6 +168,7 @@ impl Workspace {
                 .map(|s| SpaceDto {
                     id: s.id,
                     name: s.name.clone(),
+                    custom_title: s.custom_title.clone(),
                     focused_pane: s.focused_pane,
                     layout: (&s.layout).into(),
                     panes: s
@@ -255,6 +258,7 @@ impl Workspace {
             spaces.push(Space {
                 id: s.id,
                 name: s.name,
+                custom_title: s.custom_title.filter(|c| !c.trim().is_empty()),
                 layout,
                 panes,
                 focused_pane: s.focused_pane,

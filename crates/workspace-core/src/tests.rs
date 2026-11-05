@@ -712,3 +712,37 @@ fn custom_title_survives_moves_between_panes() {
     assert!(w.move_tab(source, tab, destination, 0));
     assert_eq!(w.tab(tab).unwrap().display_title(), "Keep");
 }
+
+#[test]
+fn space_title_is_independent_of_pages_focus_and_selection_and_round_trips() {
+    let mut workspace = Workspace::default();
+    let first = workspace.active_space;
+    let tab = workspace.focused_pane().active_tab;
+    workspace.tab_mut(tab).unwrap().title = "Page one".into();
+    let second = workspace.add_space("Other", "about:blank");
+    assert!(workspace.set_space_title(first, "  Work  "));
+    assert_eq!(workspace.active_space, second);
+    workspace.switch_space(first);
+    assert_eq!(workspace.active_space().display_title(), "Work");
+    assert_eq!(workspace.tab(tab).unwrap().display_title(), "Page one");
+    workspace.add_tab("https://example.com");
+    workspace
+        .tab_mut(workspace.focused_pane().active_tab)
+        .unwrap()
+        .title = "Page two".into();
+    assert_eq!(workspace.active_space().display_title(), "Work");
+    let restored = Workspace::from_json(&workspace.to_json()).unwrap();
+    assert_eq!(restored.active_space().display_title(), "Work");
+    assert!(workspace.set_space_title(first, " "));
+    assert_eq!(workspace.active_space().display_title(), "Page two");
+    let mut old: serde_json::Value = serde_json::from_str(&restored.to_json()).unwrap();
+    for space in old["spaces"].as_array_mut().unwrap() {
+        space.as_object_mut().unwrap().remove("custom_title");
+    }
+    assert!(Workspace::from_json(&old.to_string())
+        .unwrap()
+        .active_space()
+        .custom_title
+        .is_none());
+    assert!(!workspace.set_space_title(u64::MAX, "Missing"));
+}

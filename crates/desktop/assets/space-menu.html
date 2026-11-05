@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font:13px -apple-system,Segoe UI,sans-serif;color:var(--ink)}
+#menu{position:absolute;width:220px;max-width:calc(100vw - 8px);padding:5px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 4px 14px #0003}
+button{display:block;width:100%;padding:8px 12px;text-align:left;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer}button:hover,button:focus-visible{background:var(--hover);outline:none}
+form{margin:0;padding:7px}label{display:block;margin-bottom:7px}input{width:100%;min-width:0;padding:6px;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:4px;font:inherit}small{display:block;margin-top:7px;font-size:11px;opacity:.7}
+[hidden]{display:none!important}
+</style>
+<div id="menu" role="menu" aria-label="Space tab"><button id="set-title" role="menuitem">Set title…</button><form hidden><label for="title">Set title</label><input id="title" autocomplete="off"><small>Enter to save · Esc to cancel<br>Leave empty to use the page title</small></form></div>
+<script>
+const state=window.spaceMenuState, menu=document.querySelector('#menu'), button=document.querySelector('button'), form=document.querySelector('form'), input=document.querySelector('input');
+const send=(type,value)=>window.ipc.postMessage(JSON.stringify({type,value}));
+for(const key of ['ink','surface','hover','border'])document.documentElement.style.setProperty('--'+key,state[key]);
+function place(){menu.style.left=Math.max(4,Math.min(state.x,innerWidth-menu.offsetWidth-4))+'px';menu.style.top=Math.max(4,Math.min(state.y,innerHeight-menu.offsetHeight-4))+'px'}
+button.onclick=()=>{button.hidden=true;form.hidden=false;menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Set space title');input.value=state.title;place();input.focus();input.select()};
+form.onsubmit=e=>{e.preventDefault();send('save',input.value)};
+document.addEventListener('pointerdown',e=>{if(!menu.contains(e.target))send('dismiss')});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(form.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();button.focus()}});
+document.addEventListener('contextmenu',e=>e.preventDefault());
+window.addEventListener('resize',place);place();button.focus();send('ready');
+</script>

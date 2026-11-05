@@ -93,6 +93,15 @@ impl BrowserApp {
                 }),
                 |tab| tab.opacity(0.55),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    if let TabTarget::Space(id) = target {
+                        cx.stop_propagation();
+                        this.open_space_menu(id, event.position, window, cx);
+                    }
+                }),
+            )
             // Keep tab clicks from bubbling into the surrounding pane header.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .when_some(
@@ -278,7 +287,7 @@ impl Render for BrowserApp {
             .map(|space| {
                 self.compact_tab(
                     TabTarget::Space(space.id),
-                    space.focused_pane().active_tab().display_title(),
+                    space.display_title(),
                     space.id == self.model.active_space,
                     cx,
                 )

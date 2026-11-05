@@ -218,6 +218,7 @@ impl BrowserApp {
             .map(|(id, _)| *id)
             .collect();
         if native_views != self.chrome_views && !self.tab_drag_active() {
+            self.space_menu = None;
             self.bars.clear();
             self.chrome_views = native_views;
         }
@@ -274,5 +275,7 @@ impl BrowserApp {
             let result = bar.focus_editor();
             self.report(result);
         }
+        // Create last, above every page and floating panel control.
+        self.prepare_space_menu(window, cx);
     }
 }

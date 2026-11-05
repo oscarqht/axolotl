@@ -1,3 +1,25 @@
+# Space tab context menu
+
+Run on 2026-11-05 in `bro-space-tab-context-menu` on macOS.
+
+- Right-clicking a space tab opens a single-item menu, Set title…. A transparent
+  native child is created after page and floating-control surfaces so the menu
+  and title editor remain above webpage content and panels. Outside pointer-down,
+  Escape, window deactivation or submission disposes the overlay. Menu/editor
+  geometry is clamped to the window, including after a resize.
+- Titles belong to spaces, independently of page titles and focused panels, and
+  persist in the session snapshot. Blank input restores the focused page's title.
+  Older snapshots without the optional space `custom_title` still load.
+- Passed: 43 workspace tests, all-target/all-feature strict Clippy, formatting,
+  whitespace checks, native debug packaging/signature verification, and the full
+  native smoke suite. New smoke assertions cover a single menu item, inactive
+  space targeting without selection, focused editing, save/clear, edge placement,
+  Escape and outside dismissal.
+- Actual desktop right-click opened the menu above the Google/SeaTalk split view;
+  screenshots confirmed the menu remained above live page pixels, and typing a
+  title plus Enter updated the space strip. Clearing restored the original label.
+  Windows runtime/layering remains untested on this Mac.
+
 # Page notification badges
 
 Run on 2026-11-05 in `bro-tab-notification-badges` on macOS.

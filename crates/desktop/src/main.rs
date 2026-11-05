@@ -26,6 +26,9 @@ mod smoke_menu;
 mod smoke_notifications;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
+#[cfg(feature = "smoke")]
+mod smoke_space_menu;
+mod space_menu;
 mod split_preview;
 
 use app::BrowserApp;

@@ -42,12 +42,19 @@ impl Pane {
 pub struct Space {
     pub id: SpaceId,
     pub name: String,
+    pub custom_title: Option<String>,
     pub layout: Layout,
     pub panes: Vec<Pane>,
     pub focused_pane: PaneId,
 }
 
 impl Space {
+    pub fn display_title(&self) -> &str {
+        self.custom_title
+            .as_deref()
+            .unwrap_or_else(|| self.focused_pane().active_tab().display_title())
+    }
+
     pub fn pane(&self, id: PaneId) -> Option<&Pane> {
         self.panes.iter().find(|p| p.id == id)
     }
@@ -129,6 +136,16 @@ impl Workspace {
         true
     }
 
+    /// Set or clear the space title without changing its selection or page titles.
+    pub fn set_space_title(&mut self, id: SpaceId, title: &str) -> bool {
+        let Some(space) = self.spaces.iter_mut().find(|space| space.id == id) else {
+            return false;
+        };
+        let title = title.trim();
+        space.custom_title = (!title.is_empty()).then(|| title.to_owned());
+        true
+    }
+
     pub fn add_space(&mut self, name: impl Into<String>, url: &str) -> SpaceId {
         let id = self.allocate();
         let pane = self.new_pane(url);
@@ -136,6 +153,7 @@ impl Workspace {
         self.spaces.push(Space {
             id,
             name: name.into(),
+            custom_title: None,
             layout: Layout::Pane(pane_id),
             panes: vec![pane],
             focused_pane: pane_id,

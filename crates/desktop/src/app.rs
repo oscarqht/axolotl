@@ -99,6 +99,7 @@ pub struct BrowserApp {
     pub suppress_tab_click: bool,
     pub drag_preview: Option<crate::drag_preview::DragPreview>,
     pub split_preview: Option<crate::split_preview::SplitPreview>,
+    pub space_menu: Option<crate::space_menu::SpaceMenu>,
     pub status: String,
     pub poll_count: u8,
     /// Last history probe per tab: (can go back, can go forward).
@@ -142,6 +143,7 @@ impl BrowserApp {
         .detach();
         cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
+                this.space_menu = None;
                 this.cancel_tab_drag(cx);
             } else {
                 this.notifications.remove(&this.active_tab());
@@ -183,6 +185,7 @@ impl BrowserApp {
             suppress_tab_click: false,
             drag_preview: None,
             split_preview: None,
+            space_menu: None,
             status: String::new(),
             poll_count: 0,
             history: HashMap::new(),
@@ -401,6 +404,7 @@ impl BrowserApp {
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.saver.tick(&self.model, Instant::now());
+        self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(

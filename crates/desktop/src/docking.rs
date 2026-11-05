@@ -1,5 +1,5 @@
 //! Pointer drag state and destinations shared by tab chips and panel handles.
-use crate::app::{BrowserApp, TabDrag};
+use crate::app::{BrowserApp, DragInput, TabDrag};
 use gpui::*;
 use workspace_core::{PaneId, Rect, SplitEdge, TabId};
 impl BrowserApp {
@@ -19,6 +19,7 @@ impl BrowserApp {
     pub fn arm_tab_drag(&mut self, source: PaneId, tab: TabId, origin: Point<Pixels>) {
         self.suppress_tab_click = false;
         self.tab_drag = Some(TabDrag {
+            input: DragInput::Shell,
             source,
             tab,
             origin,
@@ -34,6 +35,41 @@ impl BrowserApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self
+            .tab_drag
+            .is_some_and(|drag| drag.input != DragInput::Shell)
+        {
+            return;
+        }
+        self.update_drag(event, window, cx);
+    }
+
+    pub(crate) fn native_drag_from(&self, pane: PaneId) -> bool {
+        self.tab_drag
+            .is_some_and(|drag| drag.input == DragInput::NativeBar && drag.source == pane)
+    }
+
+    pub(crate) fn update_native_tab_drag(
+        &mut self,
+        pane: PaneId,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.native_drag_from(pane) {
+            self.update_drag(
+                &MouseMoveEvent {
+                    position,
+                    pressed_button: Some(MouseButton::Left),
+                    ..Default::default()
+                },
+                window,
+                cx,
+            );
+        }
+    }
+
+    fn update_drag(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(drag) = self.tab_drag else { return };
         if !event.dragging() {
             self.cancel_tab_drag(cx);
@@ -204,6 +240,35 @@ impl BrowserApp {
     }
 
     pub fn finish_tab_drag(
+        &mut self,
+        position: Option<Point<Pixels>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Native pointer capture delivers its release through the IPC poll.
+        // A shell mouse-up/move can arrive first; it must not consume that drag.
+        if self
+            .tab_drag
+            .is_some_and(|drag| drag.input != DragInput::Shell)
+        {
+            return;
+        }
+        self.finish_drag(position, window, cx);
+    }
+
+    pub(crate) fn finish_native_tab_drag(
+        &mut self,
+        pane: PaneId,
+        position: Option<Point<Pixels>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.native_drag_from(pane) {
+            self.finish_drag(position, window, cx);
+        }
+    }
+
+    fn finish_drag(
         &mut self,
         position: Option<Point<Pixels>>,
         window: &mut Window,

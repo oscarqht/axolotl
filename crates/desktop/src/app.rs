@@ -42,8 +42,16 @@ pub enum Command {
     NextPane,
 }
 
+/// Native bar IPC is polled; immediate shell events must not consume its drag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragInput {
+    Shell,
+    NativeBar,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct TabDrag {
+    pub input: DragInput,
     pub source: PaneId,
     pub tab: TabId,
     pub origin: Point<Pixels>,

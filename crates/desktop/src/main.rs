@@ -21,6 +21,8 @@ mod settings;
 #[cfg(feature = "smoke")]
 mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_docking;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_input;
 #[cfg(feature = "smoke")]
 mod smoke_menu;

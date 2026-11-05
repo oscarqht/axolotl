@@ -1,3 +1,32 @@
+# Queued native tab split release
+
+Run on 2026-11-05 in `bro-fix-tab-split-drop` on macOS.
+
+- Root cause: native floating-bar pointer events enter an IPC queue polled every
+  40 ms. Immediate GPUI mouse moves and mouse-up/out handlers shared the same
+  drag state. A released-button shell move could cancel a valid held preview
+  before the queued WebKit `drag-end` arrived, leaving that release with no drag.
+  A deterministic native regression failed with `native release did not split`
+  before the fix.
+- Each drag now records its input owner. Shell move/up/out handlers leave a
+  native-owned drag for its originating bar's IPC release or cancellation.
+  Native events from other bars cannot finish it. Escape and window deactivation
+  continue to cancel either owner. Target geometry and model moves are unchanged.
+- `--smoke-test --smoke-docking` exercises trusted AppKit input delivered directly
+  to the originating WKWebView, WebKit pointer capture, IPC and preview/drop
+  completion. The fixture supplies pressed-button state because AppKit synthesis
+  does not change global OS button state, and injects competing shell handlers
+  before the native release poll. This is not physical OS mouse injection.
+- Passed: all 16 native split releases (four edges, same/cross pane, quick/paused),
+  native DOM/form retention, Escape cancellation and inert late native release.
+- The full native smoke suite also passed, covering tab reorder/docking, center
+  and whole-panel merges, outside-drop cancellation, and retained DOM/form/history.
+- Passed: 44 workspace unit tests, nine JavaScript bridge tests, formatting,
+  whitespace checks, and strict Clippy across all targets/features.
+- Physical OS mouse injection could not be run by the test process because it
+  lacks macOS Accessibility permission. Windows runtime checks were not run on
+  this Mac; the shared ownership routing applies to both platforms.
+
 # Space tab context menu
 
 Run on 2026-11-05 in `bro-space-tab-context-menu` on macOS.

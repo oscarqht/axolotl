@@ -179,6 +179,10 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-space-drag") {
         return crate::smoke_space_drag::run(view, cx).await;
     }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-docking") {
+        return crate::smoke_docking::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-notifications") {
         return crate::smoke_notifications::run(view, cx).await;
     }

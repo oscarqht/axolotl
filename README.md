@@ -165,6 +165,9 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test
 # Focused native check for page notifications and unread badges (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications
 
+# macOS native pointer-capture split release regression (no network needed)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
+
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
 
@@ -186,6 +189,13 @@ they are not JavaScript `dispatchEvent` calls or physical OS mouse input. The
 runner checks sibling order, exactly one new tab, retained source document,
 ordinary navigation, existing popup handling, graceful exit and no relaunch
 observed for three seconds. Run it without another instance of the same binary.
+
+The macOS docking check delivers AppKit mouse events to the floating bar's
+WKWebView and exercises real WebKit pointer capture, IPC, preview and release.
+Its fixture supplies the pressed-button state because AppKit synthesis does not
+change the OS's global button state. It injects competing shell handlers before
+the queued native release to reproduce the race deterministically. This is not
+a physical OS mouse test.
 
 For visual inspection of a held drag state, append `--smoke-hold-preview` after
 `--smoke-test`; it holds the captured card and insertion placeholder for 20 seconds.

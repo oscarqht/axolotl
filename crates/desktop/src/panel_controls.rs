@@ -1,5 +1,5 @@
 //! Native floating control lifecycle and IPC dispatch.
-use crate::app::{BrowserApp, Command, TabAction, TabTarget};
+use crate::app::{BrowserApp, Command, DragInput, TabAction, TabTarget};
 use gpui::*;
 use std::{collections::HashSet, time::Instant};
 use workspace_core::Rect;
@@ -108,9 +108,14 @@ impl BrowserApp {
                         self.cancel_edit(window, cx);
                     }
                 }
-                "cancel" | "drag-cancel" => {
+                "cancel" => {
                     self.cancel_tab_drag(cx);
                     self.cancel_edit(window, cx);
+                }
+                "drag-cancel" => {
+                    if self.native_drag_from(pane) {
+                        self.cancel_tab_drag(cx);
+                    }
                 }
                 "wheel" => {
                     if !self.tab_drag_active() {
@@ -139,24 +144,17 @@ impl BrowserApp {
                 "drag-start" => {
                     if let Some(position) = position {
                         self.arm_tab_drag(pane, tab, position);
+                        self.tab_drag.as_mut().unwrap().input = DragInput::NativeBar;
                         self.tab_drag.as_mut().unwrap().whole =
                             event["whole"].as_bool().unwrap_or(false);
                     }
                 }
                 "drag-move" => {
                     if let Some(position) = position {
-                        self.update_tab_drag(
-                            &MouseMoveEvent {
-                                position,
-                                pressed_button: Some(MouseButton::Left),
-                                ..Default::default()
-                            },
-                            window,
-                            cx,
-                        );
+                        self.update_native_tab_drag(pane, position, window, cx);
                     }
                 }
-                "drag-end" => self.finish_tab_drag(position, window, cx),
+                "drag-end" => self.finish_native_tab_drag(pane, position, window, cx),
                 _ => {}
             }
         }

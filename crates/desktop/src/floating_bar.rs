@@ -106,6 +106,41 @@ impl FloatingBar {
         }
         Ok(())
     }
+    /// Deliver native events to the originating WKWebView, including releases
+    /// outside its bounds. The fixture supplies OS button state separately.
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    pub fn test_mouse(&self, kind: objc2_app_kit::NSEventType, x: f64, y: f64) -> Result<()> {
+        use objc2_app_kit::{NSEvent, NSEventModifierFlags};
+        use objc2_foundation::NSPoint;
+        use wry::WebViewExtMacOS;
+        let window = self.view.ns_window();
+        if kind == objc2_app_kit::NSEventType::LeftMouseDown {
+            window.makeKeyWindow();
+            self.view.focus()?;
+        }
+        let root = window.contentView().unwrap();
+        let location = NSPoint::new(
+            x,
+            if root.isFlipped() {
+                y
+            } else {
+                root.frame().size.height - y
+            },
+        );
+        let location = root.convertPoint_toView(location, None);
+        let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+            kind, location, NSEventModifierFlags::empty(), objc2_foundation::NSProcessInfo::processInfo().systemUptime(), window.windowNumber(), None, 0, 1, 1.,
+        ).ok_or_else(|| anyhow::anyhow!("create native drag event"))?;
+        match kind {
+            objc2_app_kit::NSEventType::LeftMouseDown => self.view.webview().mouseDown(&event),
+            objc2_app_kit::NSEventType::LeftMouseDragged => {
+                self.view.webview().mouseDragged(&event)
+            }
+            objc2_app_kit::NSEventType::LeftMouseUp => self.view.webview().mouseUp(&event),
+            _ => window.sendEvent(&event),
+        }
+        Ok(())
+    }
     pub fn invalidate(&self) {
         self.state.borrow_mut().clear();
     }

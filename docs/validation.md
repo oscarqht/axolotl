@@ -1,3 +1,13 @@
+# Translucent idle bar
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- The floating bar has an 80% alpha background in light and dark themes. Overall
+  opacity is 20% at rest and 100% on hover, with a 160ms fade. Existing reduced-
+  motion settings disable the fade. Hover opacity is independent of chip expansion.
+- Focused native sizing/transition/overflow checks and whitespace checks passed;
+  the macOS app bundle was rebuilt. Foreground OS hover and Windows remain unverified.
+
 # Circular floating controls
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

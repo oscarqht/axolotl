@@ -1,7 +1,7 @@
 <!doctype html><meta charset="utf-8" /><style>
   :root {
     color-scheme: light dark;
-    --surface: #f3f5f7;
+    --surface: rgba(243, 245, 247, 0.8);
     --border: #c9d2dc;
     --ink: #243240;
     --muted: #647487;
@@ -11,7 +11,7 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --surface: #25303d;
+      --surface: rgba(37, 48, 61, 0.8);
       --border: #465366;
       --ink: #dde5ed;
       --muted: #a4b1c0;
@@ -50,7 +50,10 @@
     width: 128px;
     max-width: 100%;
     flex-shrink: 0;
-    transition: width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    opacity: 0.2;
+    transition:
+      width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 160ms ease;
     padding: 4px;
     border: 1px solid var(--border);
     border-radius: 18px;
@@ -58,6 +61,9 @@
     box-shadow: 0 3px 8px #0003;
     user-select: none;
     touch-action: pan-y;
+  }
+  #bar:hover {
+    opacity: 1;
   }
   button {
     color: inherit;
@@ -236,7 +242,6 @@
   }
   .dragging {
     cursor: grabbing !important;
-    opacity: 0.65;
   }
 </style>
 <div id="bar" role="toolbar" aria-label="Panel tabs">

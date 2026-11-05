@@ -609,7 +609,13 @@ impl Render for BrowserApp {
                     .when(!cfg!(target_os = "windows"), |header| header.pr_2())
                     .child(
                         div()
-                            .w(px(if cfg!(target_os = "macos") { 84. } else { 8. }))
+                            .w(px(
+                                if cfg!(target_os = "macos") && !window.is_fullscreen() {
+                                    84.
+                                } else {
+                                    8.
+                                },
+                            ))
                             .flex_shrink_0(),
                     )
                     .child(

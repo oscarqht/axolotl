@@ -28,6 +28,11 @@ def main():
             records = [json.loads(line.removeprefix('AXOLOTL_WINDOW '))
                        for line in result.stdout.splitlines() if line.startswith('AXOLOTL_WINDOW ')]
             assert len(records) == 2, (result.stdout, result.stderr)
+            for record in records:
+                # The header's 4pt gap follows either the normal 84pt traffic
+                # light reservation or its fullscreen 8pt edge spacer.
+                expected_x = 12 if record['fullscreen'] else 88
+                assert abs(record['space_tabs_x'] - expected_x) <= 1, (stage, record)
             print(f'Checked native relaunch: {stage}', flush=True)
             return records
 
@@ -40,8 +45,9 @@ def main():
         assert before['maximized'] and not before['fullscreen'], before
         assert not after['maximized'], after
         close(after['bounds'], normal)
-        before, _ = run('fullscreen')
+        before, after = run('fullscreen')
         close(before['bounds'], normal)
+        assert after['fullscreen'], after
         before, after = run('exit-fullscreen')
         assert before['fullscreen'], before
         assert not after['fullscreen'], after
@@ -69,7 +75,7 @@ def main():
             before, _ = run('none')
             assert not before['fullscreen'] and not before['maximized'], before
             assert before['bounds']['width'] >= 640 and before['bounds']['height'] >= 420
-        print('PASS: move/resize, zoom, full-screen, zoom→full-screen, normal bounds, off-screen/oversized and invalid state across native relaunches')
+        print('PASS: move/resize, zoom, full-screen, zoom→full-screen, normal bounds, off-screen/oversized and invalid state across native relaunches; measured space-tab spacing entering, exiting and restoring full-screen')
 
 
 if __name__ == '__main__':

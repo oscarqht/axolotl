@@ -99,6 +99,7 @@ pub struct BrowserApp {
     pub settings_focus: FocusHandle,
     saver: crate::persistence::SessionSaver,
     window_saver: crate::window_state::WindowSaver,
+    last_fullscreen: bool,
     pub host: Rc<dyn BrowserHost>,
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
@@ -196,6 +197,7 @@ impl BrowserApp {
         })
         .detach();
         Self {
+            last_fullscreen: window.is_fullscreen(),
             bars: HashMap::new(),
             chrome_views: HashSet::new(),
             swipes: HashMap::new(),
@@ -455,6 +457,13 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // AppKit can finish changing fullscreen state after the last resize.
+        // Invalidate the header even when no further bounds event arrives.
+        let fullscreen = window.is_fullscreen();
+        if self.last_fullscreen != fullscreen {
+            self.last_fullscreen = fullscreen;
+            cx.notify();
+        }
         self.saver.tick(&self.model, Instant::now());
         self.window_saver.tick(window, cx);
         self.poll_settings(window, cx);

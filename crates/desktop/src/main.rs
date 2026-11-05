@@ -141,7 +141,7 @@ fn main() {
                 let app = cx.new(|cx| BrowserApp::new(window, cx, saved_window));
                 app.read(cx).focus.focus(window);
                 #[cfg(all(feature = "smoke", target_os = "macos"))]
-                window_state::probe(window, cx);
+                window_state::probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_space_menu::session_probe(&app, window, cx);
                 #[cfg(feature = "smoke")]

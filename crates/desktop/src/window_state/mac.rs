@@ -221,7 +221,7 @@ impl Drop for WindowSaver {
 
 /// Opt-in native relaunch probe. The driver must supply an isolated data dir.
 #[cfg(feature = "smoke")]
-pub(crate) fn probe(window: &Window, cx: &mut App) {
+pub(crate) fn probe(app: &gpui::Entity<crate::app::BrowserApp>, window: &Window, cx: &mut App) {
     let Some(stage) = std::env::args()
         .find_map(|arg| arg.strip_prefix("--window-state-probe=").map(str::to_owned))
     else {
@@ -231,16 +231,20 @@ pub(crate) fn probe(window: &Window, cx: &mut App) {
         std::env::var_os("AXOLOTL_DATA_DIR").is_some(),
         "probe requires isolated data"
     );
+    let app = app.clone();
     window.spawn(cx, async move |cx| {
         cx.background_executor().timer(Duration::from_secs(2)).await;
-        let _ = cx.update(|window, _| unsafe {
+        let _ = cx.update(|window, cx| unsafe {
             let RawWindowHandle::AppKit(handle) = window.window_handle().unwrap().as_raw() else { unreachable!() };
             let view = handle.ns_view.as_ptr().cast::<AnyObject>();
             let native: *mut AnyObject = msg_send![view, window];
             let bounds = rect(msg_send![native, frame]);
             let zoom: bool = msg_send![native, isZoomed];
             let style: usize = msg_send![native, styleMask];
-            println!("AXOLOTL_WINDOW {}", serde_json::json!({"phase":"before", "bounds":bounds, "maximized":zoom, "fullscreen":style & (1 << 14) != 0}));
+            // Read the last real layout without requesting a frame: an explicit
+            // redraw here would hide missing fullscreen invalidation.
+            let space_tabs_x = f32::from(app.read(cx).space_scroll.bounds().origin.x);
+            println!("AXOLOTL_WINDOW {}", serde_json::json!({"phase":"before", "bounds":bounds, "maximized":zoom, "fullscreen":style & (1 << 14) != 0, "space_tabs_x":space_tabs_x}));
             match stage.as_str() {
                 "seed" => {
                     let screen: *mut AnyObject = msg_send![native, screen];
@@ -264,7 +268,8 @@ pub(crate) fn probe(window: &Window, cx: &mut App) {
             let style: usize = msg_send![native, styleMask];
             let screen: *mut AnyObject = msg_send![native, screen];
             let area = rect(msg_send![screen, visibleFrame]);
-            println!("AXOLOTL_WINDOW {}", serde_json::json!({"phase":"after", "bounds":bounds, "visible":area, "maximized":zoom, "fullscreen":style & (1 << 14) != 0}));
+            let space_tabs_x = f32::from(app.read(cx).space_scroll.bounds().origin.x);
+            println!("AXOLOTL_WINDOW {}", serde_json::json!({"phase":"after", "bounds":bounds, "visible":area, "maximized":zoom, "fullscreen":style & (1 << 14) != 0, "space_tabs_x":space_tabs_x}));
             cx.quit();
         });
     }).detach();

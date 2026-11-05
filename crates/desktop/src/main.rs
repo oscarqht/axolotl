@@ -41,6 +41,7 @@ mod smoke_space_menu;
 mod space_drag;
 mod space_menu;
 mod split_preview;
+mod window_state;
 
 use app::BrowserApp;
 use gpui::{prelude::*, *};
@@ -109,10 +110,12 @@ fn main() {
                 ],
             },
         ]);
-        let bounds = Bounds::centered(None, size(px(1280.), px(860.)), cx);
+        let saved_window = window_state::SavedWindow::restore();
+        let (bounds, display_id) = saved_window.startup(cx);
         cx.open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_bounds: Some(bounds),
+                display_id,
                 window_min_size: Some(size(px(640.), px(420.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Axolotl".into()),
@@ -124,8 +127,10 @@ fn main() {
             |window, cx| {
                 #[cfg(target_os = "macos")]
                 macos_titlebar::install(window).expect("configure native titlebar input");
-                let app = cx.new(|cx| BrowserApp::new(window, cx));
+                let app = cx.new(|cx| BrowserApp::new(window, cx, saved_window));
                 app.read(cx).focus.focus(window);
+                #[cfg(all(feature = "smoke", target_os = "macos"))]
+                window_state::probe(window, cx);
                 #[cfg(feature = "smoke")]
                 if std::env::args().any(|arg| arg == "--smoke-test") {
                     smoke::start(&app, window, cx);

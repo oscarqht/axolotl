@@ -146,6 +146,13 @@ to apply. Preferences are saved separately from the workspace session.
 Back, forward, and reload act on the focused pane. The native macOS Edit menu
 supplies standard copy/paste actions to both web content and the inline URL input.
 
+Window size and position, zoom/maximized state, and macOS full-screen state are
+saved in `window-state.json` alongside the browsing session. Normal bounds survive
+zoom and full-screen transitions. Restored geometry is kept on an available display;
+on macOS it is clamped to the usable screen area. Missing or invalid state uses the
+existing centered 1280×860 startup window. `AXOLOTL_DATA_DIR` also isolates window
+state; `--smoke-test` never reads or writes the real profile.
+
 ## Checks
 
 ```sh
@@ -154,6 +161,17 @@ cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
+
+The macOS window-state regression launches and quits real native windows using a
+temporary profile. It checks relaunches after moving/resizing, zooming, full-screen,
+and zoom then full-screen, plus invalid and off-screen geometry. It needs a GUI
+session but no Accessibility permission:
+
+```sh
+cargo build -p axolotl --locked --features smoke
+python3 scripts/test-window-state.py target/debug/axolotl
+```
+
 
 An optional native integration run opens a real desktop window, exercises the
 normal app commands and browser host, prints one `AXOLOTL_SMOKE` JSON result, and

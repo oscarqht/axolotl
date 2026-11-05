@@ -97,6 +97,7 @@ pub struct BrowserApp {
     pub settings: Option<crate::settings::SettingsDialog>,
     pub settings_focus: FocusHandle,
     saver: crate::persistence::SessionSaver,
+    window_saver: crate::window_state::WindowSaver,
     pub host: Rc<dyn BrowserHost>,
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
@@ -121,7 +122,12 @@ pub struct BrowserApp {
 }
 
 impl BrowserApp {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        saved_window: crate::window_state::SavedWindow,
+    ) -> Self {
+        let window_saver = crate::window_state::WindowSaver::new(saved_window, window, cx);
         let address = cx.new(|cx| InputState::new(window, cx).default_value("about:blank"));
         cx.subscribe_in(
             &address,
@@ -165,6 +171,10 @@ impl BrowserApp {
             }
         })
         .detach();
+        cx.observe_window_bounds(window, |this, window, cx| {
+            this.window_saver.tick(window, cx);
+        })
+        .detach();
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
         cx.observe_window_appearance(window, |this, window, cx| {
             gpui_component::Theme::sync_system_appearance(Some(window), cx);
@@ -178,6 +188,7 @@ impl BrowserApp {
         // Cmd+Q, window close and the app menu all end in cx.quit().
         cx.on_app_quit(|this, _| {
             this.saver.flush(&this.model);
+            this.window_saver.flush();
             async {}
         })
         .detach();
@@ -190,6 +201,7 @@ impl BrowserApp {
             settings: None,
             settings_focus: cx.focus_handle(),
             saver,
+            window_saver,
             host: Rc::new(WryHost::new()),
             address,
             focus: cx.focus_handle(),
@@ -438,6 +450,7 @@ impl BrowserApp {
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.saver.tick(&self.model, Instant::now());
+        self.window_saver.tick(window, cx);
         self.poll_settings(window, cx);
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);

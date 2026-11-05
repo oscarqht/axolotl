@@ -84,6 +84,7 @@ pub struct BrowserApp {
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
     pub model: Workspace,
+    saver: crate::persistence::SessionSaver,
     pub host: Rc<dyn BrowserHost>,
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
@@ -147,11 +148,20 @@ impl BrowserApp {
             cx.notify();
         })
         .detach();
+        let model = crate::persistence::restore();
+        let saver = crate::persistence::SessionSaver::new(&model);
+        // Cmd+Q, window close and the app menu all end in cx.quit().
+        cx.on_app_quit(|this, _| {
+            this.saver.flush(&this.model);
+            async {}
+        })
+        .detach();
         Self {
             bars: HashMap::new(),
             chrome_views: HashSet::new(),
             swipes: HashMap::new(),
-            model: Workspace::new("about:blank"),
+            model,
+            saver,
             host: Rc::new(WryHost::new()),
             address,
             focus: cx.focus_handle(),
@@ -359,6 +369,7 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.saver.tick(&self.model, Instant::now());
         self.poll_bars(window, cx);
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(

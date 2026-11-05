@@ -14,6 +14,7 @@ mod macos_passkeys;
 mod macos_quit;
 mod native_webview;
 mod panel_controls;
+mod persistence;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;

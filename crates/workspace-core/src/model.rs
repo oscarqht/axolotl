@@ -51,7 +51,7 @@ impl Space {
 pub struct Workspace {
     pub spaces: Vec<Space>,
     pub active_space: SpaceId,
-    next_id: u64,
+    pub(crate) next_id: u64,
 }
 
 impl Default for Workspace {

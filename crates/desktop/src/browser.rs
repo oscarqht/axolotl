@@ -264,7 +264,6 @@ impl BrowserHost for WryHost {
         Ok(())
     }
 
-
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>> {
         self.protection.clone()
     }

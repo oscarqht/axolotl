@@ -155,6 +155,7 @@ to apply. Preferences are saved separately from the workspace session.
 | --- | --- |
 | Cmd/Ctrl+Q | Quit the app (Cmd+Q also works while native web content has focus) |
 | Cmd/Ctrl+L | Edit the focused page URL inline |
+| Cmd+Shift+C (macOS) | Copy the current page's full URL as plain text |
 | Cmd/Ctrl+T | New tab in the focused pane |
 | Cmd/Ctrl+Shift+T | New space using the homepage; focus its address input |
 | Cmd+1 … Cmd+9 (macOS) | Select the corresponding space in its current strip order |
@@ -169,6 +170,9 @@ the ninth space; numbers without a corresponding space leave the current view un
 
 Back, forward, and reload act on the focused pane. The native macOS Edit menu
 supplies standard copy/paste actions to both web content and the inline URL input.
+Cmd+Shift+C works with webpage or browser chrome focus and copies the live page
+URL, including query strings and fragments, without changing an unfinished
+address edit. Open pinned pages and temporary previews copy their own URL.
 
 Window size and position, zoom/maximized state, and macOS full-screen state are
 saved in `window-state.json` alongside the browsing session. Normal bounds survive
@@ -229,6 +233,9 @@ python3 scripts/test-space-session.py target/debug/axolotl
 
 # Indexed macOS space shortcuts from page and app-control focus
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-shortcuts
+
+# Current-URL clipboard shortcut, navigation, tab switching and ordinary Cmd+C
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-copy-url
 
 # Native overlay fades, interrupted closing, promotion reset and Reduce Motion
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-popup-transition

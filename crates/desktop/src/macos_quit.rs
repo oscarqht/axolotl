@@ -26,6 +26,12 @@ fn is_settings(key: &str, flags: Flags) -> bool {
         && !flags.intersects(Flags::Control | Flags::Option | Flags::Shift)
 }
 
+fn is_copy_url(key: &str, flags: Flags) -> bool {
+    key.eq_ignore_ascii_case("c")
+        && flags.contains(Flags::Command | Flags::Shift)
+        && !flags.intersects(Flags::Control | Flags::Option)
+}
+
 /// Cmd+9 selects the ninth space, rather than a special last-space shortcut.
 fn space_index(key: &str, flags: Flags) -> Option<usize> {
     if !flags.contains(Flags::Command)
@@ -76,6 +82,15 @@ pub fn install(cx: &mut App) {
                 .detach();
             return std::ptr::null_mut();
         }
+        if key.as_deref().is_some_and(|key| is_copy_url(key, flags)) {
+            let app = app.clone();
+            executor
+                .spawn(async move {
+                    let _ = app.update(|cx| cx.dispatch_action(&crate::CopyUrl));
+                })
+                .detach();
+            return std::ptr::null_mut();
+        }
         if key.is_some_and(|key| is_quit(&key, flags)) {
             if !requested.replace(true) {
                 let app = app.clone();
@@ -102,6 +117,24 @@ pub fn install(cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_command_shift_c_copies_url() {
+        let shortcut = Flags::Command | Flags::Shift;
+        assert!(is_copy_url("c", shortcut));
+        assert!(is_copy_url("C", shortcut | Flags::CapsLock));
+        assert!(!is_copy_url("x", shortcut));
+        for flags in [
+            Flags::empty(),
+            Flags::Command,
+            Flags::Shift,
+            Flags::Control | Flags::Shift,
+            shortcut | Flags::Control,
+            shortcut | Flags::Option,
+        ] {
+            assert!(!is_copy_url("c", flags));
+        }
+    }
 
     #[test]
     fn command_numbers_select_exact_space_indices_only() {

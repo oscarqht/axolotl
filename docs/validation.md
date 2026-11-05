@@ -1,3 +1,32 @@
+# Copy current URL shortcut
+
+Run on 2026-11-05 on macOS in `bro-copy-current-tab-url`.
+
+Cmd+Shift+C is reserved by the existing AppKit local event monitor and dispatched
+to an app-level action. It reads the committed native page URL, including query
+strings and fragments, rather than the address draft or cached tab metadata.
+Copying keeps focus and drafts intact; no committed URL leaves the clipboard
+unchanged. Open pinned pages and temporary previews use their own URL; a preview
+that is already closing no longer takes precedence over the underlying tab.
+
+- `--smoke-copy-url` passed in 14.267s using real WKWebViews and queued AppKit
+  events. It checks document and SPA navigation, switching tabs and returning,
+  webpage and chrome focus, GPUI and native address drafts, page shortcut
+  interception, pinned pages and previews, and ordinary Cmd+C on selected page
+  text. The test restores the previous clipboard. Physical OS keys are not sent.
+- All 73 Rust tests passed with all features. Formatting and whitespace checks
+  passed. Clippy passed with the existing `collapsible_if` lint allowed; strict
+  Clippy still reports two pre-existing pinned-tab drag warnings in `render.rs`.
+- JavaScript checks: 17 passed; the existing Escape test still expects modified
+  Escape to be ignored, while the unchanged bridge forwards it.
+- An additional queued Cmd+C check in a native address field failed after
+  switching from the GPUI space address editor. Replaying that complete editor
+  sequence with the original HEAD app, shortcut monitor and key bindings also
+  failed, while a standalone original-HEAD address-field check passed. This is
+  an existing editor-transition issue; this change retains existing Cmd+C/menu
+  routing. The passing URL-copy regression covers draft preservation in both
+  editors, and verifies ordinary Cmd+C on selected webpage text.
+
 # Temporary preview transitions
 
 Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.

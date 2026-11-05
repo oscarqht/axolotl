@@ -212,6 +212,8 @@ impl BrowserApp {
         })
         .detach();
         Self::install_space_shortcuts(window, cx);
+        #[cfg(target_os = "macos")]
+        Self::install_copy_url(cx);
         let preferences = crate::preferences::Preferences::restore();
         let browsing_history = match crate::browsing_history::BrowsingHistory::restore() {
             Ok(db) => {

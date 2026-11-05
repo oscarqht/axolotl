@@ -6,6 +6,8 @@ mod browser_identity;
 mod browser_tests;
 mod browsing_history;
 mod chrome_theme;
+#[cfg(target_os = "macos")]
+mod copy_url;
 mod docking;
 mod drag_preview;
 mod floating_bar;
@@ -36,6 +38,8 @@ mod settings;
 mod sleep;
 #[cfg(feature = "smoke")]
 mod smoke;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_copy_url;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -85,7 +89,8 @@ use gpui_component::Root;
 actions!(
     axolotl,
     [
-        Quit, Address, NewTab, NewSpace, CloseTab, Reload, NextPane, Back, Forward, Settings
+        Quit, Address, NewTab, NewSpace, CloseTab, Reload, NextPane, Back, Forward, Settings,
+        CopyUrl
     ]
 );
 
@@ -127,6 +132,8 @@ fn main() {
             KeyBinding::new("alt-left", Back, None),
             KeyBinding::new("alt-right", Forward, None),
         ]);
+        #[cfg(target_os = "macos")]
+        cx.bind_keys([KeyBinding::new("cmd-shift-c", CopyUrl, None)]);
         #[cfg(target_os = "macos")]
         cx.bind_keys((1..=9).map(|number| {
             KeyBinding::new(

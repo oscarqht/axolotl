@@ -10,6 +10,8 @@ mod chrome_theme;
 mod copy_url;
 mod default_browser;
 mod docking;
+mod downloads;
+mod downloads_ui;
 mod drag_preview;
 mod external_urls;
 mod floating_bar;
@@ -46,6 +48,8 @@ mod smoke_copy_url;
 mod smoke_docking;
 #[cfg(feature = "smoke")]
 mod smoke_external_urls;
+#[cfg(feature = "smoke")]
+mod smoke_downloads;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_google_popup;
 #[cfg(feature = "smoke")]

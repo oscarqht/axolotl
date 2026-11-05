@@ -24,7 +24,7 @@ pub struct PinnedUi {
 
 pub fn header_layout(width: f32, count: usize) -> (usize, f32) {
     // Keep a full space chip, caption controls and an empty drag region usable.
-    let capacity = (((width - 430.).max(0.) / 34.) as usize).max(1);
+    let capacity = (((width - 464.).max(0.) / 34.) as usize).max(1);
     let slots = count.min(capacity);
     let visible = if count > capacity { slots - 1 } else { slots };
     (
@@ -89,6 +89,7 @@ impl BrowserApp {
     }
 
     pub fn toggle_pin(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_downloads(window, cx);
         let closing = self.pins.open == Some(id);
         self.dismiss_pin(window, cx);
         self.close_space_menu(cx);
@@ -103,6 +104,7 @@ impl BrowserApp {
     }
 
     pub fn pin_menu(&mut self, tab: Option<TabId>, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_downloads(window, cx);
         self.dismiss_pin(window, cx);
         self.pins.menu = Some(tab);
         cx.notify();
@@ -122,9 +124,9 @@ impl BrowserApp {
             .position(|p| p.tab.id == id)?
             .min(visible);
         let right = if cfg!(target_os = "windows") {
-            176.
+            210.
         } else {
-            42.
+            76.
         };
         let anchor = (w - right - strip + index as f32 * 34. + 30.).min(w - 4.);
         let width = pin.width.min((w - 8.).max(1.));
@@ -344,7 +346,7 @@ mod tests {
     fn header_reserves_controls_and_an_overflow_slot() {
         assert_eq!(header_layout(1000., 0), (0, 0.));
         assert_eq!(header_layout(1000., 2), (2, 64.));
-        assert_eq!(header_layout(1000., 40), (15, 540.));
+        assert_eq!(header_layout(1000., 40), (14, 506.));
         assert_eq!(header_layout(360., 12), (0, 30.));
     }
 }

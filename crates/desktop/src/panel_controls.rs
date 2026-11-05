@@ -380,5 +380,6 @@ impl BrowserApp {
             self.report(self.host.focus(tab));
         }
         self.focus_woken_page();
+        self.prepare_downloads(window, cx);
     }
 }

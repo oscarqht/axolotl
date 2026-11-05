@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>
+:root{--ink:#202124;--muted:#73777d;--surface:#fff;--hover:#f0f1f2;--border:#ddd;--accent:#4581df;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent}#panel{position:absolute;right:42px;top:4px;width:min(384px,calc(100% - 16px));max-height:calc(100% - 16px);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 28px #0003;overflow:hidden}header{padding:16px 16px 12px;font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:space-between}header small{font-size:11px;color:var(--muted);font-weight:400}#items{overflow:auto;padding:0 8px 8px}.item{padding:12px 8px;border-top:1px solid var(--border)}.filename{font-weight:500;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.detail{font-size:12px;color:var(--muted);margin:6px 0;overflow-wrap:anywhere}.actions{display:flex;gap:6px;margin-top:8px}button{font:inherit;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--ink);border-radius:6px;padding:5px 8px;cursor:pointer}button:hover{background:var(--hover)}button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}progress{display:block;width:100%;height:5px;accent-color:var(--accent);margin-top:9px}#empty{padding:28px 16px 32px;text-align:center;color:var(--muted)}#message{margin:0 16px 12px;color:#c43b35;font-size:12px;overflow-wrap:anywhere}[hidden]{display:none!important}@media(prefers-reduced-motion:reduce){progress{animation:none}}
+</style></head><body>
+<section id="panel" role="dialog" aria-label="Downloads"><header>Downloads <small>This session</small></header><div id="empty">No downloads yet</div><div id="items" aria-live="polite" aria-relevant="additions"></div><p id="message" role="alert" hidden></p></section>
+<script>
+const send=(type,id)=>window.ipc.postMessage(JSON.stringify({type,id}));
+const bytes=n=>{const units=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<3){n/=1024;i++}return `${i?n.toFixed(1):n} ${units[i]}`};
+window.downloadMessage=text=>{message.textContent=text;message.hidden=!text};
+window.updateDownloads=state=>{
+ for(const [key,value] of Object.entries(state.theme))document.documentElement.style.setProperty('--'+key,value);
+ panel.style.right=Math.min(state.right,Math.max(8,innerWidth-400))+'px';
+ const existing=new Map([...items.children].map(row=>[row.dataset.id,row]));
+ const current=new Set();
+ const ordered=state.items.slice().reverse();
+ ordered.forEach((item,index)=>{
+  let row=existing.get(item.id);current.add(item.id);
+  if(!row){
+   row=document.createElement('div');row.className='item';row.dataset.id=item.id;
+   const name=document.createElement('div');name.className='filename';row.append(name);
+   const detail=document.createElement('div');detail.className='detail';row.append(detail);
+   const actions=document.createElement('div');actions.className='actions';row.append(actions);
+  }
+  const name=row.querySelector('.filename');name.textContent=item.filename;name.title=item.filename;
+  const status=item.status.toLowerCase();
+  row.querySelector('.detail').textContent=status==='downloading'?(item.total>0?`${bytes(item.received)} of ${bytes(item.total)} · ${Math.min(100,Math.floor(item.received/item.total*100))}%`:`${bytes(item.received)} downloaded`):status==='completed'?`Completed · ${bytes(item.received)}`:status==='cancelled'?'Cancelled':`Failed${item.error?' · '+item.error:''}`;
+  let progress=row.querySelector('progress');
+  if(status==='downloading'){
+   if(!progress){progress=document.createElement('progress');row.insertBefore(progress,row.querySelector('.actions'))}
+   progress.setAttribute('aria-label','Downloading '+item.filename);
+   if(item.total>0){progress.max=item.total;progress.value=item.received}else{progress.removeAttribute('value')}
+  }else{progress?.remove()}
+  const actions=row.querySelector('.actions');
+  if(row.dataset.status!==status){
+   const options=status==='downloading'?[['cancel','Cancel']]:status==='completed'?[['open','Open file'],['reveal',state.revealLabel]]:[];
+   actions.replaceChildren();
+   for(const [action,label] of options){const button=document.createElement('button');button.type='button';button.dataset.action=action;button.textContent=label;button.onclick=()=>send(action,item.id);actions.append(button)}
+   row.dataset.status=status;
+  }
+  // Preserve row and button identity during progress updates, including a held click.
+  if(items.children[index]!==row)items.insertBefore(row,items.children[index]||null);
+ });
+ for(const [id,row] of existing)if(!current.has(id))row.remove();
+ empty.hidden=ordered.length>0;
+};
+document.addEventListener('pointerdown',e=>{if(!panel.contains(e.target))send('dismiss')});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}});
+send('ready');
+</script></body></html>

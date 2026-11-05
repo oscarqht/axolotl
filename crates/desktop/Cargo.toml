@@ -10,6 +10,7 @@ gpui = { version = "=0.2.2", features = ["runtime_shaders"] }
 gpui-component = "=0.5.1"
 wry = { version = "=0.55.1", features = ["transparent"] }
 anyhow = "1"
+dirs = "6"
 adblock = { version = "=0.13.5", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling", "content-blocking"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 url = "2"
@@ -23,6 +24,7 @@ uuid = { version = "1", features = ["v4"] }
 smoke = []
 
 [target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
 block2 = "0.6"
 objc2-authentication-services = { version = "=0.3.2", default-features = false, features = ["std", "ASAuthorizationWebBrowserPublicKeyCredentialManager", "block2"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFString", "CFNumber"] }
@@ -30,10 +32,10 @@ objc2-security = { version = "0.3", default-features = false, features = ["std",
 objc2 = "0.6"
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "CABase", "CAAnimation", "CAMediaTiming", "CAMediaTimingFunction"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWorkspace", "NSAccessibility", "NSEvent", "NSGraphicsContext", "block2", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSURL", "NSDictionary", "NSData", "NSError", "NSNotification", "NSOperation", "NSString", "NSValue", "block2"] }
-objc2-web-kit = { version = "0.3", default-features = false, features = ["WKSnapshotConfiguration", "WKWebView", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKUserScript", "WKWebViewConfiguration"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProgress", "NSURLResponse", "NSURLRequest", "NSBundle", "NSURL", "NSDictionary", "NSData", "NSError", "NSNotification", "NSOperation", "NSString", "NSValue", "block2"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["WKDownload", "WKDownloadDelegate", "WKNavigationDelegate", "WKNavigationAction", "WKNavigationResponse", "WKSnapshotConfiguration", "WKWebView", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKUserScript", "WKWebViewConfiguration"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.56"
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_Storage_FileSystem", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }

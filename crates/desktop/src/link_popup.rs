@@ -132,6 +132,7 @@ impl BrowserApp {
         let Some((source, pane, space)) = origin else {
             return;
         };
+        self.close_downloads(window, cx);
         self.cancel_edit(window, cx);
         self.cancel_tab_drag(cx);
         self.cancel_space_drag(cx);

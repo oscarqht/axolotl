@@ -606,6 +606,7 @@ impl Render for BrowserApp {
                         cx.notify();
                         return;
                     }
+                    this.close_downloads(window, cx);
                     this.dismiss_link_popup(window, cx);
                     this.close_settings(window, cx);
                     this.dismiss_pin(window, cx);
@@ -626,6 +627,7 @@ impl Render for BrowserApp {
             }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
+                    this.close_downloads(window, cx);
                     this.dismiss_pin(window, cx);
                     this.close_space_menu(cx);
                     this.cancel_space_drag(cx);
@@ -688,9 +690,9 @@ impl Render for BrowserApp {
                             let (_, strip) =
                                 crate::pinned_tabs::header_layout(w, this.model.pinned_tabs.len());
                             let right = if cfg!(target_os = "windows") {
-                                176.
+                                210.
                             } else {
-                                42.
+                                76.
                             };
                             let slot = ((f32::from(event.position.x) - (w - right - strip) + 17.)
                                 / 34.)
@@ -752,12 +754,12 @@ impl Render for BrowserApp {
                             .when(cfg!(target_os = "windows"), |spaces| {
                                 // Reserve caption buttons, gaps, and an empty drag target.
                                 spaces.max_w(px(
-                                    (f32::from(viewport.width) - 228. - pin_width).max(0.)
+                                    (f32::from(viewport.width) - 262. - pin_width).max(0.)
                                 ))
                             })
                             .when(!cfg!(target_os = "windows"), |spaces| {
                                 spaces.max_w(px(
-                                    (f32::from(viewport.width) - 212. - pin_width).max(0.)
+                                    (f32::from(viewport.width) - 246. - pin_width).max(0.)
                                 ))
                             })
                             .min_w_0()
@@ -810,6 +812,45 @@ impl Render for BrowserApp {
                             }),
                     )
                     .child(self.pinned_header(window, cx))
+                    .child(
+                        div()
+                            .id("downloads-button")
+                            .track_focus(&self.downloads_focus)
+                            .w(px(30.))
+                            .h(px(30.))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_md()
+                            .cursor_pointer()
+                            .when(self.downloads_popup.is_some(), |s| s.bg(rgb(colors.hover)))
+                            .hover(|s| s.bg(rgb(colors.hover)))
+                            .tooltip(|window, cx| {
+                                gpui_component::tooltip::Tooltip::new("Downloads").build(window, cx)
+                            })
+                            .child(
+                                div()
+                                    .w(px(16.))
+                                    .h(px(21.))
+                                    .border_b_2()
+                                    .border_color(rgb(colors.ink))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(22.))
+                                    .child("↓"),
+                            )
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.downloads_focus.focus(window);
+                                this.toggle_downloads(window, cx);
+                            }))
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    this.toggle_downloads(window, cx);
+                                }
+                            })),
+                    )
                     .child(
                         div()
                             .id("settings-button")

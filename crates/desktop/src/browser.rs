@@ -103,6 +103,7 @@ pub trait BrowserHost {
     fn is_visible(&self, tab: TabId) -> bool;
     #[cfg(feature = "smoke")]
     fn is_loaded(&self, tab: TabId) -> bool;
+    fn downloads(&self) -> Rc<RefCell<crate::downloads::DownloadManager>>;
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>>;
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
@@ -160,10 +161,12 @@ pub(crate) fn parse_history(value: &str) -> (bool, bool) {
 }
 
 pub struct WryHost {
+    downloads: Rc<RefCell<crate::downloads::DownloadManager>>,
     protection: Rc<RefCell<crate::protection::Protection>>,
     protection_revisions: RefCell<HashMap<TabId, (u64, crate::protection::Policy)>>,
     protection_notified: RefCell<String>,
     views: RefCell<HashMap<TabId, Rc<WebView>>>,
+    retired_views: RefCell<Vec<Rc<WebView>>>,
     identities: RefCell<HashMap<TabId, Arc<AtomicU64>>>,
     events: Receiver<BrowserEvent>,
     sender: SyncSender<BrowserEvent>,
@@ -176,10 +179,12 @@ impl Default for WryHost {
         // Untrusted pages cannot cause unbounded allocation by flooding IPC.
         let (sender, events) = mpsc::sync_channel(512);
         Self {
+            downloads: Rc::new(RefCell::new(crate::downloads::DownloadManager::default())),
             protection: Rc::new(RefCell::new(crate::protection::Protection::restore())),
             protection_revisions: RefCell::new(HashMap::new()),
             protection_notified: RefCell::new(String::new()),
             views: RefCell::new(HashMap::new()),
+            retired_views: RefCell::new(Vec::new()),
             identities: RefCell::new(HashMap::new()),
             events,
             sender,
@@ -227,6 +232,10 @@ impl WryHost {
         Self::default()
     }
 
+    fn downloads_active(&self) -> bool {
+        self.downloads.borrow().busy()
+    }
+
     fn get(&self, tab: TabId) -> Result<Rc<WebView>> {
         self.views
             .borrow()
@@ -237,6 +246,9 @@ impl WryHost {
 }
 
 impl BrowserHost for WryHost {
+    fn downloads(&self) -> Rc<RefCell<crate::downloads::DownloadManager>> {
+        self.downloads.clone()
+    }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()> {
         use block2::RcBlock;
@@ -531,9 +543,8 @@ impl BrowserHost for WryHost {
                 // The shell creates a normal tab, never a second native window.
                 NewWindowResponse::Deny
             })
-            // Download management belongs to a later browser milestone. Deny
-            // here rather than writing files without a visible download flow.
-            .with_download_started_handler(|_, _| false);
+            // Native download hooks own the destination, progress and cancellation.
+            .with_download_started_handler(|_, _| true);
         // Set the native UA before the first request, so HTTP and JavaScript
         // detection agree on initial loads, redirects, frames and new tabs.
         #[cfg(target_os = "macos")]
@@ -547,6 +558,10 @@ impl BrowserHost for WryHost {
         let view = builder
             .build_native_child(window, cx)
             .context("Creating native browser child view")?;
+        #[cfg(target_os = "macos")]
+        crate::downloads::install(&view, self.downloads.clone())?;
+        #[cfg(target_os = "windows")]
+        view.setup_downloads(self.downloads.clone())?;
         let view = Rc::new(view);
         *title_view.borrow_mut() = Some(Rc::downgrade(&view));
         #[cfg(target_os = "windows")]
@@ -597,6 +612,9 @@ impl BrowserHost for WryHost {
     fn unload(&self, tab: TabId) {
         if let Some(view) = self.views.borrow_mut().remove(&tab) {
             let _ = view.set_visible(false);
+            if self.downloads_active() {
+                self.retired_views.borrow_mut().push(view);
+            }
         }
         self.visible.borrow_mut().remove(&tab);
         self.loaded.borrow_mut().remove(&tab);
@@ -794,6 +812,9 @@ impl BrowserHost for WryHost {
             if let Err(error) = view.set_visible(false) {
                 eprintln!("Could not hide closed browser view: {error}");
             }
+            if self.downloads_active() {
+                self.retired_views.borrow_mut().push(view.clone());
+            }
             false
         });
     }
@@ -849,6 +870,11 @@ impl BrowserHost for WryHost {
     }
 
     fn drain_events(&self) -> Vec<BrowserEvent> {
+        // Downloads outlive closing/sleeping their originating tab or preview.
+        // Hidden retired engines are released as soon as the transfers end.
+        if !self.downloads_active() {
+            self.retired_views.borrow_mut().clear();
+        }
         if let Err(error) = self.protection.borrow_mut().poll() {
             eprintln!("Protection: {error}");
         }

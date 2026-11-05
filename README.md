@@ -193,6 +193,15 @@ ads and trackers** or the website shield in each panel to change it. Lists updat
 daily while the browser is open; **Update now** retries immediately. See
 [content protection and current YouTube limitations](docs/content-protection.md).
 
+Web-page downloads save automatically to the user's Downloads folder on macOS and
+Windows, using the suggested filename and numbered suffixes for conflicts. The
+**Downloads** button between pinned tabs and Settings opens this session's list,
+with byte counts, progress, and completed, failed or cancelled status. Unknown
+file sizes show an indeterminate progress indicator. Use **Cancel** while a file
+is downloading, or **Open file** and **Show in Finder / Explorer** after completion.
+Files only open when requested. Download history clears when the app quits;
+pause, resume, retry and persistent history are not supported.
+
 ## Checks
 
 ```sh
@@ -225,6 +234,13 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-i
 
 # Focused native check for page notifications and unread badges (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications
+
+# Downloads: native attachment/blob clicks, conflicts, concurrent progress, cancellation and failures
+# Creates UUID-prefixed fixtures in the real Downloads folder and removes its own files.
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-downloads
+# Add --smoke-downloads-actions to exercise real Open/Reveal application launches.
+# Add --smoke-downloads-snapshot=/tmp/axolotl-downloads.png on macOS for a native dropdown snapshot.
+# Add --smoke-keep-overlays when concurrent GUI tests steal focus (smoke builds only).
 
 # macOS native pointer-capture split release regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
@@ -320,7 +336,7 @@ space. Hidden pages stay loaded and can keep running; page suspension and memory
 budgets remain future work.
 
 Native child views cover GPUI overlays. Floating panel bars and drag previews use
-transparent native child surfaces above live pages. Browser permission controls, downloads (currently denied), profiles,
+transparent native child surfaces above live pages. Browser permission controls, profiles,
 passwords, browser extensions, mobile shells, and layout persistence are outside
 this milestone. Chrome extensions are not supported by this Wry backend.
 
@@ -337,7 +353,7 @@ appearance and glyph availability depend on the operating system.
 
 Right-click a page chip and choose **Pin to header**, or drag a page chip into the
 main header. Pinned pages move into circular favicon buttons immediately left of
-Settings and stay available across spaces. Click a button to open its page; click
+Downloads and stay available across spaces. Click a button to open its page; click
 it again, click outside the popup, or press Escape to dismiss it. Opening another
 pin switches the popup. The existing page stays alive, retaining forms, scrolling
 and navigation history.

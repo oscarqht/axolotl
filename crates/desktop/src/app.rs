@@ -110,6 +110,8 @@ pub struct BrowserApp {
     pub link_popup: Option<crate::link_popup::LinkPopup>,
     pub(crate) pending_page_focus: Option<TabId>,
     pub settings_focus: FocusHandle,
+    pub downloads_focus: FocusHandle,
+    pub downloads_popup: Option<crate::downloads_ui::DownloadPopup>,
     pub(crate) saver: crate::persistence::SessionSaver,
     window_saver: crate::window_state::WindowSaver,
     last_fullscreen: bool,
@@ -189,7 +191,16 @@ impl BrowserApp {
         })
         .detach();
         cx.observe_window_activation(window, |this, window, cx| {
+            // Isolate native control checks from other concurrent GUI smoke apps.
+            #[cfg(feature = "smoke")]
+            if !window.is_window_active()
+                && std::env::args().any(|arg| arg == "--smoke-test")
+                && std::env::args().any(|arg| arg == "--smoke-keep-overlays")
+            {
+                return;
+            }
             if !window.is_window_active() {
+                this.downloads_popup = None;
                 this.dismiss_history();
                 this.space_menu = None;
                 this.dismiss_pin(window, cx);
@@ -264,6 +275,8 @@ impl BrowserApp {
             link_popup: None,
             pending_page_focus: None,
             settings_focus: cx.focus_handle(),
+            downloads_focus: cx.focus_handle(),
+            downloads_popup: None,
             saver,
             window_saver,
             host: Rc::new(WryHost::new()),
@@ -606,6 +619,7 @@ impl BrowserApp {
             self.prune_history(cx);
         }
         self.poll_history_popup(window, cx);
+        self.poll_downloads(window, cx);
         self.poll_settings(window, cx);
         self.poll_pins(window, cx);
         self.poll_link_popup(window, cx);

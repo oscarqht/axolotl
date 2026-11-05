@@ -40,6 +40,7 @@ impl BrowserApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.close_downloads(window, cx);
         if self.settings.is_some() {
             return;
         }

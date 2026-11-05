@@ -91,9 +91,14 @@ and its platform integration. Destruction and all host calls stay on the UI
 thread. Workspace state remains reusable without either desktop dependency.
 
 Links requesting another native window become tabs in the source pane. Native
-popup creation is denied. Downloads are denied pending a visible download flow.
-This is a browser integration prototype, not a complete browser permission,
-download, profile, password, or session-management implementation.
+popup creation is denied. Downloads use native WKDownload / WebView2 operations,
+with a session-only manager shared by tabs, pins and previews. A native overlay
+above page surfaces shows progress and explicit cancel/open/reveal actions. Files
+save to the system Downloads folder through private staging files; exclusive
+publication avoids overwriting existing files. Hidden retired page engines stay
+alive until active transfers finish, including after their tab or preview closes.
+This remains a browser integration prototype without complete browser permission,
+profile, password, or session-management implementations.
 
 ## Composition and platform differences
 

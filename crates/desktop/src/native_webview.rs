@@ -238,6 +238,15 @@ mod windows_view {
                 result => result,
             })
         }
+        pub fn setup_downloads(
+            &self,
+            manager: Rc<RefCell<crate::downloads::DownloadManager>>,
+        ) -> Result<()> {
+            self.call(move |view| {
+                crate::downloads::install(view, manager)
+                    .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))
+            })
+        }
         pub fn setup_protection(
             &self,
             protection: Rc<RefCell<crate::protection::Protection>>,

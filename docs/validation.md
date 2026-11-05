@@ -20,6 +20,47 @@ Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
 - Focused native sizing/transition/overflow checks and whitespace checks passed;
   the macOS app bundle was rebuilt. Foreground OS hover and Windows remain unverified.
 
+# Cmd+Q and sibling link routing
+
+Run on 2026-11-05 in `bro-fix-quit-and-cmd-click` on macOS arm64,
+Rust 1.91.1 and Xcode 27.2.
+
+- Traced GPUI's quit action to asynchronous AppKit termination and GPUI shutdown.
+  There is no application relaunch/reopen handler in this repository. Wry's
+  child WKWebView has special key-equivalent handling; Cmd+Q is now reserved by
+  an application-local native key monitor, consumed once, and dispatched
+  asynchronously to GPUI's existing graceful quit path. Other keys/modifiers
+  and the native Quit menu retain their existing behavior.
+- The reported empty-panel relaunch was not reliably reproduced on the baseline.
+  An initial mouse-driven comparison was discarded after discovering it changed
+  the foreground application. This change hardens native quit routing; it does
+  not establish the root cause of an external or intermittent relaunch.
+- Wry's navigation callback exposes only the URL, not click modifiers. Existing
+  popup handling remains an append-to-source-pane operation. A trusted click
+  bridge now cancels default navigation/popup creation and queues a separate,
+  nonce-authenticated, URL-filtered sibling event. The model inserts immediately
+  after the source and ignores stale or inactive-space sources.
+- Passed: formatting, whitespace checks, 28 Rust workspace unit tests (also with
+  all features), six dependency-free JavaScript bridge tests, workspace
+  all-target/all-feature checking, native debug builds and strict Clippy.
+- The existing full native smoke suite passed. The focused input runner passed
+  for ordinary and `target="_blank"` Cmd+click (one adjacent tab, source document
+  retained), ordinary popup links (existing append behavior), ordinary navigation
+  (no new tab), and OS Cmd+Q with native web content focused (exit status 0, no
+  relaunch observed during the following three seconds). Clicks use native
+  AppKit hit testing, not physical OS mouse input. An earlier process-targeted
+  CoreGraphics driver did not deliver mouse events; it was replaced, not counted
+  as a passing click test.
+- Tested the development executable, not a packaged/distributed app. Physical
+  mouse input, the original intermittent relaunch, and Windows runtime behavior
+  remain unverified. The original general foreground acceptance checklist below
+  is not superseded by these focused checks.
+
+Reproduce with `node --test scripts/test-input-bridge.cjs`, the Rust checks in
+README, and `python3 scripts/test-macos-input.py /absolute/path/to/axolotl` after
+building with `--features smoke`. The input runner requires a GUI session and
+System Events Accessibility/Automation access.
+
 # Circular floating controls
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

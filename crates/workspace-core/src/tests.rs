@@ -634,3 +634,49 @@ fn swiping_wraps_in_both_directions_and_handles_one_tab() {
     assert_eq!(w.focused_pane().active_tab, last);
     assert_invariants(&w);
 }
+
+#[test]
+fn linked_tabs_are_inserted_after_the_source_in_its_own_pane() {
+    let mut w = Workspace::new("https://example.com/source");
+    let pane = w.focused_pane().id;
+    let source = w.focused_pane().active_tab;
+    let following = w.add_tab("https://example.com/following");
+    let other = w.split_focused(Axis::Horizontal, "about:blank");
+    let other_tabs = w.pane(other).unwrap().clone();
+    let source_page = w.tab(source).unwrap().clone();
+    let sibling = w.add_tab_after(source, "https://example.com/link").unwrap();
+    assert_eq!(w.focused_pane().id, pane);
+    assert_eq!(w.focused_pane().active_tab, sibling);
+    assert_eq!(
+        w.pane(pane)
+            .unwrap()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>(),
+        [source, sibling, following]
+    );
+    assert_eq!(w.tab(source), Some(&source_page));
+    assert_eq!(w.pane(other), Some(&other_tabs));
+    assert_invariants(&w);
+}
+
+#[test]
+fn linked_tab_events_ignore_closed_sources_and_inactive_spaces() {
+    let mut w = Workspace::default();
+    let source = w.focused_pane().active_tab;
+    let home = w.active_space;
+    w.add_space("Other", "about:blank");
+    assert_eq!(w.add_tab_after(source, "https://example.com"), None);
+    assert_eq!(w.focused_pane().tabs.len(), 1);
+    w.switch_space(home);
+    let last = w.add_tab_after(source, "https://example.com").unwrap();
+    let sibling = w.add_tab_after(last, "https://example.org").unwrap();
+    assert_eq!(w.focused_pane().tabs.last().unwrap().id, sibling);
+    let pane = w.focused_pane().id;
+    w.close_tab(pane, source);
+    let before = w.focused_pane().clone();
+    assert_eq!(w.add_tab_after(source, "https://example.com"), None);
+    assert_eq!(w.focused_pane(), &before);
+    assert_invariants(&w);
+}

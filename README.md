@@ -103,10 +103,12 @@ machine running the executable. See the validation report below for tested scope
   resize panels while their content stays visible.
 - Enter a URL, hostname, localhost address, or search phrase. `about:blank`
   opens the built-in start page. Page links requesting a new window become tabs
-  in the originating pane.
+  in the originating pane. Cmd+click (Ctrl+click on Windows) opens one tab
+  immediately after the source tab in the same pane, without navigating the source.
 
 | Shortcut | Action |
 | --- | --- |
+| Cmd/Ctrl+Q | Quit the app (Cmd+Q also works while native web content has focus) |
 | Cmd/Ctrl+L | Edit the focused page URL inline |
 | Cmd/Ctrl+T | New tab in the focused pane |
 | Cmd/Ctrl+W | Close the focused tab |
@@ -120,6 +122,7 @@ supplies standard copy/paste actions to both web content and the inline URL inpu
 ## Checks
 
 ```sh
+node --test scripts/test-input-bridge.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -135,6 +138,21 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
 ```
+
+A focused macOS input regression checks native link hit testing and sends an OS
+Cmd+Q to the test process after verifying it is foreground:
+
+```sh
+cargo build -p axolotl --locked --features smoke
+python3 scripts/test-macos-input.py "$(pwd)/target/debug/axolotl"
+```
+
+This needs Python 3, a GUI session and System Events Accessibility/Automation
+permission. Link clicks are synthesized through AppKit/NSWindow hit testing;
+they are not JavaScript `dispatchEvent` calls or physical OS mouse input. The
+runner checks sibling order, exactly one new tab, retained source document,
+ordinary navigation, existing popup handling, graceful exit and no relaunch
+observed for three seconds. Run it without another instance of the same binary.
 
 For visual inspection of a held drag state, append `--smoke-hold-preview` after
 `--smoke-test`; it holds the captured card and insertion placeholder for 20 seconds.

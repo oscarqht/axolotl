@@ -174,6 +174,36 @@ impl Workspace {
         id
     }
 
+    /// Open a foreground sibling immediately after its source in the active space.
+    /// Ignore stale events from closed tabs or inactive spaces.
+    pub fn add_tab_after(&mut self, source: TabId, url: &str) -> Option<TabId> {
+        let (pane_index, tab_index) =
+            self.active_space()
+                .panes
+                .iter()
+                .enumerate()
+                .find_map(|(index, pane)| {
+                    pane.tabs
+                        .iter()
+                        .position(|tab| tab.id == source)
+                        .map(|tab| (index, tab))
+                })?;
+        let id = self.allocate();
+        let space = self.active_space_mut();
+        let pane = &mut space.panes[pane_index];
+        pane.tabs.insert(
+            tab_index + 1,
+            Tab {
+                id,
+                url: url.to_owned(),
+                title: String::new(),
+            },
+        );
+        pane.active_tab = id;
+        space.focused_pane = pane.id;
+        Some(id)
+    }
+
     pub fn switch_tab(&mut self, pane: PaneId, tab: TabId) -> bool {
         let space = self.active_space_mut();
         let Some(pane) = space.panes.iter_mut().find(|p| p.id == pane) else {

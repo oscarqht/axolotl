@@ -1,0 +1,75 @@
+//! Reserve Cmd+Q before WKWebView's child-view key-equivalent handling.
+use block2::RcBlock;
+use gpui::{App, Global};
+use objc2::{rc::Retained, runtime::AnyObject};
+use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags as Flags};
+use std::{cell::Cell, ptr::NonNull};
+
+struct QuitMonitor(Retained<AnyObject>);
+impl Global for QuitMonitor {}
+impl Drop for QuitMonitor {
+    fn drop(&mut self) {
+        // The token was returned by AppKit's event-monitor registration below.
+        unsafe { NSEvent::removeMonitor(&self.0) };
+    }
+}
+
+fn is_quit(key: &str, flags: Flags) -> bool {
+    key.eq_ignore_ascii_case("q")
+        && flags.contains(Flags::Command)
+        && !flags.intersects(Flags::Control | Flags::Option | Flags::Shift)
+}
+
+pub fn install(cx: &mut App) {
+    let app = cx.to_async();
+    let executor = cx.foreground_executor().clone();
+    let requested = Cell::new(false);
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| {
+        // AppKit invokes local monitors on the main thread with a live event.
+        let event_ref = unsafe { event.as_ref() };
+        let key = event_ref
+            .charactersIgnoringModifiers()
+            .map(|s| s.to_string());
+        if key.is_some_and(|key| is_quit(&key, event_ref.modifierFlags())) {
+            if !requested.replace(true) {
+                let app = app.clone();
+                // Do not borrow GPUI reentrantly from native event dispatch.
+                executor
+                    .spawn(async move {
+                        let _ = app.update(|cx| cx.quit());
+                    })
+                    .detach();
+            }
+            std::ptr::null_mut()
+        } else {
+            event.as_ptr()
+        }
+    });
+    // The block returns either the original event or nil to consume Cmd+Q.
+    let monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler)
+    }
+    .expect("register Cmd+Q event monitor");
+    cx.set_global(QuitMonitor(monitor));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_unmodified_command_q_requests_quit() {
+        assert!(is_quit("q", Flags::Command));
+        assert!(is_quit("Q", Flags::Command | Flags::CapsLock));
+        for flags in [
+            Flags::empty(),
+            Flags::Control,
+            Flags::Command | Flags::Control,
+            Flags::Command | Flags::Option,
+            Flags::Command | Flags::Shift,
+        ] {
+            assert!(!is_quit("q", flags));
+        }
+        assert!(!is_quit("w", Flags::Command));
+    }
+}

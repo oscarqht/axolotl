@@ -49,6 +49,7 @@ pub enum BrowserEvent {
     Title(TabId, String),
     Loaded(TabId),
     NewTab(TabId, String),
+    OpenLink(TabId, String),
     Shortcut(TabId, String),
     Gesture(TabId, f64, f64),
 }
@@ -56,6 +57,8 @@ pub enum BrowserEvent {
 /// The operations a replacement engine must provide. Browser state is never
 /// serialized into the layout core, so a future mobile adapter can share it.
 pub trait BrowserHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_click(&self, tab: TabId, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
     #[cfg(feature = "smoke")]
@@ -132,6 +135,38 @@ impl WryHost {
 
 impl BrowserHost for WryHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_click(&self, tab: TabId, modified: bool) -> Result<()> {
+        use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+        use objc2_foundation::NSPoint;
+        use wry::WebViewExtMacOS;
+        let view = self.get(tab)?;
+        let webview = view.webview();
+        let window = view.ns_window();
+        let point = NSPoint::new(
+            60.,
+            if webview.isFlipped() {
+                50.
+            } else {
+                webview.frame().size.height - 50.
+            },
+        );
+        let point = webview.convertPoint_toView(point, None);
+        let flags = if modified {
+            NSEventModifierFlags::Command
+        } else {
+            NSEventModifierFlags::empty()
+        };
+        for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
+            let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                kind, point, flags, 0., window.windowNumber(), None, 0, 1, 1.,
+            ).context("create native click event")?;
+            // NSWindow hit testing delivers a genuine WebKit input event, not a
+            // JavaScript dispatchEvent (which the bridge intentionally rejects).
+            window.sendEvent(&event);
+        }
+        Ok(())
+    }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()> {
         use objc2_app_kit::{
             NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
@@ -187,6 +222,14 @@ impl BrowserHost for WryHost {
         let nonce = uuid::Uuid::new_v4().simple().to_string();
         let input_bridge = INPUT_BRIDGE
             .replace("__NONCE__", &nonce)
+            .replace(
+                "__LINK_MODIFIER__",
+                if cfg!(target_os = "macos") {
+                    "event.metaKey && !event.ctrlKey"
+                } else {
+                    "event.ctrlKey && !event.metaKey"
+                },
+            )
             .replace("__GESTURES__", include_str!("../assets/gestures.js"));
         let start_url = html_data_url(START_HTML);
         let builder = WebViewBuilder::new()
@@ -219,6 +262,10 @@ impl BrowserHost for WryHost {
                     && y.is_finite()
                 {
                     let _ = ipc.try_send(BrowserEvent::Gesture(tab, x, y));
+                    return;
+                }
+                if let Some(url) = authenticated_link(request.body(), &nonce) {
+                    let _ = ipc.try_send(BrowserEvent::OpenLink(tab, url.to_owned()));
                     return;
                 }
                 let Some(command) = authenticated_command(request.body(), &nonce) else {
@@ -475,25 +522,17 @@ pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option
     }
 }
 
+pub(crate) fn authenticated_link<'a>(message: &'a str, nonce: &str) -> Option<&'a str> {
+    let (token, command) = message.split_once(':')?;
+    if token != nonce {
+        return None;
+    }
+    command
+        .strip_prefix("open-link:")
+        .filter(|url| allowed_url(url))
+}
+
 // The nonce stays inside an initialization-script closure and the original IPC
 // function is captured before page scripts can replace it. Only trusted native
 // input events produce authenticated browser commands. No privileged RPC exists.
-const INPUT_BRIDGE: &str = r#"
-(() => {
-    const post = window.ipc.postMessage.bind(window.ipc);
-    const nonce = '__NONCE__';
-    const send = value => post(nonce + ':' + value);
-    window.addEventListener('pointerdown', event => {
-        if (event.isTrusted) send('focus');
-    }, true);
-    window.addEventListener('focus', event => {
-        if (event.isTrusted) send('focus');
-    });
-    window.addEventListener('keydown', event => {
-        if (!event.isTrusted || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
-        const command = {l:'address', t:'new-tab', w:'close-tab', r:'reload'}[event.key.toLowerCase()];
-        if (command) { event.preventDefault(); event.stopImmediatePropagation(); send(command); }
-    }, true);
-__GESTURES__
-})();
-"#;
+pub(crate) const INPUT_BRIDGE: &str = include_str!("../assets/input-bridge.js");

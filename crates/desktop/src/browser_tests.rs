@@ -61,3 +61,30 @@ fn navigation_never_allows_local_files_or_executable_schemes() {
         assert!(allowed_url(url), "denied {url}");
     }
 }
+
+#[test]
+fn link_bridge_requires_nonce_command_and_safe_destination() {
+    use crate::browser::authenticated_link;
+    for url in [
+        "https://example.com/a:b?q=x#part",
+        "http://localhost:8000/",
+        "about:blank",
+    ] {
+        assert_eq!(
+            authenticated_link(&format!("secret:open-link:{url}"), "secret"),
+            Some(url)
+        );
+    }
+    for message in [
+        "open-link:https://example.com",
+        "wrong:open-link:https://example.com",
+        "secret:new-tab:https://example.com",
+        "secret:open-link:javascript:alert(1)",
+        "secret:open-link:file:///etc/passwd",
+        "secret:open-link:data:text/html,test",
+        "secret:open-link:about:config",
+        "secret:open-link:",
+    ] {
+        assert_eq!(authenticated_link(message, "secret"), None, "{message}");
+    }
+}

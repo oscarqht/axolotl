@@ -141,7 +141,7 @@ async fn wait_preview(
     Ok(())
 }
 
-async fn wait_title(
+pub(crate) async fn wait_title(
     host: &Host,
     tab: TabId,
     expected: &str,
@@ -169,6 +169,10 @@ async fn run(
         (app.host.clone(), app.active_tab())
     })?;
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-input") {
+        return crate::smoke_input::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-bar-sizing") {
         return crate::smoke_panels::check_sizing(view, cx).await;
     }

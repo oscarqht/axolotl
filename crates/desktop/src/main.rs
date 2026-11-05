@@ -8,11 +8,15 @@ mod drag_preview;
 mod floating_bar;
 #[cfg(test)]
 mod gesture_tests;
+#[cfg(target_os = "macos")]
+mod macos_quit;
 mod native_webview;
 mod panel_controls;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_input;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
 mod split_preview;
@@ -38,6 +42,8 @@ fn main() {
     Application::new().run(|cx: &mut App| {
         eprintln!("Axolotl: platform launched");
         gpui_component::init(cx);
+        #[cfg(target_os = "macos")]
+        macos_quit::install(cx);
         cx.on_action(|_: &Quit, cx| cx.quit());
         let modifier = if cfg!(target_os = "macos") {
             "cmd"

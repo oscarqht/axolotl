@@ -419,6 +419,12 @@ impl BrowserApp {
                         self.status.clear();
                     }
                 }
+                BrowserEvent::OpenLink(source, url) => {
+                    if self.model.add_tab_after(source, &url).is_some() {
+                        self.cancel_edit(window, cx);
+                        self.sync_address(window, cx);
+                    }
+                }
                 BrowserEvent::NewTab(source, url) => {
                     let pane = self
                         .model

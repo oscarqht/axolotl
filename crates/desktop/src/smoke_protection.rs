@@ -88,6 +88,70 @@ pub(crate) async fn run(
         "Native protection failed: {state}, server hits={}",
         hits.load(Ordering::Relaxed)
     );
+    let shield_hit=bar_eval(view,pane,"(()=>{const r=document.querySelector('#shield').getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')?.id})()",cx).await?;
+    ensure!(
+        shield_hit == "shield",
+        "Shield is covered by another control: {shield_hit}"
+    );
+    // Give the native bar actual document focus before testing keyboard focus.
+    // focus_editor focuses its native view and has no input to edit here.
+    view.update_in(cx, |app, _, _| app.bars[&pane].focus_editor())??;
+    bar_eval(view,pane,"(()=>{const s=document.querySelector('#shield');s.dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));s.focus();return true})()",cx).await?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    ensure!(
+        bar_eval(view, pane, "expanded", cx).await? == false,
+        "Shield hover/focus expanded compact chips"
+    );
+    bar_eval(
+        view,
+        pane,
+        "document.activeElement?.blur();expand(true);true",
+        cx,
+    )
+    .await?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    bar_eval(view,pane,"(()=>{document.querySelector('#tabs').dispatchEvent(new PointerEvent('pointerleave',{pointerType:'mouse'}));document.querySelector('#shield').dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));return true})()",cx).await?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    ensure!(
+        bar_eval(view, pane, "expanded", cx).await? == true,
+        "Pending collapse moved shield during hover"
+    );
+    view.update_in(cx, |app, _, _| app.bars[&pane].focus_editor())??;
+    bar_eval(
+        view,
+        pane,
+        "document.querySelector('#shield').focus();collapse();true",
+        cx,
+    )
+    .await?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    // Background smoke windows may lose OS focus; blur is allowed to collapse.
+    let focus_state=bar_eval(view,pane,"({expanded,focused:document.hasFocus(),active:document.activeElement?.id,disabled:document.querySelector('#shield').disabled})",cx).await?;
+    ensure!(
+        focus_state["focused"] == false || focus_state["expanded"] == true,
+        "Focus on shield allowed chips to collapse: {focus_state}"
+    );
+    #[cfg(target_os = "macos")]
+    {
+        let center=bar_eval(view,pane,"(()=>{const r=document.querySelector('#shield').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()",cx).await?;
+        view.update_in(cx, |app, _, _| {
+            let bar = &app.bars[&pane];
+            let x = bar.bounds.x as f64 + center[0].as_f64().unwrap();
+            let y = bar.bounds.y as f64 + center[1].as_f64().unwrap();
+            bar.test_mouse(objc2_app_kit::NSEventType::LeftMouseDown, x, y)?;
+            bar.test_mouse(objc2_app_kit::NSEventType::LeftMouseUp, x, y)
+        })??;
+    }
+
+    #[cfg(not(target_os = "macos"))]
     bar_eval(
         view,
         pane,
@@ -240,6 +304,7 @@ pub(crate) async fn run(
         );
     }
     Ok(vec![
+        "shield receives native hit testing; hover retains compact and expanded states",
         "native request blocked before reaching server",
         "ordinary document preserved",
         "maintained cosmetic selector hidden",

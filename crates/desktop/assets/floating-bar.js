@@ -97,8 +97,8 @@ function expand(value) {
       renaming ||
       menu ||
       (document.hasFocus() &&
-        document.activeElement?.closest("#count,#tabs,.arrow")) ||
-      [...bar.querySelectorAll("#count,#tabs,.arrow")].some((area) =>
+        document.activeElement?.closest("#count,#tabs,.arrow,#shield")) ||
+      [...bar.querySelectorAll("#count,#tabs,.arrow,#shield")].some((area) =>
         area.matches(":hover"),
       ) ||
       pinned)
@@ -172,13 +172,19 @@ for (const area of bar.querySelectorAll("#count,#tabs")) {
 for (const arrow of bar.querySelectorAll(".arrow")) {
   arrow.addEventListener("pointerleave", collapse);
 }
+// The shield preserves the current bar width while it is being targeted.
+// It never requests expansion, and cancels a collapse queued by leaving chips.
+const shieldButton = document.querySelector("#shield");
+shieldButton.addEventListener("pointerenter", () => clearTimeout(collapseTimer));
+shieldButton.addEventListener("pointerleave", collapse);
 bar.addEventListener("pointerleave", () => {
   if (drag && !drag.active) drag = null;
   collapse();
 });
 bar.addEventListener("dragstart", (e) => e.preventDefault());
 bar.addEventListener("focusin", (event) => {
-  if (event.target.closest("#count,#tabs,.arrow")) expand(true);
+  if (event.target.closest("#shield")) clearTimeout(collapseTimer);
+  else if (event.target.closest("#count,#tabs,.arrow")) expand(true);
   else collapse();
 });
 bar.addEventListener("focusout", collapse);

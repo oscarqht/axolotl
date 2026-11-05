@@ -98,7 +98,8 @@
     cursor: grab;
   }
   #handle svg,
-  #add svg {
+  #add svg,
+  #shield svg {
     display: block;
     pointer-events: none;
   }
@@ -125,7 +126,8 @@
     gap: 4px;
     position: absolute;
     left: 36px;
-    right: 36px;
+    /* Reserve both trailing controls so the count cannot cover the shield. */
+    right: 68px;
     min-width: 0;
     opacity: 1;
     transition: opacity 140ms ease;

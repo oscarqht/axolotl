@@ -104,21 +104,6 @@ impl BrowserApp {
             )
             // Keep tab clicks from bubbling into the surrounding pane header.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .when_some(
-                match target {
-                    TabTarget::Space(space) => Some(space),
-                    TabTarget::Page(..) => None,
-                },
-                |tab, space| {
-                    tab.on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            this.open_space_menu(space, event.position, window, cx);
-                        }),
-                    )
-                },
-            )
             .child(if editing {
                 div()
                     .flex_1()
@@ -498,63 +483,6 @@ impl Render for BrowserApp {
                         }),
                     )
             }))
-            .when_some(self.space_menu, |root, (space, position)| {
-                root.child(
-                    deferred(
-                        div()
-                            .id("space-menu-backdrop")
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size_full()
-                            .occlude()
-                            .on_any_mouse_down(cx.listener(|this, _, _, cx| {
-                                this.close_space_menu(cx);
-                            }))
-                            .child(
-                                div()
-                                    .id("space-menu")
-                                    .absolute()
-                                    .left(position.x)
-                                    // Native webviews paint above GPUI, so the menu must
-                                    // stay inside the TOP-high tab strip.
-                                    .top(px(4.))
-                                    .h(px(30.))
-                                    .min_w(px(140.))
-                                    .flex()
-                                    .rounded_md()
-                                    .bg(rgb(colors.surface))
-                                    .border_1()
-                                    .border_color(rgb(colors.border))
-                                    .text_color(rgb(colors.ink))
-                                    .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
-                                    .child(
-                                        div()
-                                            .id("space-menu-set-title")
-                                            .flex_1()
-                                            .h_full()
-                                            .px_2()
-                                            .flex()
-                                            .items_center()
-                                            .rounded_md()
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(rgb(colors.hover)))
-                                            .child("Set title…")
-                                            .on_click(cx.listener(
-                                                move |this, _: &ClickEvent, window, cx| {
-                                                    this.begin_edit(
-                                                        TabTarget::Space(space),
-                                                        window,
-                                                        cx,
-                                                    );
-                                                },
-                                            )),
-                                    ),
-                            ),
-                    )
-                    .with_priority(1),
-                )
-            })
             .when(!self.status.is_empty(), |root| {
                 root.child(
                     div()

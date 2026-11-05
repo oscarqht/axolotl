@@ -31,11 +31,24 @@ pub(crate) async fn run(
     view: &WeakEntity<BrowserApp>,
     cx: &mut AsyncWindowContext,
 ) -> Result<&'static str> {
-    let (active, other) = view.update_in(cx, |app, _, _| {
+    let (active, other, page_titles) = view.update_in(cx, |app, _, _| {
         let active = app.model.active_space;
         let other = app.model.add_space("Menu target", "about:blank");
+        // Give the target page a distinct title so writing the space title onto
+        // its active page cannot accidentally satisfy the assertions below.
+        let tab = app.model.focused_pane().active_tab;
+        app.model.tab_mut(tab).unwrap().title = "Original page title".into();
+        app.model.set_custom_title(tab, "Fixed page title");
         app.model.switch_space(active);
-        (active, other)
+        let page_titles: Vec<_> = app
+            .model
+            .spaces
+            .iter()
+            .flat_map(|s| &s.panes)
+            .flat_map(|p| &p.tabs)
+            .map(|t| (t.id, t.custom_title.clone()))
+            .collect();
+        (active, other, page_titles)
     })?;
     for action in ["save", "clear", "escape", "outside"] {
         view.update_in(cx, |app, window, cx| {
@@ -99,6 +112,23 @@ pub(crate) async fn run(
                 "Space title targeted the wrong space or failed to clear"
             );
             ensure!(
+                space.focused_pane().active_tab().title == "Original page title"
+                    && space.focused_pane().active_tab().display_title() == "Fixed page title",
+                "Space menu changed its active page title"
+            );
+            let current_page_titles: Vec<_> = app
+                .model
+                .spaces
+                .iter()
+                .flat_map(|s| &s.panes)
+                .flat_map(|p| &p.tabs)
+                .map(|t| (t.id, t.custom_title.clone()))
+                .collect();
+            ensure!(
+                current_page_titles == page_titles,
+                "Space menu changed a page tab custom title"
+            );
+            ensure!(
                 app.model.active_space().custom_title.is_none(),
                 "Changed active space title"
             );
@@ -109,6 +139,6 @@ pub(crate) async fn run(
         app.model.close_space(other);
     })?;
     Ok(
-        "native space menu: single Set title item, inactive-space targeting, save/clear, focused editor, viewport clamping, Escape/outside dismissal",
+        "native space menu: single Set title item, inactive-space targeting, save/clear without changing page titles, focused editor, viewport clamping, Escape/outside dismissal",
     )
 }

@@ -1,6 +1,6 @@
 //! Native assertions for the tab chip context menu.
 use crate::{
-    app::{BrowserApp, Command, TabAction, TabTarget},
+    app::BrowserApp,
     smoke::{bar_eval, pause},
 };
 use anyhow::{Result, ensure};
@@ -158,56 +158,7 @@ pub(crate) async fn run(
     )
     .await?;
     pause(cx).await;
-    space_menu(view, cx).await?;
     Ok(
-        "tab chip context menu: grouped items, space tab menu, targets the right-clicked inactive tab, disabled history items, set/clear fixed title, outside-click dismissal, close",
+        "tab chip context menu: grouped items, targets the right-clicked inactive tab, disabled history items, set/clear fixed title, outside-click dismissal, close",
     )
-}
-
-/// Right-click menu on a space tab: one "Set title…" item acting on the clicked space.
-async fn space_menu(view: &WeakEntity<BrowserApp>, cx: &mut AsyncWindowContext) -> Result<()> {
-    let (active, other) = view.update_in(cx, |app, window, cx| {
-        let active = app.model.active_space;
-        app.command(Command::NewSpace, window, cx);
-        let other = app.model.active_space;
-        app.select_target(TabTarget::Space(active), window, cx);
-        (active, other)
-    })?;
-    ensure!(active != other, "Second space was not created");
-    pause(cx).await;
-    view.update_in(cx, |app, window, cx| {
-        app.open_space_menu(other, point(px(100.), px(30.)), window, cx);
-        ensure!(
-            app.space_menu.map(|m| m.0) == Some(other) && app.model.active_space == active,
-            "Space menu must target the right-clicked space without activating it"
-        );
-        Ok(())
-    })??;
-    pause(cx).await;
-    cx.update(|window, cx| window.dispatch_action(Box::new(gpui_component::input::Escape), cx))?;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| app.space_menu.is_none())?,
-        "Escape did not dismiss the space menu"
-    );
-    view.update_in(cx, |app, window, cx| {
-        app.open_space_menu(other, point(px(100.), px(30.)), window, cx);
-        app.close_space_menu(cx);
-        ensure!(app.space_menu.is_none(), "Outside click did not dismiss");
-        app.open_space_menu(other, point(px(100.), px(30.)), window, cx);
-        // "Set title…" runs the same flow as double-click.
-        app.begin_edit(TabTarget::Space(other), window, cx);
-        ensure!(
-            app.space_menu.is_none() && app.editing == Some(TabTarget::Space(other)),
-            "Set title did not start renaming the right-clicked space"
-        );
-        app.cancel_edit(window, cx);
-        app.tab_action(TabTarget::Space(other), TabAction::Close, window, cx);
-        ensure!(
-            app.model.active_space == active && app.model.spaces.len() == 1,
-            "Cleanup of the extra space left state behind"
-        );
-        Ok(())
-    })??;
-    Ok(())
 }

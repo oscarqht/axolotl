@@ -89,8 +89,6 @@ pub struct BrowserApp {
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
     pub editing: Option<TabTarget>,
-    /// Open space-tab context menu: the right-clicked space and the click position.
-    pub space_menu: Option<(SpaceId, Point<Pixels>)>,
     pub select_address: bool,
     pub moving_window: bool,
     pub space_scroll: ScrollHandle,
@@ -99,6 +97,7 @@ pub struct BrowserApp {
     pub suppress_tab_click: bool,
     pub drag_preview: Option<crate::drag_preview::DragPreview>,
     pub split_preview: Option<crate::split_preview::SplitPreview>,
+    /// Native context menu/editor for the right-clicked space.
     pub space_menu: Option<crate::space_menu::SpaceMenu>,
     pub status: String,
     pub poll_count: u8,
@@ -176,7 +175,6 @@ impl BrowserApp {
             address,
             focus: cx.focus_handle(),
             editing: None,
-            space_menu: None,
             select_address: false,
             moving_window: false,
             space_scroll: ScrollHandle::new(),
@@ -250,18 +248,6 @@ impl BrowserApp {
         self.notifications.remove(&self.active_tab());
         self.sync_address(window, cx);
         self.reveal_focused();
-        cx.notify();
-    }
-    pub fn open_space_menu(
-        &mut self,
-        space: SpaceId,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.cancel_edit(window, cx);
-        self.space_menu = Some((space, position));
-        window.focus(&self.focus);
         cx.notify();
     }
     pub fn close_space_menu(&mut self, cx: &mut Context<Self>) {

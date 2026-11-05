@@ -1,3 +1,35 @@
+# macOS webpage arrow-key routing
+
+Run on 2026-11-05 in `bro-fix-webpage-arrow-keys` on macOS.
+
+- Wry child WKWebViews decline key equivalents, allowing the parent GPUIView
+  to interpret navigation events through its input context and app bindings.
+  The baseline native regression reproduced Option+Left being consumed before
+  the input received a keydown. The screenshot's box-character insertion was
+  not reproduced with synthetic NSEvents.
+- The existing AppKit local monitor now delivers arrow keydowns directly to
+  the focused WebKit responder, then consumes the original event. This avoids
+  competing GPUI interpretation while retaining WebKit editing, modifiers,
+  repeat state and cancelable DOM events. Other keys and GPUI editors retain
+  their existing routing; no page-side editing emulation is installed.
+- Passed: 72 native arrow cases across input, textarea and contenteditable,
+  including Shift, Option, Command and modifier-plus-Shift combinations. Each
+  case checks caret/selection, unchanged text, one trusted arrow keydown and
+  no beforeinput insertion. Additional checks cover multiline movement and
+  selection, preventDefault, repeat metadata, typing/backspace, history
+  navigation outside editors, Cmd+comma, Cmd+L and a GPUI shell editor.
+- The fixture uses a local HTTP origin so history navigation obeys the real
+  URL policy. It queues NSEvents through NSApplication's event queue and local
+  monitors, exercising AppKit and WebKit rather than DOM dispatchEvent.
+- Physical OS key injection was attempted with System Events. After retrying
+  in an isolated signed test bundle, process activation succeeded, but macOS
+  rejected key injection: `osascript is not allowed to send keystrokes` (1002).
+  The exact screenshot symptom still needs physical-key confirmation with
+  Accessibility access. The optional `scripts/test-macos-keyboard.py` runner
+  drives the same fixture with OS key codes (typing assumes a US layout).
+- Passed: 49 Rust tests with all features, 10 JavaScript bridge/notification
+  tests, formatting, whitespace checks and strict all-target/all-feature Clippy.
+
 # Queued native tab split release
 
 Run on 2026-11-05 in `bro-fix-tab-split-drop` on macOS.

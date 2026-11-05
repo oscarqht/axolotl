@@ -20,8 +20,13 @@ pub fn start(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
     window.spawn(cx, async move |cx| {
         let started = Instant::now();
         let result = run(&view,cx).await;
+        let kind = if std::env::args().any(|arg| arg == "--smoke-keyboard-os") {
+            "OS keyboard editing; programmatic AppKit shortcut and shell checks"
+        } else {
+            "programmatic native smoke; OS mouse/keyboard not simulated"
+        };
         let report = match &result {
-            Ok(checks) => serde_json::json!({"result":"passed","checks":checks,"elapsed_ms":started.elapsed().as_millis(),"kind":"programmatic native smoke; OS mouse/keyboard not simulated"}),
+            Ok(checks) => serde_json::json!({"result":"passed","checks":checks,"elapsed_ms":started.elapsed().as_millis(),"kind":kind}),
             Err(error) => serde_json::json!({"result":"failed","error":format!("{error:#}")}),
         };
         println!("AXOLOTL_SMOKE {}", report);
@@ -169,6 +174,10 @@ async fn run(
         (app.host.clone(), app.active_tab())
     })?;
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-keyboard") {
+        return crate::smoke_keyboard::run(view, cx).await;
+    }
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-input") {
         return crate::smoke_input::run(view, cx).await;

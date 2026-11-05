@@ -37,6 +37,12 @@ pub fn install(cx: &mut App) {
             .charactersIgnoringModifiers()
             .map(|s| s.to_string());
         let flags = event_ref.modifierFlags();
+        if key
+            .as_deref()
+            .is_some_and(|key| crate::macos_keyboard::route_arrow(event_ref, key))
+        {
+            return std::ptr::null_mut();
+        }
         if key.as_deref().is_some_and(|key| is_settings(key, flags)) {
             let app = app.clone();
             executor
@@ -61,7 +67,7 @@ pub fn install(cx: &mut App) {
             event.as_ptr()
         }
     });
-    // The block returns either the original event or nil to consume Cmd+Q.
+    // Return the original event, or nil after routing a reserved key.
     let monitor = unsafe {
         NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler)
     }

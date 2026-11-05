@@ -208,6 +208,23 @@ runner checks sibling order, exactly one new tab, retained source document,
 ordinary navigation, existing popup handling, graceful exit and no relaunch
 observed for three seconds. Run it without another instance of the same binary.
 
+The macOS keyboard regression queues native NSEvents through NSApplication,
+including the local event monitor and AppKit key-equivalent dispatch:
+
+```sh
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-keyboard
+```
+
+It checks arrow navigation and Shift/Option/Command selection in inputs,
+textareas and contenteditable elements, multiline movement, page cancellation,
+repeat metadata, ordinary typing/deletion and app shortcuts. No DOM keyboard
+events are synthesized. For OS-driven key presses instead, use the same System
+Events permissions and an unlocked desktop:
+
+```sh
+python3 scripts/test-macos-keyboard.py "$(pwd)/target/debug/axolotl"
+```
+
 The macOS docking check delivers AppKit mouse events to the floating bar's
 WKWebView and exercises real WebKit pointer capture, IPC, preview and release.
 Its fixture supplies the pressed-button state because AppKit synthesis does not

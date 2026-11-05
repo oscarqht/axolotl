@@ -61,6 +61,15 @@ pub enum BrowserEvent {
 /// serialized into the layout core, so a future mobile adapter can share it.
 pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_key(
+        &self,
+        tab: TabId,
+        code: u16,
+        text: &str,
+        flags: objc2_app_kit::NSEventModifierFlags,
+        repeat: bool,
+    ) -> Result<()>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
@@ -151,6 +160,33 @@ impl WryHost {
 }
 
 impl BrowserHost for WryHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_key(
+        &self,
+        tab: TabId,
+        code: u16,
+        text: &str,
+        flags: objc2_app_kit::NSEventModifierFlags,
+        repeat: bool,
+    ) -> Result<()> {
+        use objc2_app_kit::{NSApplication, NSEvent, NSEventType};
+        use objc2_foundation::{NSPoint, NSString};
+        use wry::WebViewExtMacOS;
+        let view = self.get(tab)?;
+        let window = view.ns_window();
+        window.makeKeyWindow();
+        let text = NSString::from_str(text);
+        let app = NSApplication::sharedApplication(objc2::MainThreadMarker::new().unwrap());
+        for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
+            let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+                kind, NSPoint::new(0., 0.), flags, objc2_foundation::NSProcessInfo::processInfo().systemUptime(), window.windowNumber(), None, &text, &text, repeat && kind == NSEventType::KeyDown, code,
+            ).context("create native key event")?;
+            // Queue through NSApplication, including local monitors and AppKit
+            // key-equivalent dispatch, rather than calling WebKit directly.
+            app.postEvent_atStart(&event, false);
+        }
+        Ok(())
+    }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()> {
         use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};

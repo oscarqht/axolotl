@@ -9,6 +9,8 @@ mod floating_bar;
 #[cfg(test)]
 mod gesture_tests;
 #[cfg(target_os = "macos")]
+mod macos_keyboard;
+#[cfg(target_os = "macos")]
 mod macos_passkeys;
 #[cfg(target_os = "macos")]
 mod macos_quit;
@@ -26,6 +28,8 @@ mod smoke;
 mod smoke_docking;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_input;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_keyboard;
 #[cfg(feature = "smoke")]
 mod smoke_menu;
 #[cfg(feature = "smoke")]

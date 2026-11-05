@@ -61,6 +61,13 @@ impl DownloadManager {
             .iter()
             .any(|t| t.native.is_some() || t.item.status == DownloadStatus::Downloading)
     }
+    pub fn downloading_count(&self) -> usize {
+        self.transfers
+            .iter()
+            .filter(|transfer| transfer.item.status == DownloadStatus::Downloading)
+            .count()
+    }
+
     pub fn items(&self) -> Vec<DownloadItem> {
         self.transfers.iter().map(|t| t.item.clone()).collect()
     }

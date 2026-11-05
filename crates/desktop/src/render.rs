@@ -531,6 +531,7 @@ impl Render for BrowserApp {
             window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
         }
         let viewport = window.viewport_size();
+        let downloading = self.host.downloads().borrow().downloading_count();
         let content = Rect::new(
             0.,
             TOP,
@@ -820,6 +821,7 @@ impl Render for BrowserApp {
                     .child(
                         div()
                             .id("downloads-button")
+                            .relative()
                             .track_focus(&self.downloads_focus)
                             .w(px(30.))
                             .h(px(30.))
@@ -831,8 +833,13 @@ impl Render for BrowserApp {
                             .cursor_pointer()
                             .when(self.downloads_popup.is_some(), |s| s.bg(rgb(colors.hover)))
                             .hover(|s| s.bg(rgb(colors.hover)))
-                            .tooltip(|window, cx| {
-                                gpui_component::tooltip::Tooltip::new("Downloads").build(window, cx)
+                            .tooltip(move |window, cx| {
+                                let label = if downloading == 0 {
+                                    "Downloads".to_owned()
+                                } else {
+                                    format!("Downloads ({downloading} downloading)")
+                                };
+                                gpui_component::tooltip::Tooltip::new(label).build(window, cx)
                             })
                             .child(
                                 div()
@@ -846,6 +853,27 @@ impl Render for BrowserApp {
                                     .text_size(px(22.))
                                     .child("↓"),
                             )
+                            .when(downloading > 0, |button| {
+                                button.child(
+                                    div()
+                                        .id("downloads-badge")
+                                        .absolute()
+                                        .top(px(-2.))
+                                        .right(px(-2.))
+                                        .min_w(px(14.))
+                                        .h(px(14.))
+                                        .px(px(3.))
+                                        .rounded_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .bg(rgb(0xd71932))
+                                        .text_color(rgb(0xffffff))
+                                        .text_size(px(9.))
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(downloading.to_string()),
+                                )
+                            })
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.downloads_focus.focus(window);
                                 this.toggle_downloads(window, cx);

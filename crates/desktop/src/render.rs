@@ -507,9 +507,12 @@ impl Render for BrowserApp {
                                     .id("space-menu")
                                     .absolute()
                                     .left(position.x)
-                                    .top(position.y)
+                                    // Native webviews paint above GPUI, so the menu must
+                                    // stay inside the TOP-high tab strip.
+                                    .top(px(4.))
+                                    .h(px(30.))
                                     .min_w(px(140.))
-                                    .p_1()
+                                    .flex()
                                     .rounded_md()
                                     .bg(rgb(colors.surface))
                                     .border_1()
@@ -519,8 +522,11 @@ impl Render for BrowserApp {
                                     .child(
                                         div()
                                             .id("space-menu-set-title")
+                                            .flex_1()
+                                            .h_full()
                                             .px_2()
-                                            .py_1()
+                                            .flex()
+                                            .items_center()
                                             .rounded_md()
                                             .cursor_pointer()
                                             .hover(|s| s.bg(rgb(colors.hover)))

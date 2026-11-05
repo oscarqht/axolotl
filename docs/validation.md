@@ -1,3 +1,28 @@
+# Floating panel tab chips
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Space tabs now have close buttons and a trailing create button; the final space
+  is protected. Panel controls use small transparent native child surfaces above
+  live pages, with compact counts, expandable chips, address inputs and overflow.
+  Split menus were removed; chip and whole-panel dragging create splits.
+- All 24 unit tests passed, including same-panel insertion slots, whole-stack
+  merging/repositioning on every edge, invalid-operation atomicity, wraparound,
+  and one-switch-per-trackpad-gesture thresholds. Strict Clippy, formatting and
+  whitespace checks passed.
+- The programmatic WKWebView smoke run passed. It checks live pages alongside
+  floating bars; focused new-tab address editing and Enter/Escape; compact count,
+  expansion and single-row overflow; tab docking, all four edge splits and
+  cancellation; whole-panel edge moves and center merging; retained tab order,
+  native DOM identity, form values and back/forward history.
+- OS pointer/keyboard/trackpad/touch acceptance remains unverified. Computer use
+  could launch the local app bundle but could not acquire its window, returning
+  `cgWindowNotFound`; the native smoke also reported OS activation unavailable.
+  The smoke invokes production handlers and native DOM/IPC, and does not
+  synthesize OS input. Windows compilation/runtime and physical touch gestures
+  were not available on this Mac. Existing Windows native-view creation support
+  is retained; cross-platform CI and hands-on interaction checks remain needed.
+
 # Hidden native tab scrollbars
 
 Run on 2026-11-05 in `bro-hide-tab-scrollbars` on macOS arm64 with Rust

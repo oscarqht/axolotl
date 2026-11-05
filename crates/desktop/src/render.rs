@@ -1,11 +1,10 @@
-use crate::app::{BrowserApp, Command, TabTarget};
+use crate::app::{BrowserApp, Command, TabAction, TabTarget};
 use gpui::{prelude::*, *};
 use gpui_component::{InteractiveElementExt, input::Input};
 use workspace_core::{Axis, PaneId, Rect};
 
 pub const TOP: f32 = 38.;
 pub const TAB_WIDTH: f32 = 204.;
-pub const TAB_GAP: f32 = 4.;
 
 #[cfg(target_os = "windows")]
 fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
@@ -52,13 +51,6 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
                     .child(glyph.to_string())
             }),
         )
-}
-
-pub fn tab_insertion_index(x: f32, count: usize) -> usize {
-    (((x + TAB_WIDTH / 2. + TAB_GAP) / (TAB_WIDTH + TAB_GAP))
-        .floor()
-        .max(0.) as usize)
-        .min(count)
 }
 
 impl BrowserApp {
@@ -157,9 +149,9 @@ impl BrowserApp {
                 div()
                     .id((
                         if kind == "space" {
-                            "space-menu"
+                            "space-close"
                         } else {
-                            "page-menu"
+                            "page-close"
                         },
                         id,
                     ))
@@ -170,69 +162,36 @@ impl BrowserApp {
                     .items_center()
                     .justify_center()
                     .rounded_md()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(rgb(colors.hover)))
-                    .text_color(rgb(
-                        if self.menu.is_some_and(|menu| menu.target == target) {
-                            colors.accent
+                    .when(
+                        !matches!(target, TabTarget::Space(_)) || self.model.spaces.len() > 1,
+                        |button| button.cursor_pointer().hover(|s| s.bg(rgb(colors.hover))),
+                    )
+                    .text_color(rgb(colors.muted))
+                    .opacity(
+                        if matches!(target, TabTarget::Space(_)) && self.model.spaces.len() == 1 {
+                            0.35
                         } else {
-                            colors.muted
+                            1.
                         },
-                    ))
-                    .child("•")
-                    .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                    )
+                    .child("×")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         cx.stop_propagation();
-                        this.open_menu(target, event.position(), window, cx);
+                        if matches!(target, TabTarget::Space(_)) && this.model.spaces.len() == 1 {
+                            return;
+                        }
+                        this.tab_action(target, TabAction::Close, window, cx);
                     })),
             )
             .into_any_element()
     }
 
-    fn pane(
-        &self,
-        pane_id: PaneId,
-        rect: Rect,
-        drop: Option<(PaneId, usize)>,
-        cx: &Context<Self>,
-    ) -> AnyElement {
+    fn pane(&self, pane_id: PaneId, rect: Rect, cx: &Context<Self>) -> AnyElement {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let pane = self.model.pane(pane_id).expect("layout pane exists");
         let tab = pane.active_tab;
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let unavailable = page.is_none();
-        let mut tabs = pane
-            .tabs
-            .iter()
-            .map(|tab| {
-                self.compact_tab(
-                    TabTarget::Page(pane_id, tab.id),
-                    &tab.title,
-                    tab.id == pane.active_tab,
-                    cx,
-                )
-            })
-            .collect::<Vec<_>>();
-        if let Some((target, index)) = drop
-            && target == pane_id
-        {
-            tabs.insert(
-                index,
-                div()
-                    .w(px(TAB_WIDTH))
-                    .h(px(30.))
-                    .flex_shrink_0()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(rgb(colors.accent))
-                    .bg(rgb(colors.placeholder))
-                    .px_2()
-                    .flex()
-                    .items_center()
-                    .text_color(rgb(colors.accent))
-                    .child("Drop tab here")
-                    .into_any_element(),
-            );
-        }
         div()
             .absolute()
             .left(px(rect.x))
@@ -242,34 +201,8 @@ impl BrowserApp {
             .bg(rgb(colors.surface))
             .child(
                 div()
-                    .h(px(34.))
-                    .flex()
-                    .items_center()
-                    .px_1()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, window, cx| {
-                            this.focus_pane(pane_id, window, cx)
-                        }),
-                    )
-                    .child(
-                        div()
-                            .id(("pane-tabs", pane_id))
-                            .track_scroll(
-                                self.pane_scrolls.get(&pane_id).expect("pane scroll handle"),
-                            )
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .gap_1()
-                            .overflow_x_scroll()
-                            .children(tabs),
-                    ),
-            )
-            .child(
-                div()
                     .absolute()
-                    .top(px(34.))
+                    .top_0()
                     .bottom_0()
                     .left_0()
                     .right_0()
@@ -318,15 +251,10 @@ impl Render for BrowserApp {
             (f32::from(viewport.height) - TOP).max(0.),
         );
         let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
-        let drop_target = self.tab_drop_target(
-            self.tab_drag
-                .map_or(window.mouse_position(), |drag| drag.position),
-            window,
-        );
         let panes = geometry
             .panes
             .iter()
-            .map(|p| self.pane(p.id, p.bounds, drop_target, cx))
+            .map(|p| self.pane(p.id, p.bounds, cx))
             .collect::<Vec<_>>();
         let spaces = self
             .model
@@ -378,7 +306,6 @@ impl Render for BrowserApp {
             }))
             .on_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
-                    this.menu = None;
                     this.cancel_tab_drag(cx);
                     this.cancel_edit(window, cx);
                     cx.notify();
@@ -462,6 +389,24 @@ impl Render for BrowserApp {
                     )
                     .child(
                         div()
+                            .id("new-space")
+                            .w(px(30.))
+                            .h(px(30.))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_md()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(rgb(colors.hover)))
+                            .text_size(px(22.))
+                            .child("+")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.command(Command::NewSpace, window, cx)
+                            })),
+                    )
+                    .child(
+                        div()
                             .id("window-drag")
                             .flex_1()
                             .h_full()
@@ -536,21 +481,5 @@ impl Render for BrowserApp {
                         .child(self.status.clone()),
                 )
             })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::tab_insertion_index;
-
-    #[test]
-    fn insertion_uses_tab_midpoints_and_clamps_empty_strip_space() {
-        assert_eq!(tab_insertion_index(-10., 3), 0);
-        assert_eq!(tab_insertion_index(100., 3), 0);
-        assert_eq!(tab_insertion_index(110., 3), 1);
-        assert_eq!(tab_insertion_index(309., 3), 1);
-        assert_eq!(tab_insertion_index(310., 3), 2);
-        assert_eq!(tab_insertion_index(320., 3), 2);
-        assert_eq!(tab_insertion_index(10000., 3), 3);
     }
 }

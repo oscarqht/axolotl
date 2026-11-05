@@ -197,9 +197,6 @@ impl Workspace {
         index: usize,
     ) -> bool {
         let space = self.active_space_mut();
-        if source == destination {
-            return false;
-        }
         let Some(source_index) = space.panes.iter().position(|p| p.id == source) else {
             return false;
         };
@@ -216,6 +213,15 @@ impl Workspace {
         else {
             return false;
         };
+        if source == destination {
+            let pane = &mut space.panes[source_index];
+            let moved = pane.tabs.remove(tab_index);
+            pane.tabs
+                .insert(index - usize::from(index > tab_index), moved);
+            pane.active_tab = tab;
+            space.focused_pane = source;
+            return true;
+        }
         let source_pane = &mut space.panes[source_index];
         let moved = source_pane.tabs.remove(tab_index);
         if source_pane.active_tab == tab && !source_pane.tabs.is_empty() {
@@ -229,6 +235,64 @@ impl Workspace {
             space.panes.remove(source_index);
         }
         true
+    }
+
+    /// Move a complete stack without replacing tabs or native browser identities.
+    /// A center drop merges; an edge drop repositions the existing pane leaf.
+    pub fn move_pane(
+        &mut self,
+        source: PaneId,
+        destination: PaneId,
+        edge: Option<SplitEdge>,
+    ) -> bool {
+        if source == destination
+            || self.active_space().pane(source).is_none()
+            || self.active_space().pane(destination).is_none()
+        {
+            return false;
+        }
+        let split = edge.map(|_| self.allocate());
+        let space = self.active_space_mut();
+        space.layout.remove_pane(source);
+        if let Some(edge) = edge {
+            let (first, second) = if edge.is_first() {
+                (source, destination)
+            } else {
+                (destination, source)
+            };
+            space.layout.replace_pane(
+                destination,
+                Layout::Split {
+                    id: split.unwrap(),
+                    axis: edge.axis(),
+                    ratio: 0.5,
+                    first: Box::new(Layout::Pane(first)),
+                    second: Box::new(Layout::Pane(second)),
+                },
+            );
+            space.focused_pane = source;
+        } else {
+            let index = space.panes.iter().position(|p| p.id == source).unwrap();
+            let moved = space.panes.remove(index);
+            let target = space
+                .panes
+                .iter_mut()
+                .find(|p| p.id == destination)
+                .unwrap();
+            target.tabs.extend(moved.tabs);
+            target.active_tab = moved.active_tab;
+            space.focused_pane = destination;
+        }
+        true
+    }
+
+    pub fn cycle_tab(&mut self, pane: PaneId, forward: bool) -> bool {
+        let Some(p) = self.active_space().pane(pane) else {
+            return false;
+        };
+        let index = p.tabs.iter().position(|t| t.id == p.active_tab).unwrap();
+        let next = (index + if forward { 1 } else { p.tabs.len() - 1 }) % p.tabs.len();
+        self.switch_tab(pane, p.tabs[next].id)
     }
 
     /// Move the existing tab into a new half of the destination leaf atomically.

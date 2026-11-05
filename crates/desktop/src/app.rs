@@ -4,11 +4,12 @@ use gpui_component::input::{InputEvent, InputState};
 use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
-    time::Duration,
+    time::{Duration, Instant},
 };
-use workspace_core::{
-    Axis, Divider, PaneId, Rect, SpaceId, SplitEdge, TabId, Workspace, normalize_url,
-};
+use workspace_core::{Divider, PaneId, SpaceId, TabId, Workspace, normalize_url};
+
+#[cfg(feature = "smoke")]
+use workspace_core::Axis;
 
 /// The chrome level is part of the target: the same page can appear in both strips.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,15 +20,11 @@ pub enum TabTarget {
 
 #[derive(Clone, Copy)]
 pub enum TabAction {
+    #[cfg(feature = "smoke")]
     NewSibling,
+    #[cfg(feature = "smoke")]
     Split(Axis),
     Close,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub struct TabMenu {
-    pub target: TabTarget,
-    pub position: Point<Pixels>,
 }
 
 #[derive(Clone, Copy)]
@@ -38,6 +35,7 @@ pub enum Command {
     Reload,
     Back,
     Forward,
+    #[cfg(feature = "smoke")]
     Split(Axis),
     NewSpace,
     NextPane,
@@ -50,20 +48,49 @@ pub struct TabDrag {
     pub origin: Point<Pixels>,
     pub position: Point<Pixels>,
     pub active: bool,
+    pub whole: bool,
+}
+
+#[derive(Default)]
+pub struct SwipeState {
+    last: Option<Instant>,
+    distance: f64,
+    fired: bool,
+}
+impl SwipeState {
+    pub(crate) fn feed(&mut self, x: f64, y: f64, now: Instant) -> Option<bool> {
+        if self
+            .last
+            .is_none_or(|last| now.duration_since(last) > Duration::from_millis(300))
+        {
+            self.distance = 0.;
+            self.fired = false;
+        }
+        self.last = Some(now);
+        if x.abs() <= y.abs() || self.fired {
+            return None;
+        }
+        self.distance += x;
+        if self.distance.abs() < 65. {
+            return None;
+        }
+        self.fired = true;
+        Some(self.distance > 0.)
+    }
 }
 
 pub struct BrowserApp {
+    pub swipes: HashMap<PaneId, SwipeState>,
+    pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
+    pub(crate) chrome_views: HashSet<TabId>,
     pub model: Workspace,
     pub host: Rc<dyn BrowserHost>,
     pub address: Entity<InputState>,
     pub focus: FocusHandle,
-    pub menu: Option<TabMenu>,
-    pub menu_surface: Option<(TabMenu, crate::tab_menu::NativeTabMenu)>,
     pub editing: Option<TabTarget>,
     pub select_address: bool,
     pub moving_window: bool,
     pub space_scroll: ScrollHandle,
-    pub pane_scrolls: HashMap<PaneId, ScrollHandle>,
     pub dragging: Option<Divider>,
     pub tab_drag: Option<TabDrag>,
     pub suppress_tab_click: bool,
@@ -121,17 +148,17 @@ impl BrowserApp {
         })
         .detach();
         Self {
+            bars: HashMap::new(),
+            chrome_views: HashSet::new(),
+            swipes: HashMap::new(),
             model: Workspace::new("about:blank"),
             host: Rc::new(WryHost::new()),
             address,
             focus: cx.focus_handle(),
-            menu: None,
-            menu_surface: None,
             editing: None,
             select_address: false,
             moving_window: false,
             space_scroll: ScrollHandle::new(),
-            pane_scrolls: HashMap::new(),
             dragging: None,
             tab_drag: None,
             suppress_tab_click: false,
@@ -139,212 +166,6 @@ impl BrowserApp {
             split_preview: None,
             status: String::new(),
             poll_count: 0,
-        }
-    }
-
-    pub fn tab_drag_active(&self) -> bool {
-        self.tab_drag.is_some_and(|drag| drag.active)
-    }
-
-    pub fn cancel_tab_drag(&mut self, cx: &mut Context<Self>) {
-        self.drag_preview = None;
-        self.split_preview = None;
-        self.host.request_redraw();
-        if self.tab_drag.take().is_some() {
-            cx.notify();
-        }
-    }
-
-    pub fn arm_tab_drag(&mut self, source: PaneId, tab: TabId, origin: Point<Pixels>) {
-        self.suppress_tab_click = false;
-        self.tab_drag = Some(TabDrag {
-            source,
-            tab,
-            origin,
-            position: origin,
-            active: false,
-        });
-    }
-
-    pub fn update_tab_drag(
-        &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(drag) = self.tab_drag else { return };
-        if !event.dragging() {
-            self.cancel_tab_drag(cx);
-            return;
-        }
-        self.tab_drag.as_mut().unwrap().position = event.position;
-        let delta = event.position - drag.origin;
-        if !drag.active && (f32::from(delta.x).powi(2) + f32::from(delta.y).powi(2)) >= 25. {
-            self.cancel_edit(window, cx);
-            self.menu = None;
-            self.tab_drag.as_mut().unwrap().active = true;
-            self.suppress_tab_click = true;
-            self.report(self.host.focus_parent(self.active_tab()));
-            self.focus.focus(window);
-            if let Some(tab) = self.model.tab(drag.tab) {
-                let result = self.host.ensure(drag.tab, &tab.url, window, cx);
-                self.report(result);
-            }
-            let viewport = window.viewport_size();
-            let geometry = self.model.active_space().layout.geometry(
-                Rect::new(
-                    0.,
-                    crate::render::TOP,
-                    f32::from(viewport.width),
-                    (f32::from(viewport.height) - crate::render::TOP).max(0.),
-                ),
-                6.,
-                100.,
-            );
-            if let Some(pane) = geometry.panes.iter().find(|pane| pane.id == drag.source) {
-                let r = pane.bounds;
-                self.report(self.host.place(
-                    drag.tab,
-                    Bounds {
-                        origin: point(px(r.x), px(r.y + 34.)),
-                        size: size(px(r.width), px((r.height - 34.).max(1.))),
-                    },
-                ));
-            }
-            let title = self
-                .model
-                .tab(drag.tab)
-                .map_or("New tab", |tab| tab.title.as_str())
-                .to_owned();
-            // Create the half-pane overlay first so the thumbnail remains above it.
-            match crate::split_preview::SplitPreview::new(window, cx) {
-                Ok(preview) => self.split_preview = Some(preview),
-                Err(error) => self.report(Err(error)),
-            }
-            match self.host.drag_preview(drag.tab, &title, window, cx) {
-                Ok(preview) => self.drag_preview = Some(preview),
-                Err(error) => self.report(Err(error)),
-            }
-        }
-        if let Some(preview) = &self.drag_preview {
-            let result = preview.update(event.position, window.viewport_size());
-            self.report(result);
-        }
-        self.update_split_preview(window);
-        if self.tab_drag_active() {
-            self.host.request_redraw();
-            cx.notify();
-        }
-    }
-
-    /// Hit testing shares the exact fixed tab width/gap and scroll offset with rendering.
-    pub fn tab_drop_target(
-        &self,
-        position: Point<Pixels>,
-        window: &Window,
-    ) -> Option<(PaneId, usize)> {
-        let drag = self.tab_drag.filter(|drag| drag.active)?;
-        let viewport = window.viewport_size();
-        let geometry = self.model.active_space().layout.geometry(
-            Rect::new(
-                0.,
-                crate::render::TOP,
-                f32::from(viewport.width),
-                (f32::from(viewport.height) - crate::render::TOP).max(0.),
-            ),
-            6.,
-            100.,
-        );
-        geometry.panes.iter().find_map(|pane| {
-            let r = pane.bounds;
-            let x = f32::from(position.x);
-            let y = f32::from(position.y);
-            if pane.id == drag.source
-                || x < r.x + 4.
-                || x >= r.x + r.width - 4.
-                || y < r.y
-                || y >= r.y + 34.
-            {
-                return None;
-            }
-            let offset = self
-                .pane_scrolls
-                .get(&pane.id)
-                .map_or(0., |s| f32::from(s.offset().x));
-            let count = self.model.pane(pane.id)?.tabs.len();
-            Some((
-                pane.id,
-                crate::render::tab_insertion_index(x - r.x - 4. - offset, count),
-            ))
-        })
-    }
-
-    pub fn split_drop_target(
-        &self,
-        position: Point<Pixels>,
-        window: &Window,
-    ) -> Option<(PaneId, SplitEdge, Rect)> {
-        let drag = self.tab_drag.filter(|drag| drag.active)?;
-        let viewport = window.viewport_size();
-        let geometry = self.model.active_space().layout.geometry(
-            Rect::new(
-                0.,
-                crate::render::TOP,
-                f32::from(viewport.width),
-                (f32::from(viewport.height) - crate::render::TOP).max(0.),
-            ),
-            6.,
-            100.,
-        );
-        geometry.panes.iter().find_map(|pane| {
-            if pane.id == drag.source && self.model.pane(drag.source)?.tabs.len() < 2 {
-                return None;
-            }
-            let r = pane.bounds;
-            let content = Rect::new(r.x, r.y + 34., r.width, (r.height - 34.).max(0.));
-            let edge = SplitEdge::at(content, f32::from(position.x), f32::from(position.y))?;
-            Some((pane.id, edge, edge.preview(content)))
-        })
-    }
-
-    fn update_split_preview(&mut self, window: &Window) {
-        let bounds = self
-            .tab_drag
-            .and_then(|drag| self.split_drop_target(drag.position, window))
-            .map(|(_, _, r)| r);
-        if let Some(preview) = &self.split_preview {
-            let result = preview.update(bounds);
-            self.report(result);
-        }
-    }
-
-    pub fn finish_tab_drag(
-        &mut self,
-        position: Option<Point<Pixels>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.drag_preview = None;
-        self.split_preview = None;
-        self.host.request_redraw();
-        let target = position.and_then(|position| self.tab_drop_target(position, window));
-        let split = position.and_then(|position| self.split_drop_target(position, window));
-        if let Some(drag) = self.tab_drag.take() {
-            let moved = if let Some((pane, index)) = target {
-                self.model.move_tab(drag.source, drag.tab, pane, index)
-            } else if let Some((pane, edge, _)) = split {
-                self.model
-                    .split_tab(drag.source, drag.tab, pane, edge)
-                    .is_some()
-            } else {
-                false
-            };
-            if moved {
-                self.sync_address(window, cx);
-                self.reveal_focused();
-                self.report(self.host.focus(drag.tab));
-            }
-            cx.notify();
         }
     }
 
@@ -357,7 +178,7 @@ impl BrowserApp {
     pub fn active_tab(&self) -> TabId {
         self.model.focused_pane().active_tab
     }
-    fn reveal_focused(&self) {
+    pub(crate) fn reveal_focused(&self) {
         if let Some(index) = self
             .model
             .spaces
@@ -365,12 +186,6 @@ impl BrowserApp {
             .position(|s| s.id == self.model.active_space)
         {
             self.space_scroll.scroll_to_item(index);
-        }
-        let pane = self.model.focused_pane();
-        if let Some(scroll) = self.pane_scrolls.get(&pane.id)
-            && let Some(index) = pane.tabs.iter().position(|t| t.id == pane.active_tab)
-        {
-            scroll.scroll_to_item(index);
         }
     }
     pub fn sync_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -397,7 +212,6 @@ impl BrowserApp {
         if self.editing != Some(target) {
             self.cancel_edit(window, cx);
         }
-        self.menu = None;
         match target {
             TabTarget::Space(id) => {
                 self.model.switch_space(id);
@@ -418,28 +232,12 @@ impl BrowserApp {
         self.editing = None;
         self.sync_address(window, cx);
         self.editing = Some(target);
-        self.address.update(cx, |input, cx| input.focus(window, cx));
+        if matches!(target, TabTarget::Space(_)) {
+            self.address.update(cx, |input, cx| input.focus(window, cx));
+        }
         // The input is mounted only while editing. Select after the next render
         // has registered its action handlers, rather than dispatching to the old tab title.
-        self.select_address = true;
-        cx.notify();
-    }
-    pub fn open_menu(
-        &mut self,
-        target: TabTarget,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.menu.is_some_and(|menu| menu.target == target) {
-            self.menu = None;
-        } else {
-            self.cancel_edit(window, cx);
-            self.report(self.host.focus_parent(self.active_tab()));
-            self.focus.focus(window);
-            self.menu = Some(TabMenu { target, position });
-        }
-        self.host.request_redraw();
+        self.select_address = matches!(target, TabTarget::Space(_));
         cx.notify();
     }
     pub fn tab_action(
@@ -452,10 +250,12 @@ impl BrowserApp {
         self.select_target(target, window, cx);
         self.cancel_edit(window, cx);
         match action {
+            #[cfg(feature = "smoke")]
             TabAction::NewSibling => match target {
                 TabTarget::Space(_) => self.command(Command::NewSpace, window, cx),
                 TabTarget::Page(_, _) => self.command(Command::NewTab, window, cx),
             },
+            #[cfg(feature = "smoke")]
             TabAction::Split(axis) => self.command(Command::Split(axis), window, cx),
             TabAction::Close => {
                 match target {
@@ -480,7 +280,6 @@ impl BrowserApp {
         cx.notify();
     }
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
-        self.menu = None;
         if !matches!(command, Command::Address) {
             if self.editing.is_some() {
                 self.focus.focus(window);
@@ -515,6 +314,7 @@ impl BrowserApp {
             Command::Reload => self.report(self.host.reload(self.active_tab())),
             Command::Back => self.report(self.host.back(self.active_tab())),
             Command::Forward => self.report(self.host.forward(self.active_tab())),
+            #[cfg(feature = "smoke")]
             Command::Split(axis) => {
                 self.model.split_focused(axis, "about:blank");
                 self.sync_address(window, cx);
@@ -539,7 +339,7 @@ impl BrowserApp {
         self.reveal_focused();
         cx.notify();
     }
-    fn navigate(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn navigate(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
         match normalize_url(value) {
             Ok(url) => {
                 self.status.clear();
@@ -559,21 +359,7 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(event) = self
-            .menu_surface
-            .as_ref()
-            .and_then(|(_, menu)| menu.next_event())
-        {
-            let target = self.menu.take().map(|menu| menu.target);
-            self.menu_surface = None;
-            self.report(self.host.focus_parent(self.active_tab()));
-            self.focus.focus(window);
-            if let (Some(target), crate::tab_menu::MenuEvent::Action(action)) = (target, event) {
-                self.tab_action(target, action, window, cx);
-            }
-            self.host.request_redraw();
-            cx.notify();
-        }
+        self.poll_bars(window, cx);
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(
                 self.tab_drag.expect("preview belongs to a drag").position,
@@ -648,6 +434,31 @@ impl BrowserApp {
                         self.sync_address(window, cx);
                     }
                 }
+                BrowserEvent::Gesture(tab, x, y) => {
+                    if self.tab_drag_active() {
+                        continue;
+                    }
+                    let pane = self
+                        .model
+                        .active_space()
+                        .panes
+                        .iter()
+                        .find(|p| p.active_tab == tab)
+                        .map(|p| p.id);
+                    if let Some(pane) = pane {
+                        let direction =
+                            self.swipes
+                                .entry(pane)
+                                .or_default()
+                                .feed(x, y, Instant::now());
+                        if let Some(forward) = direction {
+                            self.cancel_edit(window, cx);
+                            self.model.cycle_tab(pane, forward);
+                            self.sync_address(window, cx);
+                            self.reveal_focused();
+                        }
+                    }
+                }
                 BrowserEvent::Shortcut(tab, key) => {
                     let pane = self
                         .model
@@ -659,10 +470,17 @@ impl BrowserApp {
                     let Some(pane) = pane else {
                         continue;
                     };
-                    if self.menu.is_some() || self.dragging.is_some() || self.tab_drag_active() {
+                    if self.dragging.is_some() || self.tab_drag_active() {
                         continue;
                     }
                     self.model.focus_pane(pane);
+                    if key == "swipe-next" || key == "swipe-prev" {
+                        self.cancel_edit(window, cx);
+                        self.model.cycle_tab(pane, key == "swipe-next");
+                        self.sync_address(window, cx);
+                        self.reveal_focused();
+                        continue;
+                    }
                     let command = match key.as_str() {
                         "address" => Some(Command::Address),
                         "new-tab" => Some(Command::NewTab),
@@ -677,86 +495,5 @@ impl BrowserApp {
             }
         }
         cx.notify();
-    }
-    pub fn prepare_views(&mut self, window: &mut Window, cx: &gpui::App) {
-        let ids: HashSet<_> = self
-            .model
-            .spaces
-            .iter()
-            .flat_map(|s| &s.panes)
-            .flat_map(|p| &p.tabs)
-            .map(|t| t.id)
-            .collect();
-        self.host.retain(&ids);
-        let panes: HashSet<_> = self
-            .model
-            .spaces
-            .iter()
-            .flat_map(|s| &s.panes)
-            .map(|p| p.id)
-            .collect();
-        self.pane_scrolls.retain(|id, _| panes.contains(id));
-        for id in panes {
-            self.pane_scrolls.entry(id).or_default();
-        }
-        let viewport = window.viewport_size();
-        let content = Rect::new(
-            0.,
-            crate::render::TOP,
-            f32::from(viewport.width),
-            (f32::from(viewport.height) - crate::render::TOP).max(0.),
-        );
-        let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
-        let visible: Vec<_> = self
-            .model
-            .active_space()
-            .panes
-            .iter()
-            .filter(|p| {
-                geometry
-                    .panes
-                    .iter()
-                    .any(|r| r.id == p.id && r.bounds.height > 36. && r.bounds.width > 2.)
-            })
-            .map(|p| (p.active_tab, p.active_tab().url.clone()))
-            .collect();
-        // Hide only inactive surfaces; hiding the focused view every frame steals page input.
-        for id in &ids {
-            if !visible.iter().any(|(tab, _)| tab == id) {
-                self.report(self.host.show(*id, false));
-            }
-        }
-        for (id, url) in visible {
-            let result = self.host.ensure(id, &url, window, cx);
-            self.report(result);
-            self.report(self.host.show(id, true));
-        }
-        if let Some(menu) = self.menu {
-            if !self
-                .menu_surface
-                .as_ref()
-                .is_some_and(|(current, _)| *current == menu)
-            {
-                self.menu_surface = None;
-                match crate::tab_menu::NativeTabMenu::new(
-                    menu.position,
-                    matches!(menu.target, TabTarget::Space(_)),
-                    window,
-                    cx,
-                ) {
-                    Ok(surface) => self.menu_surface = Some((menu, surface)),
-                    Err(error) => {
-                        self.report(Err(error));
-                        self.menu = None;
-                    }
-                }
-            }
-            if let Some((_, surface)) = &self.menu_surface {
-                let result = surface.place(window.viewport_size());
-                self.report(result);
-            }
-        } else {
-            self.menu_surface = None;
-        }
     }
 }

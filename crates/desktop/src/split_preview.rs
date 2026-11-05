@@ -26,8 +26,13 @@ span{padding:8px 14px;background:rgba(233,255,247,.9);border-radius:6px}
         Ok(Self(view))
     }
 
-    pub fn update(&self, bounds: Option<Rect>) -> Result<()> {
+    pub fn update(&self, bounds: Option<Rect>, merge: bool) -> Result<()> {
         if let Some(r) = bounds {
+            self.0.evaluate_script(if merge {
+                "document.querySelector('span').textContent='Release to merge'"
+            } else {
+                "document.querySelector('span').textContent='Release to split'"
+            })?;
             self.0.set_bounds(crate::browser::native_bounds(Bounds {
                 origin: point(px(r.x), px(r.y)),
                 size: size(px(r.width), px(r.height)),

@@ -1,0 +1,104 @@
+//! A small native surface keeps the floating controls above WKWebView/WebView2.
+use crate::native_webview::{BuildNativeChild, NativeWebView};
+use anyhow::Result;
+use gpui::{Bounds, Window, point, px, size};
+use serde_json::Value;
+use std::{
+    cell::RefCell,
+    sync::mpsc::{self, Receiver},
+};
+use workspace_core::Rect;
+use wry::{NewWindowResponse, WebViewBuilder};
+
+pub struct FloatingBar {
+    view: NativeWebView,
+    events: Receiver<Value>,
+    state: RefCell<String>,
+    pub bounds: Rect,
+    pub expanded: bool,
+    pub midpoints: Vec<f32>,
+}
+impl FloatingBar {
+    pub fn new(window: &Window, cx: &gpui::App) -> Result<Self> {
+        let (sender, events) = mpsc::channel();
+        let view = crate::browser::with_inline_html(
+            WebViewBuilder::new()
+                .with_transparent(true)
+                .with_focused(false)
+                .with_new_window_req_handler(|_, _| NewWindowResponse::Deny)
+                .with_ipc_handler(move |request| {
+                    if let Ok(value) = serde_json::from_str(request.body()) {
+                        let _ = sender.send(value);
+                    }
+                }),
+            include_str!("../assets/floating-bar.html").replace(
+                "__FLOATING_SCRIPT__",
+                include_str!("../assets/floating-bar.js"),
+            ),
+        )
+        .build_native_child(window, cx)?;
+        view.focus_parent()?;
+        Ok(Self {
+            view,
+            events,
+            state: RefCell::new(String::new()),
+            bounds: Rect::new(0., 0., 1., 1.),
+            expanded: false,
+            midpoints: vec![],
+        })
+    }
+    pub fn place(&mut self, pane: Rect, state: Value) -> Result<()> {
+        let editing = !state["editing"].is_null();
+        let width = if self.expanded || editing {
+            let count = state["tabs"].as_array().map_or(0, Vec::len);
+            let desired = 80. + count as f32 * 176. + if editing { 148. } else { 0. };
+            desired.min((pane.width - 24.).max(1.)).min(960.)
+        } else {
+            144_f32.min(pane.width)
+        };
+        self.bounds = Rect::new(
+            pane.x + (pane.width - width) / 2.,
+            pane.y + (pane.height - 60.).max(0.),
+            width,
+            48_f32.min(pane.height),
+        );
+        let r = self.bounds;
+        self.view.set_bounds(crate::browser::native_bounds(Bounds {
+            origin: point(px(r.x), px(r.y)),
+            size: size(px(r.width), px(r.height)),
+        }))?;
+        let serialized = state.to_string();
+        if *self.state.borrow() != serialized {
+            self.view
+                .evaluate_script(&format!("window.updateBar({serialized})"))?;
+            *self.state.borrow_mut() = serialized;
+        }
+        Ok(())
+    }
+    pub fn invalidate(&self) {
+        self.state.borrow_mut().clear();
+    }
+    pub fn focus_editor(&self) -> Result<()> {
+        self.view.focus()?;
+        self.view.evaluate_script("if(document.activeElement?.tagName!=='INPUT'){const input=document.querySelector('input');input?.focus();input?.select()}")?;
+        Ok(())
+    }
+    pub fn next_event(&self) -> Option<Value> {
+        self.events.try_recv().ok()
+    }
+    pub fn preview(&self, index: Option<usize>) -> Result<()> {
+        self.view
+            .evaluate_script(&format!("window.previewSlot({})", serde_json::json!(index)))?;
+        Ok(())
+    }
+    #[cfg(feature = "smoke")]
+    pub fn evaluate(&self, script: &str, callback: impl Fn(String) + Send + 'static) -> Result<()> {
+        self.view.evaluate_script_with_callback(script, callback)?;
+        Ok(())
+    }
+}
+impl Drop for FloatingBar {
+    fn drop(&mut self) {
+        let _ = self.view.set_visible(false);
+    }
+}

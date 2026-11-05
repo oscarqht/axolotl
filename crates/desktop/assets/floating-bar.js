@@ -10,7 +10,7 @@ function updateBadge(parent, count) {
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.title = `${count} unread notifications`;
 }
-const send = (v) => window.ipc.postMessage(JSON.stringify(v)),
+const send = (v) => window.ipc.postMessage(JSON.stringify({...v, pane: state.pane})),
   bar = document.querySelector("#bar"),
   tabs = document.querySelector("#tabs");
 let state = { tabs: [] },
@@ -215,7 +215,21 @@ window.updateBar = (s) => {
   shield.setAttribute('aria-pressed',String(!!active?.protection));
   shield.title=active?.protectionReady===false ? `Applying protection ${active?.protection?'on':'off'}${active?.protectionSite?' for '+active.protectionSite:''}…` : active?.protectionSite ? (active.protectionGlobal ? `${active.protection?'Protection on':'Protection off'} for ${active.protectionSite}. Click to ${active.protection?'disable':'enable'} and reload.` : 'Protection is off in Settings.') : 'Protection is available on websites.';
   shield.setAttribute('aria-label',shield.title);
-  const old = state;
+  let old = state;
+  if (old.pane !== s.pane) {
+    clearTimeout(collapseTimer);
+    clearTimeout(settleTimer);
+    clearTimeout(scrollTimer);
+    ++transitionEpoch;
+    drag = null; pendingStart = null; preview = null;
+    renaming = null; menu = null; suppress = false;
+    pinned = false; expanded = false; forceRebuild = true;
+    bar.classList.remove('expanded');
+    window.clearHistory();
+    historyInput = null; historyTab = null;
+    tabs.scrollLeft = 0;
+    old = {tabs: []};
+  }
   state = s;
   bar.classList.toggle("editing", s.editing != null || renaming !== null);
   if (s.expanded || s.editing) {

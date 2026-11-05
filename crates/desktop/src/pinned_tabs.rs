@@ -6,7 +6,7 @@ use crate::{
 };
 use gpui::*;
 use serde_json::{Value, json};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::Receiver;
 use workspace_core::{PaneId, Rect, TabId};
 
 #[derive(Default)]
@@ -16,6 +16,7 @@ pub struct PinnedUi {
     surface: Option<NativeWebView>,
     events: Option<Receiver<Value>>,
     state: String,
+    generation: u64,
     focus_page: bool,
     resize_origin_x: Option<f32>,
     pub drag: Option<(TabId, Point<Pixels>, bool)>,
@@ -67,7 +68,7 @@ impl BrowserApp {
     }
 
     pub fn dismiss_pin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pins.open.is_none() && self.pins.menu.is_none() && self.pins.surface.is_none() {
+        if self.pins.open.is_none() && self.pins.menu.is_none() {
             return;
         }
         if let Some(id) = self.pins.open.take() {
@@ -80,8 +81,10 @@ impl BrowserApp {
             let _ = bar.raise();
         }
         self.pins.menu = None;
-        self.pins.surface = None;
-        self.pins.events = None;
+        if let Some(surface) = &self.pins.surface {
+            let _ = surface.set_visible(false);
+        }
+        self.pins.generation = self.pins.generation.wrapping_add(1);
         self.pins.state.clear();
         self.pins.resize_origin_x = None;
         self.focus.focus(window);
@@ -149,7 +152,7 @@ impl BrowserApp {
         }
         let result = (|| -> anyhow::Result<()> {
             if self.pins.surface.is_none() {
-                let (sender, events) = mpsc::channel();
+                let (sender, events) = crate::ui_events::channel();
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -172,6 +175,9 @@ impl BrowserApp {
             }
             let viewport = window.viewport_size();
             let view = self.pins.surface.as_ref().unwrap();
+            if self.pins.state.is_empty() {
+                view.set_visible(true)?;
+            }
             view.set_bounds(crate::browser::native_bounds(Bounds {
                 origin: point(px(0.), px(crate::render::TOP)),
                 size: size(
@@ -182,6 +188,7 @@ impl BrowserApp {
             crate::native_webview::raise(view)?;
             let rect = self.pin_rect(window);
             let state = json!({
+                "generation": self.pins.generation,
                 "rect": rect.map(|r| json!({"x":r.x,"y":r.y-crate::render::TOP,"width":r.width,"height":r.height})),
                 "menu": self.pins.menu.is_some(),
                 "unpin": self.pins.menu.flatten(),
@@ -220,9 +227,19 @@ impl BrowserApp {
             .map(|e| e.try_iter().collect())
             .unwrap_or_default();
         for event in events {
+            if self.pins.open.is_none() && self.pins.menu.is_none() {
+                continue;
+            }
+            if event["type"] != "ready"
+                && event["generation"].as_u64() != Some(self.pins.generation)
+            {
+                continue;
+            }
             match event["type"].as_str().unwrap_or("") {
                 "ready" => {
-                    if let Some(view) = &self.pins.surface {
+                    if let Some(view) = &self.pins.surface
+                        && !self.pins.state.is_empty()
+                    {
                         let _ = view
                             .evaluate_script(&format!("window.updatePins({})", self.pins.state));
                         if self.pins.menu.is_some() {

@@ -81,11 +81,15 @@ mod smoke_panels;
 #[cfg(feature = "smoke")]
 mod smoke_persistence;
 #[cfg(feature = "smoke")]
+mod smoke_performance;
+#[cfg(feature = "smoke")]
 mod smoke_pins;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_popup_transition;
 #[cfg(feature = "smoke")]
 mod smoke_protection;
+#[cfg(feature = "smoke")]
+mod smoke_responsiveness;
 #[cfg(feature = "smoke")]
 mod smoke_settings;
 #[cfg(feature = "smoke")]
@@ -102,6 +106,7 @@ mod space_drag;
 mod space_menu;
 mod space_shortcuts;
 mod split_preview;
+mod ui_events;
 mod window_state;
 
 use app::BrowserApp;

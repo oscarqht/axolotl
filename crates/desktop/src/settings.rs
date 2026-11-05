@@ -6,7 +6,7 @@ use crate::{
 use gpui::*;
 use gpui_component::ActiveTheme;
 use serde_json::Value;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::Receiver;
 use workspace_core::SearchEngine;
 use wry::{NewWindowResponse, WebViewBuilder};
 
@@ -88,7 +88,7 @@ impl BrowserApp {
         let protection_state = self.host.protection().borrow().value();
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
-                let (sender, events) = mpsc::channel();
+                let (sender, events) = crate::ui_events::channel();
                 let state = serde_json::json!({"autoSleep": self.preferences.auto_sleep, "sleepMinutes": self.preferences.sleep_minutes, "engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state, "defaultBrowser": self.default_browser.state});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()

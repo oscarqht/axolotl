@@ -12,6 +12,10 @@ impl BrowserApp {
             }
         }
         for (pane, event) in events {
+            // Recycled surfaces can still have IPC queued for their old pane.
+            if event["type"] != "ready" && event["pane"].as_u64() != Some(pane) {
+                continue;
+            }
             if self.model.active_space().pane(pane).is_none() {
                 continue;
             }
@@ -125,21 +129,7 @@ impl BrowserApp {
                 "history-query" => {
                     if self.editing == Some(target) {
                         let query = event["value"].as_str().unwrap_or("");
-                        let result = self
-                            .browsing_history
-                            .as_ref()
-                            .map(|db| db.search(query))
-                            .transpose();
-                        match result {
-                            Ok(items) => {
-                                if let Some(bar) = self.bars.get(&pane) {
-                                    self.report(
-                                        bar.show_history(query, &items.unwrap_or_default()),
-                                    );
-                                }
-                            }
-                            Err(error) => self.report(Err(error)),
-                        }
+                        self.queue_history_search(target, query, cx);
                     }
                 }
                 "history-open" => {
@@ -211,6 +201,8 @@ impl BrowserApp {
     }
 
     pub fn prepare_views(&mut self, window: &mut Window, cx: &gpui::App) {
+        #[cfg(feature = "smoke")]
+        let _timing = crate::smoke_performance::time("prepare_views");
         let mut ids: HashSet<_> = self
             .model
             .spaces
@@ -302,7 +294,8 @@ impl BrowserApp {
             .filter(|(_, bar)| bar.expanded)
             .map(|(id, _)| *id)
             .collect();
-        if !native_views.is_subset(&self.chrome_views) && !self.tab_drag_active() {
+        let raise_bars = !native_views.is_subset(&self.chrome_views) && !self.tab_drag_active();
+        if raise_bars {
             if let Some(menu) = &mut self.space_menu {
                 menu.needs_raise = true;
             }
@@ -310,16 +303,29 @@ impl BrowserApp {
             if let Some(dialog) = &mut self.settings {
                 dialog.view = None;
             }
-            self.bars.clear();
+            // Reorder the existing controls instead of constructing WKWebViews
+            // again. Keep their editor, scroll, transition and pointer state.
         }
         if !self.tab_drag_active() {
             self.chrome_views = native_views;
         }
         let active_panes: HashSet<_> = geometry.panes.iter().map(|p| p.id).collect();
-        self.bars.retain(|id, _| active_panes.contains(id));
+        // Keep only as many native control surfaces as visible panes. Recycle
+        // inactive ones across spaces rather than caching a WebKit page per space.
+        let mut spare: Vec<_> = self
+            .bars
+            .extract_if(|id, _| !active_panes.contains(id))
+            .map(|(_, bar)| bar)
+            .collect();
         for pane in &geometry.panes {
             if let std::collections::hash_map::Entry::Vacant(entry) = self.bars.entry(pane.id) {
-                match crate::floating_bar::FloatingBar::new(window, cx) {
+                let bar = if let Some(mut bar) = spare.pop() {
+                    bar.reset();
+                    Ok(bar)
+                } else {
+                    crate::floating_bar::FloatingBar::new(window, cx)
+                };
+                match bar {
                     Ok(mut bar) => {
                         bar.expanded = expanded.contains(&pane.id);
                         entry.insert(bar);
@@ -329,6 +335,10 @@ impl BrowserApp {
                         continue;
                     }
                 }
+            }
+            if raise_bars {
+                let result = self.bars[&pane.id].raise();
+                self.report(result);
             }
             let p = self.model.pane(pane.id).unwrap();
             let editing = match self.editing {
@@ -358,7 +368,7 @@ impl BrowserApp {
                     })
                 })
                 .collect();
-            let state = serde_json::json!({"active":p.active_tab,"editing":editing,"expanded":self.bars[&pane.id].expanded,"tabs":tabs});
+            let state = serde_json::json!({"pane":p.id,"active":p.active_tab,"editing":editing,"expanded":self.bars[&pane.id].expanded,"tabs":tabs});
             let result = self
                 .bars
                 .get_mut(&pane.id)

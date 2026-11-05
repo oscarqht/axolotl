@@ -17,6 +17,7 @@ impl BrowserApp {
     }
 
     pub fn arm_tab_drag(&mut self, source: PaneId, tab: TabId, origin: Point<Pixels>) {
+        crate::ui_events::wake();
         self.suppress_tab_click = false;
         self.tab_drag = Some(TabDrag {
             input: DragInput::Shell,

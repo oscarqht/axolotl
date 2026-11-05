@@ -49,6 +49,7 @@ impl DragPreview {
                 .with_transparent(true)
                 .with_on_page_load_handler(move |event, _| {
                     ready.set(matches!(event, wry::PageLoadEvent::Finished));
+                    crate::ui_events::wake();
                 }),
             html,
         )
@@ -163,6 +164,7 @@ pub(crate) fn capture(source: &WebView, image: Snapshot) -> Result<()> {
         // WebKit invokes this on the main thread. Encode PNG to keep the overlay
         // small and independent of the source document's lifetime.
         *image.borrow_mut() = Some(String::new());
+        crate::ui_events::wake();
         unsafe {
             if let Some(snapshot) = snapshot.as_ref()
                 && let Some(tiff) = snapshot.TIFFRepresentation()
@@ -208,6 +210,7 @@ pub(crate) fn capture(source: &WebView, image: Snapshot) -> Result<()> {
         let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
             drop(visibility);
             *image.borrow_mut() = Some(String::new());
+            crate::ui_events::wake();
             result?;
             let mut stat = STATSTG::default();
             captured.Stat(&mut stat, STATFLAG_NONAME)?;

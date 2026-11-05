@@ -17,7 +17,7 @@ form{margin:0;padding:7px}h2{font-size:14px;margin:0 0 14px}label{display:block;
 <script>
 const frame=document.querySelector('#frame'),menu=document.querySelector('#menu'),grip=document.querySelector('#grip');
 let state={},resize=null,editing=false,icon=null,menuKey='';
-const send=(type,extra={})=>window.ipc.postMessage(JSON.stringify({type,...extra}));
+const send=(type,extra={})=>window.ipc.postMessage(JSON.stringify({type,...extra,generation:state.generation}));
 function updateIcon(){const button=menu.querySelector('#icon');button.textContent=icon||'☺';button.classList.toggle('empty',!icon);button.setAttribute('aria-label',icon?'Change pinned tab icon '+icon:'Choose pinned tab icon (using favicon)')}
 function closePicker(){const picker=menu.querySelector('#picker'),button=menu.querySelector('#icon');picker.hidden=true;button.setAttribute('aria-expanded','false');button.focus()}
 // Match Edit space's catalog, search, selected state, clear and empty-results UI.
@@ -39,6 +39,7 @@ function editIcon(){
 function addItem(label,action){const b=document.createElement('button');b.className='menu-item';b.textContent=label;b.setAttribute('role','menuitem');b.onclick=action;menu.append(b);return b}
 window.updatePins=s=>{
  const previous=state;state=s;frame.hidden=!s.rect;menu.hidden=!s.menu;
+ if(previous.generation!==s.generation){resize=null;editing=false;menuKey='';}
  if(s.rect)Object.assign(frame.style,{left:s.rect.x+'px',top:s.rect.y+'px',width:s.rect.width+'px',height:s.rect.height+'px'});
  if(editing&&s.menu&&previous.unpin===s.unpin)return;
  const key=JSON.stringify([s.menu,s.unpin,s.keepAlive,s.pins]);if(key===menuKey)return;menuKey=key;editing=false;menu.classList.remove('editing');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Pinned tabs');menu.replaceChildren();

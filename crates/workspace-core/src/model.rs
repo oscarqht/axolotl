@@ -74,7 +74,7 @@ pub struct PinnedTab {
     pub height: f32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Workspace {
     pub spaces: Vec<Space>,
     pub pinned_tabs: Vec<PinnedTab>,

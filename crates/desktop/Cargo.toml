@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+async-channel = "2"
+futures-lite = "2"
 workspace-core = { path = "../workspace-core" }
 gpui = { version = "=0.2.2", features = ["runtime_shaders"] }
 gpui-component = "=0.5.1"

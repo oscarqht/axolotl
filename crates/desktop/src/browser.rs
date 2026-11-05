@@ -10,7 +10,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
-        mpsc::{self, Receiver, SyncSender},
+        mpsc::Receiver,
     },
 };
 
@@ -221,7 +221,7 @@ pub struct WryState {
     retired_views: RefCell<Vec<Rc<WebView>>>,
     identities: RefCell<HashMap<TabId, Arc<AtomicU64>>>,
     events: Receiver<BrowserEvent>,
-    sender: SyncSender<BrowserEvent>,
+    sender: crate::ui_events::SyncSender<BrowserEvent>,
     visible: Rc<RefCell<HashSet<TabId>>>,
     loaded: Rc<RefCell<HashSet<TabId>>>,
 }
@@ -229,7 +229,7 @@ pub struct WryState {
 impl Default for WryHost {
     fn default() -> Self {
         // Untrusted pages cannot cause unbounded allocation by flooding IPC.
-        let (sender, events) = mpsc::sync_channel(512);
+        let (sender, events) = crate::ui_events::sync_channel(512);
         Self(Rc::new(WryState {
             downloads: Rc::new(RefCell::new(crate::downloads::DownloadManager::default())),
             #[cfg(target_os = "macos")]

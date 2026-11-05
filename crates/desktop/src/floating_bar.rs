@@ -3,10 +3,7 @@ use crate::native_webview::{BuildNativeChild, NativeWebView};
 use anyhow::Result;
 use gpui::{Bounds, Window, point, px, size};
 use serde_json::Value;
-use std::{
-    cell::RefCell,
-    sync::mpsc::{self, Receiver},
-};
+use std::{cell::RefCell, sync::mpsc::Receiver};
 use workspace_core::Rect;
 use wry::{NewWindowResponse, WebViewBuilder};
 
@@ -29,7 +26,9 @@ pub struct FloatingBar {
 }
 impl FloatingBar {
     pub fn new(window: &Window, cx: &gpui::App) -> Result<Self> {
-        let (sender, events) = mpsc::channel();
+        #[cfg(feature = "smoke")]
+        let _timing = crate::smoke_performance::time("bar_creation");
+        let (sender, events) = crate::ui_events::channel();
         let view = crate::browser::with_inline_html(
             WebViewBuilder::new()
                 .with_transparent(true)
@@ -69,6 +68,15 @@ impl FloatingBar {
         crate::native_webview::raise(&self.view)
     }
 
+    pub(crate) fn reset(&mut self) {
+        self.expanded = false;
+        self.transitioning = false;
+        self.menu_open = false;
+        self.history_open = false;
+        self.midpoints.clear();
+        self.invalidate();
+    }
+
     pub fn place(&mut self, pane: Rect, mut state: Value) -> Result<()> {
         let editing = !state["editing"].is_null();
         let available = (pane.width - 24.).max(1.);
@@ -103,12 +111,14 @@ impl FloatingBar {
             width = width.max(MENU_WIDTH).min(pane.width);
             top = (bottom - bar_height - MENU_HEIGHT).max(pane.y);
         }
-        self.bounds = Rect::new(pane.x + (pane.width - width) / 2., top, width, bottom - top);
-        let r = self.bounds;
-        self.view.set_bounds(crate::browser::native_bounds(Bounds {
-            origin: point(px(r.x), px(r.y)),
-            size: size(px(r.width), px(r.height)),
-        }))?;
+        let r = Rect::new(pane.x + (pane.width - width) / 2., top, width, bottom - top);
+        if r != self.bounds {
+            self.view.set_bounds(crate::browser::native_bounds(Bounds {
+                origin: point(px(r.x), px(r.y)),
+                size: size(px(r.width), px(r.height)),
+            }))?;
+            self.bounds = r;
+        }
         state["menu"] = serde_json::json!(self.menu_open);
         state["surfaceWidth"] = serde_json::json!(width);
         state["expandedWidth"] = serde_json::json!(expanded_width);

@@ -16,6 +16,20 @@ pub fn now() -> i64 {
         .as_secs() as i64
 }
 
+/// Clonable search handle for work scheduled away from the UI thread. The shared
+/// writer orders reads after queued visits and supports in-memory profiles too.
+#[derive(Clone)]
+pub struct HistorySearch(Store);
+impl HistorySearch {
+    pub fn search(&self, query: &str) -> anyhow::Result<Vec<HistoryItem>> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Ok(vec![]);
+        }
+        self.0.history_search(&query)
+    }
+}
+
 pub struct BrowsingHistory {
     writer: Store,
 }
@@ -74,20 +88,42 @@ impl BrowsingHistory {
     pub fn count(&self) -> anyhow::Result<i64> {
         self.writer.history_scalar("SELECT count(*) FROM visits")
     }
+    pub fn searcher(&self) -> HistorySearch {
+        HistorySearch(self.writer.clone())
+    }
+    #[cfg(any(test, feature = "smoke"))]
     pub fn search(&self, query: &str) -> anyhow::Result<Vec<HistoryItem>> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(vec![]);
-        }
-        // Matching and the eight-result limit run on the writer, avoiding an
-        // allocation of the full visit log on the UI thread.
-        self.writer.history_search(&query)
+        self.searcher().search(query)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn background_search_handle_observes_writes_titles_and_clear() {
+        let dir = std::env::temp_dir().join(format!("axolotl-reader-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = BrowsingHistory::open(&dir).unwrap();
+        let searcher = db.searcher();
+        let id = db
+            .record("https://reader.test/", "Old", 1)
+            .unwrap()
+            .unwrap();
+        let search = |reader: HistorySearch, query: &'static str| {
+            std::thread::spawn(move || reader.search(query).unwrap())
+                .join()
+                .unwrap()
+        };
+        assert_eq!(search(searcher.clone(), "Old").len(), 1);
+        db.title(id, "Über %_'").unwrap();
+        assert!(search(searcher.clone(), "Old").is_empty());
+        assert_eq!(search(searcher.clone(), "ÜBER %_'").len(), 1);
+        db.clear().unwrap();
+        assert!(search(searcher, "reader").is_empty());
+        drop(db);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn persistence_repeats_titles_matching_retention_and_clear() {
         let path = std::env::temp_dir().join(format!("axolotl-history-{}", uuid::Uuid::new_v4()));

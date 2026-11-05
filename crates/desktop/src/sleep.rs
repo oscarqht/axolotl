@@ -44,6 +44,9 @@ pub struct SleepState {
     directory: Option<PathBuf>,
 }
 impl SleepState {
+    pub(crate) fn is_capturing(&self) -> bool {
+        !self.captures.is_empty()
+    }
     pub fn restore() -> Self {
         Self::load(crate::persistence::data_dir().map(|p| p.join("sleep")))
     }
@@ -338,6 +341,7 @@ impl BrowserApp {
                 started: Instant::now(),
             },
         );
+        crate::ui_events::wake();
         cx.notify();
     }
     fn auto_sleep_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {

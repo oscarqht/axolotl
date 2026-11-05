@@ -5,11 +5,7 @@ use crate::{
 };
 use gpui::*;
 use serde_json::{Value, json};
-use std::{
-    rc::Rc,
-    sync::mpsc::{self, Receiver},
-    time::Instant,
-};
+use std::{rc::Rc, sync::mpsc::Receiver, time::Instant};
 use wry::{NewWindowResponse, WebViewBuilder};
 
 pub struct HistoryPopup {
@@ -31,28 +27,67 @@ pub fn items_json(items: &[crate::browsing_history::HistoryItem]) -> Value {
 }
 impl BrowserApp {
     pub fn dismiss_history(&mut self) {
+        self.history_generation = self.history_generation.wrapping_add(1);
+        self.history_search = None;
         self.history_popup = None;
         self.history_matches.clear();
         self.history_selected = None;
     }
     pub fn search_history(&mut self, query: &str, cx: &mut Context<Self>) {
+        let Some(target) = self.editing else { return };
+        self.queue_history_search(target, query, cx);
+    }
+    pub(crate) fn queue_history_search(
+        &mut self,
+        target: crate::app::TabTarget,
+        query: &str,
+        cx: &mut Context<Self>,
+    ) {
+        // Retain the native suggestion surface while typing. Recreating it for
+        // each debounced result would move WebKit construction onto every key.
+        self.history_generation = self.history_generation.wrapping_add(1);
+        self.history_search = None;
+        self.history_matches.clear();
         self.history_selected = None;
-        self.history_matches = match self
-            .browsing_history
-            .as_ref()
-            .map(|db| db.search(query))
-            .transpose()
-        {
-            Ok(items) => items.unwrap_or_default(),
-            Err(error) => {
-                self.report(Err(error));
-                vec![]
-            }
-        };
-        if self.history_matches.is_empty() {
-            self.history_popup = None;
-        }
         cx.notify();
+        let Some(searcher) = self.browsing_history.as_ref().map(|db| db.searcher()) else {
+            return;
+        };
+        if query.trim().is_empty() {
+            return;
+        }
+        let query = query.to_owned();
+        let generation = self.history_generation;
+        self.history_search = Some(cx.spawn(async move |view, cx| {
+            // Cancelled tasks never launch a query for every intermediate key.
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(80))
+                .await;
+            let search_query = query.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { searcher.search(&search_query) })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                if this.history_generation != generation || this.editing != Some(target) {
+                    return;
+                }
+                match result {
+                    Ok(items) => match target {
+                        crate::app::TabTarget::Space(_) => {
+                            this.history_matches = items;
+                            cx.notify();
+                        }
+                        crate::app::TabTarget::Page(pane, _) => {
+                            if let Some(bar) = this.bars.get(&pane) {
+                                this.report(bar.show_history(&query, &items));
+                            }
+                        }
+                    },
+                    Err(error) => this.report(Err(error)),
+                }
+            });
+        }));
     }
     pub fn invalidate_history_suggestions(&mut self, cx: &mut Context<Self>) {
         self.dismiss_history();
@@ -101,12 +136,15 @@ impl BrowserApp {
     }
     pub fn prepare_history_popup(&mut self, window: &Window, cx: &App) {
         if self.history_matches.is_empty() {
-            self.history_popup = None;
+            if let Some(popup) = &self.history_popup {
+                let result = popup.view.set_visible(false);
+                self.report(result.map_err(Into::into));
+            }
             return;
         }
         let result = (|| -> anyhow::Result<()> {
             if self.history_popup.is_none() {
-                let (sender, events) = mpsc::channel();
+                let (sender, events) = crate::ui_events::channel();
                 let colors = crate::chrome_theme::ChromeColors::current(cx);
                 let css = format!(
                     "window.historyTheme='--ink:#{:06x};--surface:#{:06x};--border:#{:06x};--hover:#{:06x}'",
@@ -131,6 +169,11 @@ impl BrowserApp {
                     events,
                 });
             }
+            self.history_popup
+                .as_ref()
+                .unwrap()
+                .view
+                .set_visible(true)?;
             self.history_popup
                 .as_ref()
                 .unwrap()

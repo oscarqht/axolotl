@@ -203,6 +203,8 @@ is downloading, or **Open file** and **Show in Finder / Explorer** after complet
 Files only open when requested. Download history clears when the app quits;
 pause, resume, retry and persistent history are not supported.
 
+Native UI performance measurements and methodology: [performance report](docs/performance.md).
+
 ## Checks
 
 ```sh

@@ -4,10 +4,7 @@ use crate::{
     native_webview::{BuildNativeChild, NativeWebView},
 };
 use gpui::*;
-use std::{
-    sync::mpsc::{self, Receiver},
-    time::Instant,
-};
+use std::{sync::mpsc::Receiver, time::Instant};
 use workspace_core::{PaneId, SpaceId, TabId};
 use wry::{NewWindowResponse, WebViewBuilder};
 
@@ -119,6 +116,7 @@ impl BrowserApp {
         if self.settings.is_some() || !crate::browser::allowed_url(&url) {
             return;
         }
+        crate::ui_events::wake();
         let origin = if source == POPUP_TAB {
             self.link_popup
                 .as_ref()
@@ -201,6 +199,7 @@ impl BrowserApp {
             return;
         }
         self.link_popup.as_mut().unwrap().closing_until = Some(Instant::now() + duration);
+        crate::ui_events::wake();
         self.report(self.host.focus_parent(POPUP_TAB));
         self.focus.focus(window);
         cx.notify();
@@ -273,7 +272,7 @@ impl BrowserApp {
         };
         let result = (|| -> anyhow::Result<()> {
             if popup.backdrop.is_none() {
-                let (sender, events) = mpsc::sync_channel(32);
+                let (sender, events) = crate::ui_events::sync_channel(32);
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)

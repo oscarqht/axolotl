@@ -103,6 +103,8 @@ pub struct BrowserApp {
     pub history_cleared_at: Option<Instant>,
     pub history_matches: Vec<crate::browsing_history::HistoryItem>,
     pub history_selected: Option<usize>,
+    pub(crate) history_search: Option<Task<()>>,
+    pub(crate) history_generation: u64,
     pub history_popup: Option<crate::history_suggestions::HistoryPopup>,
     pub preferences: crate::preferences::Preferences,
     pub settings: Option<crate::settings::SettingsDialog>,
@@ -133,7 +135,7 @@ pub struct BrowserApp {
     pub space_menu: Option<crate::space_menu::SpaceMenu>,
     pub status: String,
     pub(crate) persistence_error: Option<String>,
-    pub poll_count: u8,
+    pub last_url_probe: Instant,
     /// Last history probe per tab: (can go back, can go forward).
     pub history: HashMap<TabId, (bool, bool)>,
     pub notifications: HashMap<TabId, u32>,
@@ -177,15 +179,37 @@ impl BrowserApp {
             },
         )
         .detach();
-        cx.spawn_in(window, async |view, cx| {
+        let native_events = crate::ui_events::listen();
+        cx.spawn_in(window, async move |view, cx| {
+            let mut interval = Duration::from_millis(250);
             loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(40))
-                    .await;
-                if let Err(error) = view.update_in(cx, |this, window, cx| this.poll(window, cx)) {
+                futures_lite::future::race(
+                    async {
+                        let _ = native_events.recv().await;
+                    },
+                    cx.background_executor().timer(interval),
+                )
+                .await;
+                while native_events.try_recv().is_ok() {}
+                if let Err(error) = view.update_in(cx, |this, window, cx| {
+                    this.poll(window, cx);
+                    interval = if this.tab_drag.is_some()
+                        || this.space_drag.is_some()
+                        || this
+                            .link_popup
+                            .as_ref()
+                            .is_some_and(|popup| !popup.presented || popup.closing_until.is_some())
+                        || this.sleep.is_capturing()
+                    {
+                        Duration::from_millis(16)
+                    } else {
+                        Duration::from_millis(250)
+                    };
+                }) {
                     // Native Windows calls can pump tasks during another update.
                     // A temporary borrow conflict must not stop polling forever.
                     if error.downcast_ref::<std::cell::BorrowMutError>().is_some() {
+                        interval = Duration::from_millis(1);
                         continue;
                     }
                     break;
@@ -270,6 +294,8 @@ impl BrowserApp {
             history_cleared_at: None,
             history_matches: vec![],
             history_selected: None,
+            history_search: None,
+            history_generation: 0,
             history_popup: None,
             preferences,
             settings: None,
@@ -299,7 +325,7 @@ impl BrowserApp {
             pins: Default::default(),
             status: String::new(),
             persistence_error: None,
-            poll_count: 0,
+            last_url_probe: Instant::now(),
             history: HashMap::new(),
             notifications: HashMap::new(),
             #[cfg(target_os = "macos")]
@@ -611,6 +637,8 @@ impl BrowserApp {
         cx.notify();
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(feature = "smoke")]
+        let _timing = crate::smoke_performance::time("poll");
         // Runs only after BrowserApp::new has restored the complete workspace.
         let batches: Vec<_> = cx
             .try_global::<crate::external_urls::Incoming>()
@@ -628,8 +656,12 @@ impl BrowserApp {
             self.host.request_redraw();
             cx.notify();
         }
-        self.saver
-            .tick(&self.model, &self.sleep.entries, Instant::now());
+        {
+            #[cfg(feature = "smoke")]
+            let _timing = crate::smoke_performance::time("persistence");
+            self.saver
+                .tick(&self.model, &self.sleep.entries, Instant::now());
+        }
         self.window_saver.tick(window, cx);
         let error = crate::persistence::error_status();
         if self.persistence_error != error {
@@ -657,8 +689,8 @@ impl BrowserApp {
         }
         self.update_split_preview(window);
         let mut events = self.host.drain_events();
-        self.poll_count = (self.poll_count + 1) % 12;
-        if self.poll_count == 0 {
+        if self.last_url_probe.elapsed() >= Duration::from_millis(480) {
+            self.last_url_probe = Instant::now();
             if let Some(popup) = &self.link_popup {
                 let tab = crate::link_popup::POPUP_TAB;
                 if let Ok(url) = self.host.current_url(tab)

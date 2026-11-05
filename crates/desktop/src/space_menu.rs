@@ -5,7 +5,7 @@ use crate::{
 };
 use gpui::*;
 use serde_json::Value;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::Receiver;
 use workspace_core::SpaceId;
 use wry::{NewWindowResponse, WebViewBuilder};
 
@@ -52,7 +52,7 @@ impl BrowserApp {
         };
         let result = (|| -> anyhow::Result<()> {
             if menu.view.is_none() {
-                let (sender, events) = mpsc::channel();
+                let (sender, events) = crate::ui_events::channel();
                 let colors = crate::chrome_theme::ChromeColors::current(cx);
                 let state = serde_json::json!({
                     "x": f32::from(menu.position.x), "y": f32::from(menu.position.y),

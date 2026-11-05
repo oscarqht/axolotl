@@ -177,6 +177,18 @@ pub(crate) async fn run(
         "Main popup missing"
     );
     ensure!(popup_eval(view,"({rows:document.querySelectorAll('button').length,title:document.querySelector('strong')?.textContent,url:document.querySelector('span')?.textContent,height:innerHeight})",cx).await?["rows"]==1,"Main suggestions missing");
+    popup_eval(view, "window.historyPopupIdentity='retained';true", cx).await?;
+    view.update_in(cx, |app, window, cx| {
+        app.address
+            .update(cx, |input, cx| input.set_value("late history", window, cx));
+    })?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    ensure!(
+        popup_eval(view, "window.historyPopupIdentity", cx).await? == "retained",
+        "typing recreated the native suggestion popup"
+    );
     if std::env::args().any(|a| a == "--smoke-hold-history") {
         eprintln!("History preview: main suggestions");
         for _ in 0..100 {

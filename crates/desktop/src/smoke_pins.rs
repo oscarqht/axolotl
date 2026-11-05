@@ -11,8 +11,7 @@ async fn popup_action(
     script: &str,
     cx: &mut AsyncWindowContext,
 ) -> Result<()> {
-    // Dismissal destroys this child, so do not wait for a callback from it.
-    // The caller checks the resulting application state after polling IPC.
+    // Actions may dismiss the popup; check the resulting state after IPC.
     view.update_in(cx, |app, _, _| app.pins.evaluate(script))??;
     pause(cx).await;
     Ok(())
@@ -278,6 +277,12 @@ pub async fn run(
     })??;
     popup_action(view, "send('resize',{width:500,height:420});true", cx).await?;
     pause(cx).await;
+    popup_action(
+        view,
+        "window.pinControlIdentity='retained';window.oldGeneration=state.generation;true",
+        cx,
+    )
+    .await?;
     view.update_in(cx, |app, window, cx| {
         let pin = app
             .model
@@ -295,9 +300,21 @@ pub async fn run(
         Ok::<_, anyhow::Error>(())
     })??;
     pause(cx).await;
+    ensure!(
+        popup_read(view, "window.pinControlIdentity", cx).await? == "retained",
+        "pin switch recreated popup controls"
+    );
+    popup_action(
+        view,
+        "window.ipc.postMessage(JSON.stringify({type:'dismiss',generation:oldGeneration}));true",
+        cx,
+    )
+    .await?;
     view.update_in(cx, |app, window, cx| {
         ensure!(
-            !app.host.is_visible(first) && app.host.is_visible(second),
+            !app.host.is_visible(first)
+                && app.host.is_visible(second)
+                && app.pins.open == Some(second),
             "switching popup leaves two visible"
         );
         app.toggle_pin(second, window, cx);

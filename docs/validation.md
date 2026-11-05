@@ -782,3 +782,16 @@ header icon reordering, grip dragging, narrow-window visual layout, full process
 restart restoration and Windows runtime behavior still require manual validation.
 Computer Use listed the isolated review app but repeatedly timed out acquiring
 its window, so no successful visual or OS-input verification is claimed here.
+
+### Pinned emoji icons and resize grip follow-up (2026-11-05)
+
+- `cargo test --workspace --features smoke`: 20 desktop and 38 core tests pass.
+  Added emoji persistence, clear-to-favicon, and legacy pinned-session coverage.
+- The native `--smoke-test --smoke-pins` run passes with the Edit space emoji
+  catalog and matching searchable grid. It exercises search/select/save, no
+  results, draft cancellation, clearing back to the favicon and snapshot restore.
+- Native DOM geometry verifies the grip is at the bottom-right with the correct
+  resize cursor. Pointer-handler dispatch verifies positive horizontal movement
+  increases width, vertical movement changes height, and the left edge stays fixed.
+  This check dispatches fixture pointer events; it does not simulate OS pointer input.
+- The popup script passes `node --check`; formatting and whitespace checks pass.

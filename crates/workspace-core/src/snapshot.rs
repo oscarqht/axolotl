@@ -51,6 +51,8 @@ struct WorkspaceDto {
 #[derive(Serialize, Deserialize)]
 struct PinnedDto {
     tab: TabDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
     width: f32,
     height: f32,
 }
@@ -183,6 +185,7 @@ impl Workspace {
                         title: p.tab.title.clone(),
                         custom_title: p.tab.custom_title.clone(),
                     },
+                    icon: p.icon.clone(),
                     width: p.width,
                     height: p.height,
                 })
@@ -316,6 +319,9 @@ impl Workspace {
                     title: p.tab.title,
                     custom_title: p.tab.custom_title.filter(|c| !c.trim().is_empty()),
                 },
+                icon: p
+                    .icon
+                    .filter(|s| !s.trim().is_empty() && s.chars().count() <= 32),
                 width: p.width,
                 height: p.height,
             });

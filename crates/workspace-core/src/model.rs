@@ -69,6 +69,7 @@ impl Space {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PinnedTab {
     pub tab: Tab,
+    pub icon: Option<String>,
     pub width: f32,
     pub height: f32,
 }
@@ -169,6 +170,7 @@ impl Workspace {
         }
         self.pinned_tabs.push(PinnedTab {
             tab: moved,
+            icon: None,
             width: 480.,
             height: 640.,
         });
@@ -204,6 +206,17 @@ impl Workspace {
         }
         let pin = self.pinned_tabs.remove(from);
         self.pinned_tabs.insert(to, pin);
+        true
+    }
+
+    pub fn set_pin_icon(&mut self, tab: TabId, icon: Option<&str>) -> bool {
+        let Some(pin) = self.pinned_tabs.iter_mut().find(|p| p.tab.id == tab) else {
+            return false;
+        };
+        pin.icon = icon
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.chars().count() <= 32)
+            .map(str::to_owned);
         true
     }
 

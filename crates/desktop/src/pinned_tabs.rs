@@ -17,6 +17,7 @@ pub struct PinnedUi {
     events: Option<Receiver<Value>>,
     state: String,
     focus_page: bool,
+    resize_origin_x: Option<f32>,
     pub drag: Option<(TabId, Point<Pixels>, bool)>,
     pub suppress_click: bool,
 }
@@ -82,6 +83,7 @@ impl BrowserApp {
         self.pins.surface = None;
         self.pins.events = None;
         self.pins.state.clear();
+        self.pins.resize_origin_x = None;
         self.focus.focus(window);
         cx.notify();
     }
@@ -128,7 +130,11 @@ impl BrowserApp {
         let width = pin.width.min((w - 8.).max(1.));
         let height = pin.height.min((h - 8.).max(1.));
         Some(Rect::new(
-            (anchor - width).max(4.).min((w - width).max(0.)),
+            self.pins
+                .resize_origin_x
+                .unwrap_or(anchor - width)
+                .max(4.)
+                .min((w - width - 4.).max(0.)),
             crate::render::TOP + 4.,
             width,
             height,
@@ -146,6 +152,10 @@ impl BrowserApp {
                     WebViewBuilder::new()
                         .with_transparent(true)
                         .with_focused(false)
+                        .with_initialization_script(format!(
+                            "window.spaceEmojiData={}",
+                            include_str!("../assets/emoji-data.json")
+                        ))
                         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
                         .with_ipc_handler(move |request| {
                             if let Ok(event) = serde_json::from_str(request.body()) {
@@ -174,7 +184,7 @@ impl BrowserApp {
                 "menu": self.pins.menu.is_some(),
                 "unpin": self.pins.menu.flatten(),
                 "keepAlive": self.pins.menu.flatten().is_some_and(|id| self.sleep.keep_alive(id)),
-                "pins": self.model.pinned_tabs.iter().map(|p| json!({"id":p.tab.id,"title":p.tab.display_title(),"url":p.tab.url,"sleeping":self.sleep.is_sleeping(p.tab.id)})).collect::<Vec<_>>()
+                "pins": self.model.pinned_tabs.iter().map(|p| json!({"id":p.tab.id,"title":p.tab.display_title(),"url":p.tab.url,"icon":p.icon,"sleeping":self.sleep.is_sleeping(p.tab.id)})).collect::<Vec<_>>()
             }).to_string();
             // Also push on ready: initialization can finish after the first evaluation.
             if state != self.pins.state {
@@ -263,11 +273,36 @@ impl BrowserApp {
                         cx.notify();
                     }
                 }
+                "set-icon" => {
+                    if let Some(id) = self.pins.menu.flatten() {
+                        let icon = event["icon"].as_str();
+                        let valid = icon.is_none()
+                            || serde_json::from_str::<Vec<(String, String)>>(include_str!(
+                                "../assets/emoji-data.json"
+                            ))
+                            .is_ok_and(|items| {
+                                items.iter().any(|(emoji, _)| Some(emoji.as_str()) == icon)
+                            });
+                        if valid {
+                            self.model.set_pin_icon(id, icon);
+                            self.dismiss_pin(window, cx);
+                        }
+                    }
+                }
+                "resize-start" => {
+                    self.pins.resize_origin_x = self.pin_rect(window).map(|r| r.x);
+                }
                 "resize" => {
                     if let Some(id) = self.pins.open {
                         self.model.resize_pin(
                             id,
-                            event["width"].as_f64().unwrap_or(480.) as f32,
+                            (event["width"].as_f64().unwrap_or(480.) as f32).min(
+                                self.pins
+                                    .resize_origin_x
+                                    .map_or(f32::from(window.viewport_size().width) - 8., |x| {
+                                        f32::from(window.viewport_size().width) - x - 4.
+                                    }),
+                            ),
                             event["height"].as_f64().unwrap_or(640.) as f32,
                         );
                         cx.notify();
@@ -282,6 +317,17 @@ use wry::WebViewBuilder;
 
 #[cfg(feature = "smoke")]
 impl PinnedUi {
+    pub(crate) fn read(
+        &self,
+        script: &str,
+        callback: impl Fn(String) + Send + 'static,
+    ) -> anyhow::Result<()> {
+        self.surface
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Popup surface missing"))?
+            .evaluate_script_with_callback(script, callback)?;
+        Ok(())
+    }
     pub(crate) fn evaluate(&self, script: &str) -> anyhow::Result<()> {
         self.surface
             .as_ref()

@@ -18,6 +18,42 @@ async fn popup_action(
     Ok(())
 }
 
+async fn popup_read(
+    view: &WeakEntity<BrowserApp>,
+    script: &str,
+    cx: &mut AsyncWindowContext,
+) -> Result<serde_json::Value> {
+    use std::sync::{Arc, Mutex};
+    let response = Arc::new(Mutex::new(None));
+    let target = response.clone();
+    view.update_in(cx, |app, _, _| {
+        app.pins
+            .read(script, move |v| *target.lock().unwrap() = Some(v))
+    })??;
+    for _ in 0..50 {
+        if let Some(value) = response.lock().unwrap().take() {
+            return Ok(serde_json::from_str(&value)?);
+        }
+        pause(cx).await;
+    }
+    anyhow::bail!("Popup read timed out: {script}")
+}
+
+async fn wait_popup_closed(
+    view: &WeakEntity<BrowserApp>,
+    cx: &mut AsyncWindowContext,
+) -> Result<()> {
+    for _ in 0..30 {
+        if view.update_in(cx, |app, _, _| {
+            app.pins.menu.is_none() && app.pins.open.is_none()
+        })? {
+            return Ok(());
+        }
+        pause(cx).await;
+    }
+    anyhow::bail!("Popup did not close after applying action")
+}
+
 fn fixture() -> Result<String> {
     use std::{
         io::{Read, Write},
@@ -98,6 +134,80 @@ pub async fn run(
         );
         Ok::<_, anyhow::Error>(())
     })??;
+    view.update_in(cx, |app, window, cx| app.pin_menu(Some(first), window, cx))?;
+    pause(cx).await;
+    pause(cx).await;
+    popup_action(view, "[...menu.querySelectorAll('button')].find(b=>b.textContent==='Edit icon…').click();menu.querySelector('#search').value='rocket';renderEmojis()", cx).await?;
+    ensure!(
+        popup_read(
+            view,
+            "[...menu.querySelector('#emojis').children].some(b=>b.textContent==='🚀')",
+            cx
+        )
+        .await?
+            == true,
+        "shared emoji catalog/search missing rocket"
+    );
+    popup_action(view, "[...menu.querySelector('#emojis').children].find(b=>b.textContent==='🚀').click();menu.querySelector('#save').click()", cx).await?;
+    view.update_in(cx, |app, window, cx| {
+        ensure!(
+            app.model.pinned_tabs[0].icon.as_deref() == Some("🚀"),
+            "emoji selection was not saved"
+        );
+        ensure!(
+            workspace_core::Workspace::from_json(&app.model.to_json())?.pinned_tabs[0]
+                .icon
+                .as_deref()
+                == Some("🚀"),
+            "emoji did not survive restore"
+        );
+        app.pin_menu(Some(first), window, cx);
+        Ok::<_, anyhow::Error>(())
+    })??;
+    pause(cx).await;
+    pause(cx).await;
+    popup_action(view, "[...menu.querySelectorAll('button')].find(b=>b.textContent==='Edit icon…').click();menu.querySelector('#search').value='zzzz-no-match';renderEmojis()", cx).await?;
+    ensure!(popup_read(view, "!menu.querySelector('#empty').hidden && menu.querySelector('#emojis').children.length===0", cx).await? == true, "emoji no-results state missing");
+    ensure!(
+        popup_read(view, "menu.querySelector('#clear').click();icon===null", cx).await? == true,
+        "Clear did not update the draft"
+    );
+    popup_action(
+        view,
+        "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",
+        cx,
+    )
+    .await?;
+    wait_popup_closed(view, cx).await?;
+    view.update_in(cx, |app, window, cx| {
+        ensure!(
+            app.model.pinned_tabs[0].icon.as_deref() == Some("🚀"),
+            "cancel saved an emoji draft"
+        );
+        app.pin_menu(Some(first), window, cx);
+        Ok::<_, anyhow::Error>(())
+    })??;
+    pause(cx).await;
+    pause(cx).await;
+    popup_action(
+        view,
+        "[...menu.querySelectorAll('button')].find(b=>b.textContent==='Edit icon…').click()",
+        cx,
+    )
+    .await?;
+    ensure!(
+        popup_read(view, "menu.querySelector('#clear').click();icon===null", cx).await? == true,
+        "Clear did not update the draft"
+    );
+    popup_action(view, "menu.querySelector('#save').click()", cx).await?;
+    wait_popup_closed(view, cx).await?;
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.model.pinned_tabs[0].icon.is_none(),
+            "clear did not restore favicon"
+        );
+        Ok::<_, anyhow::Error>(())
+    })??;
     let second = view.update_in(cx, |app, window, cx| {
         let id = app.active_tab();
         // The same completion path as a captured native chip released in the header.
@@ -158,7 +268,15 @@ pub async fn run(
         );
         Ok::<_, anyhow::Error>(())
     })??;
-    popup_action(view, "send('resize',{width:560,height:420});true", cx).await?;
+    let before_resize = view.update_in(cx, |app, window, _| app.pin_rect(window).unwrap())?;
+    ensure!(popup_read(view, "(()=>{const r=grip.getBoundingClientRect(),f=frame.getBoundingClientRect();return r.right<=f.right&&f.right-r.right<5&&r.bottom<=f.bottom&&f.bottom-r.bottom<5&&getComputedStyle(grip).cursor==='nwse-resize'})()", cx).await? == true, "resize grip is not in bottom-right corner");
+    popup_action(view, "grip.setPointerCapture=()=>{};grip.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,clientX:100,clientY:100}));grip.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:1,clientX:120,clientY:70}));grip.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1}))", cx).await?;
+    view.update_in(cx, |app,window,_| {
+        let after=app.pin_rect(window).unwrap();
+        ensure!((after.x-before_resize.x).abs()<1. && (after.width-before_resize.width-20.).abs()<1. && (after.height-before_resize.height+30.).abs()<1., "bottom-right resizing moved origin or used wrong deltas: {before_resize:?} -> {after:?}");
+        Ok::<_,anyhow::Error>(())
+    })??;
+    popup_action(view, "send('resize',{width:500,height:420});true", cx).await?;
     pause(cx).await;
     view.update_in(cx, |app, window, cx| {
         let pin = app
@@ -167,7 +285,7 @@ pub async fn run(
             .iter()
             .find(|p| p.tab.id == first)
             .unwrap();
-        ensure!(pin.width == 560. && pin.height == 420., "resize not saved");
+        ensure!(pin.width == 500. && pin.height == 420., "resize not saved");
         let restored = workspace_core::Workspace::from_json(&app.model.to_json())?;
         ensure!(
             restored.pinned_tabs == app.model.pinned_tabs,
@@ -248,6 +366,6 @@ pub async fn run(
     host.forward(first)?;
     crate::smoke::wait_title(&host, first, "Pin second", cx).await?;
     Ok(vec![
-        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
+        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
     ])
 }

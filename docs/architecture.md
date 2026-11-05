@@ -205,7 +205,7 @@ validate IDs across both pane tabs and pins.
 `pinned_tabs.rs` owns the transient open-popup/menu/drag state. `prepare_views`
 retains pinned native views even while hidden. A transparent native child below
 the raised existing page catches outside clicks and draws the popup frame and
-bottom-left resize grip. Raising changes sibling order without recreating the
+bottom-right resize grip. Raising changes sibling order without recreating the
 page; only one pinned page is visible at a time. The header remains interactive
 above the shield. Popup dimensions clamp to the viewport while keeping the saved
 preferred size. Authenticated Escape messages from the page dismiss the popup.
@@ -217,3 +217,8 @@ in that menu also support right-click unpinning. Hidden pages remain live and ca
 consume resources, as with ordinary inactive tabs. Restart restores URLs, order
 and sizes; in-memory DOM and navigation history survive pin/open/close/unpin during
 the same app session, rather than being serialized across process restarts.
+
+Pinned tabs also persist an optional emoji override. The pin icon editor uses the
+Edit space emoji catalog and search/select/clear UI. The native popup records its
+left edge when a resize starts, so dragging its bottom-right grip grows toward the
+pointer while preserving that edge and fitting within the viewport.

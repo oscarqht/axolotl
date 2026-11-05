@@ -111,13 +111,21 @@ impl BrowserApp {
                         button.child(div().opacity(0.5).child("💤"))
                     })
                     .when(
-                        !self.sleep.is_sleeping(id) && !self.favicons.contains_key(&id),
+                        !self.sleep.is_sleeping(id)
+                            && pin.icon.is_none()
+                            && !self.favicons.contains_key(&id),
                         |button| button.child(div().text_color(rgb(colors.muted)).child("◉")),
+                    )
+                    .children(
+                        pin.icon
+                            .as_ref()
+                            .filter(|_| !self.sleep.is_sleeping(id))
+                            .map(|icon| div().text_size(px(18.)).child(icon.clone())),
                     )
                     .children(
                         self.favicons
                             .get(&id)
-                            .filter(|_| !self.sleep.is_sleeping(id))
+                            .filter(|_| !self.sleep.is_sleeping(id) && pin.icon.is_none())
                             .map(|image| img(image.clone()).size(px(16.)).relative()),
                     )
                     .when(

@@ -930,3 +930,27 @@ fn pin_order_and_sizes_round_trip_and_old_sessions_remain_compatible() {
     invalid["pinned_tabs"][0]["width"] = serde_json::json!(-1);
     assert!(Workspace::from_json(&invalid.to_string()).is_err());
 }
+
+#[test]
+fn pinned_emoji_override_round_trips_and_clear_restores_favicon() {
+    let mut w = Workspace::default();
+    let tab = w.focused_pane().active_tab;
+    w.pin_tab(w.focused_pane().id, tab);
+    assert!(w.set_pin_icon(tab, Some("🚀")));
+    let restored = Workspace::from_json(&w.to_json()).unwrap();
+    assert_eq!(restored.pinned_tabs[0].icon.as_deref(), Some("🚀"));
+    let mut old: serde_json::Value = serde_json::from_str(&w.to_json()).unwrap();
+    old["pinned_tabs"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("icon");
+    assert_eq!(
+        Workspace::from_json(&old.to_string()).unwrap().pinned_tabs[0].icon,
+        None
+    );
+    assert!(w.set_pin_icon(tab, None));
+    assert_eq!(
+        Workspace::from_json(&w.to_json()).unwrap().pinned_tabs[0].icon,
+        None
+    );
+}

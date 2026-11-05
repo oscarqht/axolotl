@@ -329,6 +329,11 @@ and navigation history.
 
 Drag header icons to reorder them. Right-click an icon and choose **Unpin to
 focused pane** to return the page to the active space. Extra pins appear under
-**•••**; right-click an overflow entry to unpin it. Drag the popup's bottom-left
+**•••**; right-click an overflow entry to unpin it. Drag the popup's bottom-right
 corner to resize it. Pins, their order and preferred sizes restore on restart;
 popups start at 480 × 640 and fit within the window.
+
+Right-click a pinned tab and choose **Edit icon…** to pick an emoji using the
+same catalog and searchable grid as **Edit space**. Save applies it to the header
+and overflow menu. Clear and Save returns to the page favicon; Escape discards
+the draft. Emoji choices are restored with the pinned tabs.

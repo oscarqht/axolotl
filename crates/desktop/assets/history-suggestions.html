@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><style>
+:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;padding:3px;font:12px system-ui;color:var(--ink);background:var(--surface)}
+#matches{border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:calc(100vh - 6px);background:var(--surface)}
+button{display:block;width:100%;padding:8px 12px;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}button:hover,button[aria-selected=true]{background:var(--hover)}strong,span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}span{opacity:.65;margin-top:3px}strong{font-weight:550}
+</style><div id="matches" role="listbox" aria-label="Browsing history"></div><script>
+document.documentElement.style.cssText=window.historyTheme;
+window.updateHistory=(items,selected)=>{document.querySelector('#matches').replaceChildren(...items.map((item,index)=>{const b=document.createElement('button');b.role='option';b.setAttribute('aria-selected',String(selected===index));const title=document.createElement('strong'),url=document.createElement('span');title.textContent=item.title||item.url;url.textContent=item.url;b.append(title,url);b.onmousedown=e=>e.preventDefault();b.onclick=()=>window.ipc.postMessage(JSON.stringify({url:item.url}));return b}));document.querySelector('[aria-selected="true"]')?.scrollIntoView({block:"nearest"})};
+window.ipc.postMessage(JSON.stringify({ready:true}));
+</script>

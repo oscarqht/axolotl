@@ -47,8 +47,10 @@ impl BrowserApp {
             E::Focused(t)
             | E::Notification(t)
             | E::Loaded(t)
+            | E::LoadStarted(t)
+            | E::VisitCompleted(t, _, _)
             | E::Navigated(t, _)
-            | E::Title(t, _)
+            | E::Title(t, _, _)
             | E::NewTab(t, _)
             | E::OpenLink(t, _)
             | E::PopupLink(t, _)
@@ -66,7 +68,7 @@ impl BrowserApp {
         }
         match event {
             E::Navigated(_, url) => self.link_popup.as_mut().unwrap().url = url.clone(),
-            E::Title(_, title) => self.link_popup.as_mut().unwrap().title = title.clone(),
+            E::Title(_, title, _) => self.link_popup.as_mut().unwrap().title = title.clone(),
             E::PopupLink(_, url) => self.open_link_popup(POPUP_TAB, url.clone(), window, cx),
             E::NewTab(_, url) => {
                 self.report(self.host.navigate(POPUP_TAB, url));

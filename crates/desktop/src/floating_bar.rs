@@ -23,6 +23,7 @@ pub struct FloatingBar {
     pub transitioning: bool,
     /// A tab context menu is open; the native surface grows upward to hold it.
     pub menu_open: bool,
+    pub history_open: bool,
     expanded_width: f32,
     pub midpoints: Vec<f32>,
 }
@@ -39,10 +40,15 @@ impl FloatingBar {
                         let _ = sender.send(value);
                     }
                 }),
-            include_str!("../assets/floating-bar.html").replace(
-                "__FLOATING_SCRIPT__",
-                include_str!("../assets/floating-bar.js"),
-            ),
+            include_str!("../assets/floating-bar.html")
+                .replace(
+                    "__FLOATING_SCRIPT__",
+                    include_str!("../assets/floating-bar.js"),
+                )
+                .replace(
+                    "__HISTORY_SCRIPT__",
+                    include_str!("../assets/floating-history.js"),
+                ),
         )
         .build_native_child(window, cx)?;
         view.focus_parent()?;
@@ -54,6 +60,7 @@ impl FloatingBar {
             expanded: false,
             transitioning: false,
             menu_open: false,
+            history_open: false,
             expanded_width: 176.,
             midpoints: vec![],
         })
@@ -89,6 +96,9 @@ impl FloatingBar {
         let bar_height = 48_f32.min(pane.height);
         let bottom = pane.y + (pane.height - 60.).max(0.) + bar_height;
         let mut top = bottom - bar_height;
+        if editing && self.history_open {
+            top = (bottom - bar_height - 438.).max(pane.y);
+        }
         if self.menu_open {
             width = width.max(MENU_WIDTH).min(pane.width);
             top = (bottom - bar_height - MENU_HEIGHT).max(pane.y);
@@ -143,6 +153,22 @@ impl FloatingBar {
             objc2_app_kit::NSEventType::LeftMouseUp => self.view.webview().mouseUp(&event),
             _ => window.sendEvent(&event),
         }
+        Ok(())
+    }
+    pub fn show_history(
+        &self,
+        query: &str,
+        items: &[crate::browsing_history::HistoryItem],
+    ) -> Result<()> {
+        self.view.evaluate_script(&format!(
+            "window.updateHistory({}, {})",
+            serde_json::json!(query),
+            crate::history_suggestions::items_json(items)
+        ))?;
+        Ok(())
+    }
+    pub fn clear_history(&self) -> Result<()> {
+        self.view.evaluate_script("window.clearHistory?.()")?;
         Ok(())
     }
     pub fn invalidate(&self) {

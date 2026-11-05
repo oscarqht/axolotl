@@ -259,6 +259,57 @@ mod windows_view {
                     .map_err(|e| wry::Error::Io(std::io::Error::other(e.to_string())))
             })
         }
+        /// Install after deferred WebView2 construction, before queued navigation.
+        pub fn observe_visits(&self, callback: impl Fn(Option<String>) + 'static) -> Result<()> {
+            self.call(move |view| {
+                use webview2_com::{
+                    NavigationCompletedEventHandler, NavigationStartingEventHandler, take_pwstr,
+                };
+                use wry::WebViewExtWindows;
+                let callback = Rc::new(callback);
+                let starting = callback.clone();
+                let completed = Cell::new(None);
+                unsafe {
+                    let webview = view
+                        .controller()
+                        .CoreWebView2()
+                        .map_err(webview2_com::Error::from)?;
+                    webview
+                        .add_NavigationStarting(
+                            &NavigationStartingEventHandler::create(Box::new(move |_, _| {
+                                starting(None);
+                                Ok(())
+                            })),
+                            &mut 0,
+                        )
+                        .map_err(webview2_com::Error::from)?;
+                    webview
+                        .add_NavigationCompleted(
+                            &NavigationCompletedEventHandler::create(Box::new(
+                                move |webview, args| {
+                                    if let (Some(webview), Some(args)) = (webview, args) {
+                                        let mut success = windows::core::BOOL::default();
+                                        let mut id = 0;
+                                        args.IsSuccess(&mut success)?;
+                                        args.NavigationId(&mut id)?;
+                                        if success.as_bool()
+                                            && completed.replace(Some(id)) != Some(id)
+                                        {
+                                            let mut source = windows::core::PWSTR::null();
+                                            webview.Source(&mut source)?;
+                                            callback(Some(take_pwstr(source)));
+                                        }
+                                    }
+                                    Ok(())
+                                },
+                            )),
+                            &mut 0,
+                        )
+                        .map_err(webview2_com::Error::from)?;
+                }
+                Ok(())
+            })
+        }
         pub fn reload(&self) -> Result<()> {
             self.call(|view| view.reload())
         }

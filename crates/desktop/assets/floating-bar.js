@@ -257,7 +257,9 @@ window.updateBar = (s) => {
         const input = document.createElement("input");
         input.setAttribute("aria-label", "Address");
         input.value = draft ?? t.url;
+        bindHistory(input, t.id);
         input.onkeydown = (e) => {
+          if (historyKey(e, input, t.id)) return;
           if (e.key === "Enter") {
             send({ type: "navigate", tab: t.id, value: input.value });
             e.preventDefault();
@@ -388,6 +390,7 @@ window.updateBar = (s) => {
   renderMenu();
   if (s.editing) expand(true);
   else if (old.editing) {
+    window.clearHistory();
     document.activeElement?.blur();
     pinned = false;
     collapse();

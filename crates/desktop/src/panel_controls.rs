@@ -107,6 +107,32 @@ impl BrowserApp {
                     }
                     cx.notify();
                 }
+                "history-query" => {
+                    if self.editing == Some(target) {
+                        let query = event["value"].as_str().unwrap_or("");
+                        let result = self
+                            .browsing_history
+                            .as_ref()
+                            .map(|db| db.search(query))
+                            .transpose();
+                        match result {
+                            Ok(items) => {
+                                if let Some(bar) = self.bars.get(&pane) {
+                                    self.report(
+                                        bar.show_history(query, &items.unwrap_or_default()),
+                                    );
+                                }
+                            }
+                            Err(error) => self.report(Err(error)),
+                        }
+                    }
+                }
+                "history-open" => {
+                    if let Some(bar) = self.bars.get_mut(&pane) {
+                        bar.history_open = event["value"].as_bool().unwrap_or(false);
+                    }
+                    cx.notify();
+                }
                 "navigate" => {
                     if self.editing == Some(target) {
                         self.navigate(event["value"].as_str().unwrap_or(""), window, cx);
@@ -188,6 +214,8 @@ impl BrowserApp {
         for pin in self.model.pinned_tabs.clone() {
             self.report(self.host.ensure(pin.tab.id, &pin.tab.url, window, cx));
         }
+        self.visit_ids.retain(|id, _| ids.contains(id));
+        self.document_titles.retain(|id, _| ids.contains(id));
         if window.is_window_active() {
             self.notifications.remove(&self.active_tab());
         }
@@ -245,6 +273,7 @@ impl BrowserApp {
             .collect();
         if native_views != self.chrome_views && !self.tab_drag_active() {
             self.space_menu = None;
+            self.history_popup = None;
             if let Some(dialog) = &mut self.settings {
                 dialog.view = None;
             }
@@ -310,6 +339,7 @@ impl BrowserApp {
         }
         // Create last, above every page and floating panel control.
         self.prepare_pins(window, cx);
+        self.prepare_history_popup(window, cx);
         self.prepare_space_menu(window, cx);
         self.prepare_settings(window, cx);
         self.prepare_link_popup(window, cx);

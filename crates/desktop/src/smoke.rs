@@ -204,6 +204,9 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-protection") {
         return crate::smoke_protection::run(view, cx).await;
     }
+    if std::env::args().any(|arg| arg == "--smoke-history") {
+        return crate::smoke_history::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-settings") {
         return crate::smoke_settings::run(view, cx).await;
     }

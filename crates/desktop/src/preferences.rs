@@ -5,6 +5,7 @@ use workspace_core::{NavigationError, SearchEngine, normalize_url, write_atomic}
 pub struct Preferences {
     pub search_engine: SearchEngine,
     pub homepage_url: String,
+    pub history_retention_days: Option<u32>,
     path: Option<PathBuf>,
 }
 
@@ -28,6 +29,20 @@ impl Preferences {
                 .as_str()
                 .and_then(|url| normalize_homepage_url(url).ok())
                 .unwrap_or_else(|| "about:blank".into()),
+            history_retention_days: if value
+                .get("history_retention_days")
+                .is_some_and(|v| v.is_null())
+            {
+                None
+            } else {
+                Some(
+                    value["history_retention_days"]
+                        .as_u64()
+                        .and_then(|d| u32::try_from(d).ok())
+                        .filter(|d| *d > 0)
+                        .unwrap_or(30),
+                )
+            },
             path,
         }
     }
@@ -45,6 +60,17 @@ impl Preferences {
         Ok(())
     }
 
+    pub fn set_history_retention(&mut self, days: Option<u32>) -> std::io::Result<()> {
+        if days == Some(0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Use Never or a positive whole number of days.",
+            ));
+        }
+        self.history_retention_days = days;
+        self.save()
+    }
+
     fn save(&self) -> std::io::Result<()> {
         let Some(path) = &self.path else {
             return Ok(());
@@ -52,6 +78,7 @@ impl Preferences {
         let json = serde_json::json!({
             "search_engine": self.search_engine.id(),
             "homepage_url": self.homepage_url,
+            "history_retention_days": self.history_retention_days,
         });
         write_atomic(path, json.to_string().as_bytes())
     }
@@ -173,6 +200,40 @@ mod tests {
             let loaded = Preferences::load(Some(path.clone()));
             assert_eq!(loaded.homepage_url, "about:blank");
             assert_eq!(loaded.search_engine, SearchEngine::Bing);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn history_retention_defaults_validates_and_persists() {
+        let dir = std::env::temp_dir().join(format!("axolotl-retention-{}", uuid::Uuid::new_v4()));
+        let path = dir.join("settings.json");
+        let mut prefs = Preferences::load(Some(path.clone()));
+        assert_eq!(prefs.history_retention_days, Some(30));
+        for days in [None, Some(1), Some(365), Some(u32::MAX)] {
+            prefs.set_history_retention(days).unwrap();
+            assert_eq!(
+                Preferences::load(Some(path.clone())).history_retention_days,
+                days
+            );
+        }
+        assert!(prefs.set_history_retention(Some(0)).is_err());
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("never"),
+            serde_json::json!(4294967296_u64),
+        ] {
+            std::fs::write(
+                &path,
+                serde_json::json!({"history_retention_days":value}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(
+                Preferences::load(Some(path.clone())).history_retention_days,
+                Some(30)
+            );
         }
         std::fs::remove_dir_all(dir).unwrap();
     }

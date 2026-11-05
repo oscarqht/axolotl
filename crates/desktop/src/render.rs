@@ -221,10 +221,45 @@ impl BrowserApp {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(if editing {
                 div()
+                    .relative()
                     .flex_1()
                     .min_w_0()
                     .px_1()
                     .child(Input::new(&self.address).appearance(false))
+                    .when_some(
+                        self.history_popup.as_ref().map(|p| p.view.clone()),
+                        |el, popup| {
+                            let height = self.history_matches.len() as f32 * 53. + 8.;
+                            el.child(
+                                canvas(
+                                    move |bounds, window, _| {
+                                        let width =
+                                            480_f32.min(f32::from(window.viewport_size().width));
+                                        let x = f32::from(bounds.origin.x).min(
+                                            (f32::from(window.viewport_size().width) - width)
+                                                .max(0.),
+                                        );
+                                        let _ = popup.set_bounds(crate::browser::native_bounds(
+                                            Bounds {
+                                                origin: point(px(x), px(TOP)),
+                                                size: size(
+                                                    px(width),
+                                                    px(height.min(
+                                                        (f32::from(window.viewport_size().height)
+                                                            - TOP)
+                                                            .max(1.),
+                                                    )),
+                                                ),
+                                            },
+                                        ));
+                                    },
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .size_full(),
+                            )
+                        },
+                    )
                     .into_any_element()
             } else {
                 div()
@@ -491,6 +526,13 @@ impl Render for BrowserApp {
             }))
             .on_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
+                    if matches!(this.editing, Some(TabTarget::Space(_)))
+                        && !this.history_matches.is_empty()
+                    {
+                        this.dismiss_history();
+                        cx.notify();
+                        return;
+                    }
                     this.close_link_popup(window, cx);
                     this.close_settings(window, cx);
                     this.dismiss_pin(window, cx);
@@ -501,6 +543,14 @@ impl Render for BrowserApp {
                     cx.notify();
                 }),
             )
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if matches!(this.editing, Some(TabTarget::Space(_)))
+                    && this.history_key(&event.keystroke.key, window, cx)
+                {
+                    cx.stop_propagation();
+                    window.prevent_default();
+                }
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
                     this.dismiss_pin(window, cx);

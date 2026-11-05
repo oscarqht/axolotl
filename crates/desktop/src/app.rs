@@ -94,6 +94,15 @@ pub struct BrowserApp {
     pub(crate) chrome_views: HashSet<TabId>,
     pub model: Workspace,
     pub pins: crate::pinned_tabs::PinnedUi,
+    pub browsing_history: Option<crate::browsing_history::BrowsingHistory>,
+    pub visit_ids: HashMap<TabId, (i64, String)>,
+    pub document_titles: HashMap<TabId, (String, String)>,
+    pub last_history_prune: Instant,
+    /// Ignore completions queued before the user confirmed clearing.
+    pub history_cleared_at: Option<Instant>,
+    pub history_matches: Vec<crate::browsing_history::HistoryItem>,
+    pub history_selected: Option<usize>,
+    pub history_popup: Option<crate::history_suggestions::HistoryPopup>,
     pub preferences: crate::preferences::Preferences,
     pub settings: Option<crate::settings::SettingsDialog>,
     pub link_popup: Option<crate::link_popup::LinkPopup>,
@@ -139,10 +148,22 @@ impl BrowserApp {
             window,
             |this, input, event, window, cx| match event {
                 InputEvent::PressEnter { .. } => {
-                    let value = input.read(cx).value().to_string();
+                    let value = this
+                        .history_selected
+                        .and_then(|i| this.history_matches.get(i))
+                        .map(|i| i.url.clone())
+                        .unwrap_or_else(|| input.read(cx).value().to_string());
                     this.navigate(&value, window, cx);
                 }
-                InputEvent::Blur if !input.read(cx).focus_handle(cx).is_focused(window) => {
+                InputEvent::Change => {
+                    if matches!(this.editing, Some(TabTarget::Space(_))) {
+                        this.search_history(input.read(cx).value().as_ref(), cx);
+                    }
+                }
+                InputEvent::Blur
+                    if !input.read(cx).focus_handle(cx).is_focused(window)
+                        && this.history_matches.is_empty() =>
+                {
                     this.cancel_edit(window, cx)
                 }
                 _ => {}
@@ -167,6 +188,7 @@ impl BrowserApp {
         .detach();
         cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
+                this.dismiss_history();
                 this.space_menu = None;
                 this.dismiss_pin(window, cx);
                 this.cancel_tab_drag(cx);
@@ -190,6 +212,21 @@ impl BrowserApp {
         .detach();
         Self::install_space_shortcuts(window, cx);
         let preferences = crate::preferences::Preferences::restore();
+        let browsing_history = match crate::browsing_history::BrowsingHistory::restore() {
+            Ok(db) => {
+                if let Err(error) = db.prune(
+                    preferences.history_retention_days,
+                    crate::browsing_history::now(),
+                ) {
+                    eprintln!("History retention: {error:#}");
+                }
+                Some(db)
+            }
+            Err(error) => {
+                eprintln!("Browsing history unavailable: {error:#}");
+                None
+            }
+        };
         let model = crate::persistence::restore(&preferences.homepage_url);
         let saver = crate::persistence::SessionSaver::new(&model);
         // Cmd+Q, window close and the app menu all end in cx.quit().
@@ -205,6 +242,14 @@ impl BrowserApp {
             chrome_views: HashSet::new(),
             swipes: HashMap::new(),
             model,
+            browsing_history,
+            visit_ids: HashMap::new(),
+            document_titles: HashMap::new(),
+            last_history_prune: Instant::now(),
+            history_cleared_at: None,
+            history_matches: vec![],
+            history_selected: None,
+            history_popup: None,
             preferences,
             settings: None,
             link_popup: None,
@@ -278,6 +323,7 @@ impl BrowserApp {
             .update(cx, |input, cx| input.set_value(url, window, cx));
     }
     pub fn cancel_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.dismiss_history();
         if self.editing.take().is_some() {
             self.sync_address(window, cx);
             cx.notify();
@@ -494,6 +540,10 @@ impl BrowserApp {
         }
         self.saver.tick(&self.model, Instant::now());
         self.window_saver.tick(window, cx);
+        if self.last_history_prune.elapsed() >= Duration::from_secs(3600) {
+            self.prune_history(cx);
+        }
+        self.poll_history_popup(window, cx);
         self.poll_settings(window, cx);
         self.poll_pins(window, cx);
         self.poll_link_popup(window, cx);
@@ -585,7 +635,50 @@ impl BrowserApp {
                         self.sync_address(window, cx);
                     }
                 }
-                BrowserEvent::Title(tab, title) => {
+                BrowserEvent::LoadStarted(tab) => {
+                    self.visit_ids.remove(&tab);
+                }
+                BrowserEvent::VisitCompleted(tab, url, completed_at) => {
+                    if self
+                        .history_cleared_at
+                        .is_some_and(|cleared| completed_at <= cleared)
+                    {
+                        continue;
+                    }
+                    if self.model.tab(tab).is_some() {
+                        let title = self
+                            .document_titles
+                            .get(&tab)
+                            .filter(|(u, _)| u == &url)
+                            .map(|(_, title)| title.as_str())
+                            .unwrap_or("");
+                        let result = self
+                            .browsing_history
+                            .as_ref()
+                            .map(|db| db.record(&url, title, crate::browsing_history::now()))
+                            .transpose();
+                        match result {
+                            Ok(Some(Some(id))) => {
+                                self.visit_ids.insert(tab, (id, url));
+                            }
+                            Ok(_) => (),
+                            Err(error) => self.report(Err(error)),
+                        }
+                    }
+                }
+                BrowserEvent::Title(tab, title, url) => {
+                    if let Some(url) = &url {
+                        self.document_titles
+                            .insert(tab, (url.clone(), title.clone()));
+                    }
+                    if !title.is_empty()
+                        && let Some((id, visit_url)) = self.visit_ids.get(&tab)
+                        && url.as_ref() == Some(visit_url)
+                        && let Some(db) = &self.browsing_history
+                    {
+                        let result = db.title(*id, &title);
+                        self.report(result);
+                    }
                     if let Some(page) = self.model.tab_mut(tab) {
                         page.title = title;
                     }

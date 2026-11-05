@@ -4,12 +4,14 @@ mod browser;
 mod browser_identity;
 #[cfg(test)]
 mod browser_tests;
+mod browsing_history;
 mod chrome_theme;
 mod docking;
 mod drag_preview;
 mod floating_bar;
 #[cfg(test)]
 mod gesture_tests;
+mod history_suggestions;
 mod link_popup;
 #[cfg(target_os = "macos")]
 mod macos_keyboard;
@@ -34,6 +36,8 @@ mod settings;
 mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
+#[cfg(feature = "smoke")]
+mod smoke_history;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]

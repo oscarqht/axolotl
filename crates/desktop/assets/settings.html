@@ -31,6 +31,16 @@ input{width:100%;padding:8px}.field{margin-top:22px}
 <p id="protection-status" role="status"></p>
 <button id="update-filters" style="width:auto;font-size:13px;padding:0 10px;margin-top:10px">Update now</button>
 </div>
+<div class="field">
+<label for="history-retention">Browsing history</label>
+<select id="history-retention"><option value="days">Automatically clear old visits</option><option value="never">Never automatically clear</option></select>
+<label for="history-days" style="margin-top:12px">Keep history for (days)</label>
+<input id="history-days" required type="number" min="1" max="4294967295" step="1" value="30">
+<p>History is shared across all spaces. Changes apply immediately.</p>
+<button id="clear-history" style="width:auto;height:auto;font-size:13px;padding:8px;margin-top:12px">Clear browsing history…</button>
+<div id="history-confirm" hidden><p>Clear all browsing history? Cookies, login sessions, tabs, and Back/Forward will be kept.</p><button id="confirm-clear" style="width:auto;height:auto;font-size:13px;padding:8px">Clear history</button> <button id="cancel-clear" style="width:auto;height:auto;font-size:13px;padding:8px">Cancel</button></div>
+<p id="history-error" role="status" hidden></p>
+</div>
 </section>
 <script>
 const select=document.querySelector('select'), closeButton=document.querySelector('#close');
@@ -59,12 +69,22 @@ window.homepageResult=result=>{
   homepage.setAttribute('aria-invalid',String(result.invalid));
   if(result.value!==null && homepage.value===submittedHomepage){homepage.value=result.value;submittedHomepage=result.value}
 };
+const retention=document.querySelector('#history-retention'), days=document.querySelector('#history-days'), confirmation=document.querySelector('#history-confirm');
+retention.value=window.settingsState.historyDays===null?'never':'days';
+days.value=window.settingsState.historyDays??30;days.disabled=retention.value==='never';
+const applyRetention=()=>{days.disabled=retention.value==='never';if(days.disabled)send('history-retention',null);else if(days.checkValidity()&&Number.isInteger(Number(days.value))&&Number(days.value)>0)send('history-retention',Number(days.value));else days.reportValidity()};
+retention.onchange=applyRetention;days.onchange=applyRetention;
+days.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();applyRetention()}};
+document.querySelector('#clear-history').onclick=()=>{confirmation.hidden=false;document.querySelector('#cancel-clear').focus()};
+document.querySelector('#cancel-clear').onclick=()=>{confirmation.hidden=true;document.querySelector('#clear-history').focus()};
+document.querySelector('#confirm-clear').onclick=()=>send('history-clear');
+window.historyResult=result=>{const status=document.querySelector('#history-error');status.textContent=result.error||(result.cleared?'Browsing history cleared.':'History retention saved.');status.hidden=false;if(result.cleared&&!result.error){confirmation.hidden=true;document.querySelector('#clear-history').focus()}};
 closeButton.onclick=()=>send('dismiss');
 document.addEventListener('keydown',event=>{
   if(event.key==='Escape'){event.preventDefault();send('dismiss')}
   if(event.key==='Tab'){
     event.preventDefault();
-    const controls=[closeButton,select,homepage,document.querySelector('#protection-enabled'),document.querySelector('#update-filters')].filter(control=>!control.disabled);
+    const controls=[...document.querySelectorAll('button,input,select')].filter(el=>!el.disabled&&!el.closest('[hidden]'));
     const index=controls.indexOf(document.activeElement);
     controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
   }

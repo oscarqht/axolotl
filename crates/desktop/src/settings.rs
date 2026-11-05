@@ -85,7 +85,7 @@ impl BrowserApp {
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
                 let (sender, events) = mpsc::channel();
-                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "theme": current_theme, "protection": protection_state});
+                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -194,6 +194,60 @@ impl BrowserApp {
                             );
                         }
                         self.report(result);
+                    }
+                }
+                "history-retention" => {
+                    let days = if event["value"].is_null() {
+                        Some(None)
+                    } else {
+                        event["value"]
+                            .as_u64()
+                            .and_then(|d| u32::try_from(d).ok())
+                            .filter(|d| *d > 0)
+                            .map(Some)
+                    };
+                    if let Some(days) = days {
+                        let result = self
+                            .preferences
+                            .set_history_retention(days)
+                            .map_err(Into::into);
+                        let error = result
+                            .as_ref()
+                            .err()
+                            .map(|e: &anyhow::Error| e.to_string())
+                            .unwrap_or_default();
+                        self.report(result);
+                        self.prune_history(cx);
+                        if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
+                            let _ = view.evaluate_script(&format!(
+                                "window.historyResult({})",
+                                serde_json::json!({"error":error})
+                            ));
+                        }
+                    }
+                }
+                "history-clear" => {
+                    let result = self
+                        .browsing_history
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("Browsing history is unavailable."))
+                        .and_then(|db| db.clear());
+                    let error = result
+                        .as_ref()
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default();
+                    if result.is_ok() {
+                        self.history_cleared_at = Some(std::time::Instant::now());
+                        self.visit_ids.clear();
+                        self.invalidate_history_suggestions(cx);
+                    }
+                    self.report(result);
+                    if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
+                        let _ = view.evaluate_script(&format!(
+                            "window.historyResult({})",
+                            serde_json::json!({"error":error,"cleared":true})
+                        ));
                     }
                 }
                 "dismiss" => self.close_settings(window, cx),

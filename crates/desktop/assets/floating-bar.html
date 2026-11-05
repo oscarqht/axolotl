@@ -348,6 +348,11 @@
   </button>
 </div>
 <div id="menu" role="menu" hidden></div>
+<style>
+body.history{align-items:flex-end}#history{position:absolute;bottom:52px;left:4px;right:4px;max-height:calc(100% - 56px);overflow:auto;border:1px solid var(--border);border-radius:10px;background:light-dark(#f3f5f7,#25303d);box-shadow:0 3px 8px #0003}
+#history button{display:block;width:100%;padding:8px 12px;text-align:left;border:0;border-radius:0;background:transparent;height:auto;cursor:pointer}#history button:hover,#history button[aria-selected=true]{background:var(--hover)}#history strong,#history span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#history span{opacity:.65;margin-top:3px}#history strong{font-weight:550}
+</style><div id="history" role="listbox" aria-label="Browsing history" hidden></div>
 <script>
+  __HISTORY_SCRIPT__;
   __FLOATING_SCRIPT__;
 </script>

@@ -16,7 +16,9 @@ pub(crate) async fn dialog_eval(
 ) -> Result<Value> {
     let response = Arc::new(Mutex::new(None));
     let target = response.clone();
-    view.update_in(cx, |app, _, _| {
+    view.update_in(cx, |app, window, cx| {
+        window.activate_window();
+        cx.activate(true);
         app.settings
             .as_ref()
             .and_then(|d| d.view.as_ref())
@@ -81,18 +83,24 @@ pub(crate) async fn run(
     );
     for shift in [false, true] {
         let expected = if shift {
-            [
+            vec![
                 "close",
+                "clear-history",
+                "history-days",
+                "history-retention",
                 "update-filters",
                 "protection-enabled",
                 "homepage-url",
                 "search-engine",
             ]
         } else {
-            [
+            vec![
                 "homepage-url",
                 "protection-enabled",
                 "update-filters",
+                "history-retention",
+                "history-days",
+                "clear-history",
                 "close",
                 "search-engine",
             ]

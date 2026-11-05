@@ -15,6 +15,29 @@ inside it, and dismisses with Escape or its labeled close button. Dismissal
 restores focus to the invoking header control or page. Background app commands
 are blocked while the modal is open.
 
+## Browsing history
+
+Both address inputs suggest up to eight unique recent URLs when the typed text
+matches a stored title or URL (case-insensitive literal substring). Each result
+shows its title and URL. Use Up/Down and Enter or click a result to open it in the
+current tab. Escape dismisses suggestions; Enter with no selected result keeps
+normal URL/search submission.
+
+History is shared across spaces and stored locally in `history.sqlite3` beside
+`settings.json`. Completed HTTP/HTTPS main-frame visits are recorded, including
+reloads and Back/Forward visits. Internal pages, failed loads, subframes, and
+redirect intermediates are excluded. Titles can update after a visit completes.
+History persists across app restarts independently of session snapshots.
+
+The default retention is **30 days**. Choose **Never automatically clear** or a
+positive whole number of days in Settings. Expired visits are removed at startup,
+once an hour while running, and immediately after changing retention. The
+`history_retention_days` setting is a positive integer, or `null` for Never.
+
+**Clear browsing history…** opens an inline confirmation. Confirming clears all
+stored visits and suggestions; cancelling keeps them. Clearing preserves cookies,
+login sessions, saved tabs, live pages, and native Back/Forward navigation.
+
 ## Persistence
 
 The choice is written atomically to `settings.json`, separately from
@@ -53,3 +76,15 @@ are checked against the shipped input bridge.
 These programmatic checks do not synthesize OS keyboard/mouse input or verify
 screen-reader announcements. Windows native execution and manual accessibility
 checks must be performed on a suitable Windows desktop.
+
+The browsing-history native acceptance flow uses a local HTTP fixture and an
+isolated in-memory database (disk persistence is covered separately by unit tests):
+
+```sh
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-history
+```
+
+It covers redirects/subframes/failed loads, repeat visits, late titles, both
+suggestion inputs, keyboard and mouse selection handlers, retention changes and
+periodic pruning, confirmed clearing, and retained cookies/page/navigation state.
+Append `--smoke-hold-history` to pause at both suggestion surfaces for visual review.

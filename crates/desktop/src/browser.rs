@@ -53,8 +53,10 @@ pub enum BrowserEvent {
     Favicon(TabId, String),
     Notification(TabId),
     Navigated(TabId, String),
-    Title(TabId, String),
+    Title(TabId, String, Option<String>),
     Loaded(TabId),
+    LoadStarted(TabId),
+    VisitCompleted(TabId, String, std::time::Instant),
     NewTab(TabId, String),
     OpenLink(TabId, String),
     PopupLink(TabId, String),
@@ -389,8 +391,13 @@ impl BrowserHost for WryHost {
         let popup_identity = identity.clone();
         let ipc = self.sender.clone();
         let title = self.sender.clone();
+        // Title KVO can precede load-start. Snapshot its document URL so a new
+        // page title cannot overwrite the previous visit while events are queued.
+        let title_view = Rc::new(RefCell::new(None::<std::rc::Weak<WebView>>));
+        let title_source = title_view.clone();
         let load = self.sender.clone();
         let loaded = self.loaded.clone();
+        let completed = Rc::new(std::cell::Cell::new(false));
         let popup = self.sender.clone();
         let visible = self.visible.clone();
         let nonce = uuid::Uuid::new_v4().simple().to_string();
@@ -486,7 +493,12 @@ impl BrowserHost for WryHost {
             })
             .with_document_title_changed_handler(move |value| {
                 let tab = title_identity.load(Ordering::Relaxed);
-                let _ = title.try_send(BrowserEvent::Title(tab, value));
+                let url = title_source
+                    .borrow()
+                    .as_ref()
+                    .and_then(|v| v.upgrade())
+                    .and_then(|v| v.url().ok());
+                let _ = title.try_send(BrowserEvent::Title(tab, value, url));
             })
             .with_on_page_load_handler(move |event, url| {
                 let tab = load_identity.load(Ordering::Relaxed);
@@ -494,10 +506,23 @@ impl BrowserHost for WryHost {
                     loaded.borrow_mut().insert(tab);
                 } else {
                     loaded.borrow_mut().remove(&tab);
+                    completed.set(false);
+                    #[cfg(not(target_os = "windows"))]
+                    let _ = load.try_send(BrowserEvent::LoadStarted(tab));
                 }
-                let _ = load.try_send(BrowserEvent::Navigated(tab, url));
+                let _ = load.try_send(BrowserEvent::Navigated(tab, url.clone()));
                 if matches!(event, PageLoadEvent::Finished) {
                     let _ = load.try_send(BrowserEvent::Loaded(tab));
+                    // WKWebView calls Finished only from didFinishNavigation (main frame).
+                    // WebView2 requires IsSuccess, handled by the native callback below.
+                    #[cfg(not(target_os = "windows"))]
+                    if !completed.replace(true) {
+                        let _ = load.try_send(BrowserEvent::VisitCompleted(
+                            tab,
+                            url,
+                            std::time::Instant::now(),
+                        ));
+                    }
                 }
             })
             .with_new_window_req_handler(move |url, _| {
@@ -524,6 +549,21 @@ impl BrowserHost for WryHost {
         let view = builder
             .build_native_child(window, cx)
             .context("Creating native browser child view")?;
+        let view = Rc::new(view);
+        *title_view.borrow_mut() = Some(Rc::downgrade(&view));
+        #[cfg(target_os = "windows")]
+        {
+            let sender = self.sender.clone();
+            let visit_identity = identity.clone();
+            view.observe_visits(move |url| {
+                let tab = visit_identity.load(Ordering::Relaxed);
+                let event = match url {
+                    Some(url) => BrowserEvent::VisitCompleted(tab, url, std::time::Instant::now()),
+                    None => BrowserEvent::LoadStarted(tab),
+                };
+                let _ = sender.try_send(event);
+            })?;
+        }
         let p = self.protection.borrow();
         let script = p.rules.script(&p.policy);
         #[cfg(target_os = "macos")]
@@ -548,7 +588,7 @@ impl BrowserHost for WryHost {
         // `with_focused(false)` is ignored on macOS; explicitly return focus.
         view.focus_parent()
             .context("Returning focus from new browser view")?;
-        self.views.borrow_mut().insert(tab, Rc::new(view));
+        self.views.borrow_mut().insert(tab, view);
         self.identities.borrow_mut().insert(tab, identity);
         Ok(())
     }

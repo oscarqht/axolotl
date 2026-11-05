@@ -162,6 +162,22 @@ impl Workspace {
         id
     }
 
+    /// Move a space to an insertion slot in the original strip (0..=len).
+    /// Selection and all space contents remain attached to their stable IDs.
+    pub fn move_space(&mut self, id: SpaceId, slot: usize) -> bool {
+        let Some(from) = self.spaces.iter().position(|space| space.id == id) else {
+            return false;
+        };
+        let slot = slot.min(self.spaces.len());
+        let to = if slot > from { slot - 1 } else { slot };
+        if from == to {
+            return false;
+        }
+        let space = self.spaces.remove(from);
+        self.spaces.insert(to, space);
+        true
+    }
+
     pub fn switch_space(&mut self, id: SpaceId) -> bool {
         if !self.spaces.iter().any(|s| s.id == id) {
             return false;

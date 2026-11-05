@@ -80,7 +80,11 @@ machine running the executable. See the validation report below for tested scope
   double-click it to maximize/restore on Windows. Resize from the window edges.
 - Space tabs show the focused page title, with an in-tab **×** and one trailing
   **+** to create a space. Closing the final space is disabled. Double-click a
-  space title to edit its focused page address.
+  space title to edit its focused page address. Drag a space title to reorder
+  spaces; the insertion line shows the drop position. Hold near either edge of
+  the strip to scroll through overflow. Drop inside the strip to save the new
+  order across restarts. Escape or dropping outside cancels and retains the
+  active space.
 - Each panel has a bottom-centered floating bar above its live page: a panel
   drag handle, active index/count (for example **2/5**), and **+**. Hover or focus
   the count/chip area, or tap the count, to expand it into favicon/title chips.
@@ -163,6 +167,9 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notificat
 
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
+
+# Space order, measured insertion slots, edge scrolling and cancellation
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-drag
 ```
 
 A focused macOS input regression checks native link hit testing and sends an OS

@@ -791,3 +791,26 @@ fn search_providers_encode_queries_without_changing_url_navigation() {
     }
     assert_eq!(SearchEngine::from_id("custom"), None);
 }
+
+#[test]
+fn space_reordering_preserves_selection_contents_and_snapshot_order() {
+    let mut workspace = Workspace::new("about:blank");
+    let a = workspace.active_space;
+    let b = workspace.add_space("B", "https://example.com/");
+    let c = workspace.add_space("C", "about:blank");
+    let original = workspace.spaces.clone();
+    let ids = |w: &Workspace| w.spaces.iter().map(|s| s.id).collect::<Vec<_>>();
+    assert!(workspace.move_space(a, 3));
+    assert_eq!(ids(&workspace), vec![b, c, a]);
+    assert!(workspace.move_space(a, 0));
+    assert_eq!(workspace.spaces, original);
+    assert!(!workspace.move_space(b, 1));
+    assert!(!workspace.move_space(b, 2));
+    assert!(!workspace.move_space(u64::MAX, 0));
+    assert!(workspace.move_space(c, 0));
+    assert_eq!(ids(&workspace), vec![c, a, b]);
+    assert_eq!(workspace.active_space, c);
+    let restored = Workspace::from_json(&workspace.to_json()).unwrap();
+    assert_eq!(restored.spaces, workspace.spaces);
+    assert_eq!(restored.active_space, c);
+}

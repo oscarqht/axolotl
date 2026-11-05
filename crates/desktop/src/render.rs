@@ -99,6 +99,11 @@ impl BrowserApp {
                 }),
                 |tab| tab.opacity(0.55),
             )
+            .when(
+                self.space_drag
+                    .is_some_and(|d| d.active && target == TabTarget::Space(d.id)),
+                |tab| tab.opacity(0.55),
+            )
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -145,11 +150,16 @@ impl BrowserApp {
                         cx.listener(move |this, event: &MouseDownEvent, _, _| {
                             if let TabTarget::Page(pane, tab) = target {
                                 this.arm_tab_drag(pane, tab, event.position);
+                            } else if let TabTarget::Space(id) = target {
+                                this.arm_space_drag(id, event.position);
                             }
                         }),
                     )
                     .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                         if matches!(target, TabTarget::Page(_, _)) && this.suppress_tab_click {
+                            return;
+                        }
+                        if matches!(target, TabTarget::Space(_)) && this.suppress_space_click {
                             return;
                         }
                         if event.click_count() == 2 {
@@ -328,9 +338,10 @@ impl Render for BrowserApp {
             } else {
                 ".SystemUIFont"
             })
-            .when(self.tab_drag_active(), |root| {
-                root.cursor(CursorStyle::ClosedHand)
-            })
+            .when(
+                self.tab_drag_active() || self.space_drag.is_some_and(|d| d.active),
+                |root| root.cursor(CursorStyle::ClosedHand),
+            )
             .on_action(cx.listener(|this, _: &crate::Settings, window, cx| {
                 this.open_settings(true, window, cx)
             }))
@@ -359,6 +370,7 @@ impl Render for BrowserApp {
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
                     this.close_settings(window, cx);
                     this.cancel_tab_drag(cx);
+                    this.cancel_space_drag(cx);
                     this.close_space_menu(cx);
                     this.cancel_edit(window, cx);
                     cx.notify();
@@ -367,10 +379,12 @@ impl Render for BrowserApp {
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     this.close_space_menu(cx);
+                    this.cancel_space_drag(cx);
                 }
             }))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.update_tab_drag(event, window, cx);
+                this.update_space_drag(event, window, cx);
                 if this.moving_window {
                     this.moving_window = false;
                     window.start_window_move();
@@ -398,6 +412,7 @@ impl Render for BrowserApp {
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, window, cx| {
                     this.finish_tab_drag(Some(event.position), window, cx);
+                    this.finish_space_drag(Some(event.position), cx);
                     this.moving_window = false;
                     if this.dragging.take().is_some() {
                         this.host.request_redraw();
@@ -409,6 +424,7 @@ impl Render for BrowserApp {
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
                     this.finish_tab_drag(None, window, cx);
+                    this.finish_space_drag(None, cx);
                     this.moving_window = false;
                     if this.dragging.take().is_some() {
                         this.host.request_redraw();
@@ -519,6 +535,15 @@ impl Render for BrowserApp {
                         }
                     }),
             )
+            .children(self.space_drop_indicator().map(|(x, y, height)| {
+                div()
+                    .absolute()
+                    .left(x)
+                    .top(y)
+                    .w(px(3.))
+                    .h(height)
+                    .bg(rgb(colors.accent))
+            }))
             // Keep native caption hit regions outside the focusable content.
             // GPUI's automatic focus handler prevents the default mouse-down,
             // which would swallow Windows caption dragging and button actions.

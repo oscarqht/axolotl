@@ -31,7 +31,10 @@ mod smoke_panels;
 #[cfg(feature = "smoke")]
 mod smoke_settings;
 #[cfg(feature = "smoke")]
+mod smoke_space_drag;
+#[cfg(feature = "smoke")]
 mod smoke_space_menu;
+mod space_drag;
 mod space_menu;
 mod split_preview;
 

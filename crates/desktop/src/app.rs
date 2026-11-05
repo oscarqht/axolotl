@@ -97,6 +97,8 @@ pub struct BrowserApp {
     pub moving_window: bool,
     pub space_scroll: ScrollHandle,
     pub dragging: Option<Divider>,
+    pub space_drag: Option<crate::space_drag::SpaceDrag>,
+    pub suppress_space_click: bool,
     pub tab_drag: Option<TabDrag>,
     pub suppress_tab_click: bool,
     pub drag_preview: Option<crate::drag_preview::DragPreview>,
@@ -148,6 +150,7 @@ impl BrowserApp {
             if !window.is_window_active() {
                 this.space_menu = None;
                 this.cancel_tab_drag(cx);
+                this.cancel_space_drag(cx);
             } else {
                 this.notifications.remove(&this.active_tab());
                 cx.notify();
@@ -187,6 +190,8 @@ impl BrowserApp {
             moving_window: false,
             space_scroll: ScrollHandle::new(),
             dragging: None,
+            space_drag: None,
+            suppress_space_click: false,
             tab_drag: None,
             suppress_tab_click: false,
             drag_preview: None,
@@ -426,6 +431,7 @@ impl BrowserApp {
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.saver.tick(&self.model, Instant::now());
         self.poll_settings(window, cx);
+        self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
         if let Some(preview) = &self.drag_preview {

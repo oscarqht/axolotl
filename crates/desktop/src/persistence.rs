@@ -132,11 +132,17 @@ mod tests {
         assert!(path.exists());
         let saved = load_workspace(&path).unwrap().unwrap();
         assert_eq!(saved.spaces, workspace.spaces);
+        let selected = workspace.active_space;
+        assert!(workspace.move_space(selected, 0));
         workspace.add_tab("https://gpui.rs/");
         saver.flush(&workspace);
         assert_eq!(
             load_workspace(&path).unwrap().unwrap().spaces,
             workspace.spaces
+        );
+        assert_eq!(
+            load_workspace(&path).unwrap().unwrap().active_space,
+            selected
         );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

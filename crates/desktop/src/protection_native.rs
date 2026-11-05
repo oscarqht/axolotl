@@ -84,10 +84,12 @@ mod platform {
                 let controller = view.webview().configuration().userContentController();
                 controller.removeAllContentRuleLists();
                 controller.addContentRuleList(list);
-                // Preserve Wry's IPC and all other initialization scripts.
-                let scripts = controller.userScripts();
+                // userScripts is a live NSArray: clearing the controller also
+                // empties that array. Retain each script independently first so
+                // Wry's IPC and browser input bridge survive policy updates.
+                let scripts: Vec<_> = controller.userScripts().iter().collect();
                 controller.removeAllUserScripts();
-                for old in scripts.iter() {
+                for old in scripts {
                     if !old.source().to_string().starts_with(SCRIPT_MARKER) {
                         controller.addUserScript(&old);
                     }

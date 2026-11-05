@@ -81,6 +81,7 @@ pub async fn run(
                 host.current_url(source)
             )
         })?;
+    support::check_protection_bridge(view, &host, source, cx).await?;
     eval(
         &host,
         source,
@@ -414,6 +415,7 @@ pub async fn run(
     )
     .await?;
     Ok(vec![
+        "native IPC and trusted Option-click survive protection policy off/on updates and document reloads",
         "trusted native Option-click and Option-click target=_blank open one temporary page sharing session cookies without navigating source",
         "popup centered across split panes and after native window resize; page dimensions match chrome",
         "ordinary popup navigation and nested Option-click retain origin and create no saved tabs",

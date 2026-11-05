@@ -1,3 +1,40 @@
+# Option-click after protection integration
+
+Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.
+
+Reproduced the reported Google-result failure on a real WKWebView: a trusted
+Option-click (`altKey=true`) on a Google result navigated the source to GitHub
+and created no preview. The link path and modifiers were correct. Inspection
+showed that protection registration cleared all five initial user scripts.
+`WKUserContentController.userScripts` returned a live NSArray whose count became
+zero after `removeAllUserScripts`, so the preservation loop restored nothing.
+Both `window.ipc` and the browser input bridge were absent on Google.
+
+The fix retains each WKUserScript in an independent Rust Vec before clearing the
+controller. It reinstalls the existing IPC/input scripts in order and replaces
+only the protection script. This applies at initial view creation and subsequent
+protection updates.
+
+- The live `--smoke-google-popup` check passed: native Option-click opened the
+  GitHub result in a real preview view and kept the exact Google search URL.
+- `--smoke-link-popup` passed in 30.490s. Its new network-independent regression
+  toggles protection off/on, waits for actual document reloads, verifies IPC,
+  and delivers native Option-clicks while checking retained source URL/state.
+  Existing popup navigation, split/resized centering, shared session, promotion,
+  history, dismissal and other shortcut checks also passed.
+- `cargo test --workspace --all-features --locked`: 66 tests passed using an
+  isolated build directory for this checkout.
+- `--smoke-protection` passed in 23.759s: native request blocking, cosmetics,
+  site exceptions and global disable/re-enable all remained functional.
+- Formatting and whitespace checks passed.
+
+Unrelated baseline checks remain failing: the input-bridge JavaScript suite has
+10 passing tests and one Shift+Escape expectation failure; the current bridge
+forwards modified Escape while the old test expects it to be ignored. Strict
+Clippy reports two `collapsible_if` errors in pinned-tab drag handlers in
+`render.rs`. Neither the input bridge, that JavaScript test, nor the pinned-tab
+handlers changed in this fix. The earlier foreground redraw limitation remains.
+
 # macOS webpage arrow-key routing
 
 Run on 2026-11-05 in `bro-fix-webpage-arrow-keys` on macOS.

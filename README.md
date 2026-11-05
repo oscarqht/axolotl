@@ -238,6 +238,9 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-sho
 # Temporary link preview, promotion, split centering and resize
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-link-popup
 
+# Opt-in live Google result Option-click regression (network required, macOS)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-google-popup
+
 # Space order, measured insertion slots, edge scrolling and cancellation
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-drag
 ```

@@ -89,6 +89,8 @@ pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_option_click(&self, tab: TabId) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_option_click_at(&self, tab: TabId, x: f64, y: f64) -> Result<()>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn has_native_focus(&self, tab: TabId) -> Result<bool>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
@@ -318,6 +320,10 @@ impl BrowserHost for WryHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_option_click(&self, tab: TabId) -> Result<()> {
         self.native_test_click(tab, 60., 50., objc2_app_kit::NSEventModifierFlags::Option)
+    }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_option_click_at(&self, tab: TabId, x: f64, y: f64) -> Result<()> {
+        self.native_test_click(tab, x, y, objc2_app_kit::NSEventModifierFlags::Option)
     }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn has_native_focus(&self, tab: TabId) -> Result<bool> {

@@ -40,6 +40,8 @@ mod smoke_docking;
 #[cfg(feature = "smoke")]
 mod smoke_history;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_google_popup;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_input;
@@ -66,9 +68,9 @@ mod smoke_space_drag;
 #[cfg(feature = "smoke")]
 mod smoke_space_menu;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
-mod smoke_video;
-#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_space_shortcuts;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_video;
 mod space_drag;
 mod space_menu;
 mod space_shortcuts;

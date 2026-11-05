@@ -8,7 +8,10 @@ let state = { tabs: [] },
   suppress = false,
   collapseTimer,
   preview = null,
-  scrollTimer = null;
+  scrollTimer = null,
+  settleTimer = null,
+  transitionEpoch = 0,
+  pendingStart = null;
 function metrics() {
   send({
     type: "metrics",
@@ -17,7 +20,20 @@ function metrics() {
       return r.x + r.width / 2;
     }),
   });
-  bar.classList.toggle("overflow", tabs.scrollWidth > tabs.clientWidth + 1);
+  // Ignore the arrows' own width when deciding whether they are needed.
+  const arrowWidth = [...bar.querySelectorAll(".arrow")].reduce(
+    (sum, arrow) => sum + arrow.getBoundingClientRect().width,
+    0,
+  );
+  bar.classList.toggle(
+    "overflow",
+    tabs.scrollWidth > tabs.clientWidth + arrowWidth + 1,
+  );
+  bar.classList.toggle("fade-left", tabs.scrollLeft > 1);
+  bar.classList.toggle(
+    "fade-right",
+    tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth - 1,
+  );
 }
 function expand(value) {
   clearTimeout(collapseTimer);
@@ -32,13 +48,63 @@ function expand(value) {
     return;
   if (expanded === value) return;
   expanded = value;
-  bar.classList.toggle("expanded", value);
+  const epoch = ++transitionEpoch;
+  clearTimeout(settleTimer);
   send({ type: "expand", value });
-  requestAnimationFrame(() => {
+  const start = () => {
+    if (epoch !== transitionEpoch) return;
+    // Wait for the host to acknowledge its wide bounds, keeping the compact
+    // pill centered in the meantime. Use an explicit pixel endpoint so a delayed
+    // viewport resize cannot change the tween's interpolation basis.
+    if (value && !(state.expanded || state.editing)) return;
+    pendingStart = null;
+    // Establish the starting layout even if the native child is occluded.
+    bar.getBoundingClientRect();
+    bar.classList.toggle("expanded", value);
+    document.querySelector("#count").tabIndex = value ? -1 : 0;
+    document.querySelector("#count").setAttribute("aria-hidden", String(value));
+    const settle = () => {
+      if (epoch === transitionEpoch && expanded === value) {
+        // Occluded WKWebViews may freeze CSS timelines. Commit their endpoint
+        // before allowing the native surface to shrink, including reduced motion.
+        bar
+          .getAnimations({ subtree: true })
+          .forEach((animation) => animation.finish());
+        reveal();
+        metrics();
+        send({ type: "settled", value });
+      }
+    };
+    settleTimer = setTimeout(
+      settle,
+      matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 320,
+    );
+    // Focus immediately after making the row visible. WebKit can pause frame
+    // callbacks in occluded windows, including while native siblings are built.
+    const input = tabs.querySelector("input");
+    if (value && state.editing && input && document.activeElement !== input) {
+      input.focus();
+      input.select();
+    }
     reveal();
     metrics();
-  });
+  };
+  pendingStart = start;
+  start();
 }
+window.addEventListener("resize", () => pendingStart?.());
+bar.addEventListener("transitionend", (event) => {
+  if (
+    event.target === bar &&
+    event.propertyName === "width" &&
+    bar.classList.contains("expanded") === expanded
+  ) {
+    clearTimeout(settleTimer);
+    reveal();
+    metrics();
+    send({ type: "settled", value: expanded });
+  }
+});
 function collapse() {
   clearTimeout(collapseTimer);
   collapseTimer = setTimeout(() => expand(false), 450);
@@ -77,6 +143,8 @@ new ResizeObserver(metrics).observe(tabs);
 window.updateBar = (s) => {
   const old = state;
   state = s;
+  if (s.expanded || s.editing)
+    bar.style.setProperty("--expanded-width", `${s.surfaceWidth - 8}px`);
   if (!old.tabs.length && s.expanded) expand(true);
   document.querySelector("#count").textContent =
     `${s.tabs.findIndex((t) => t.id === s.active) + 1}/${s.tabs.length}`;
@@ -115,8 +183,10 @@ window.updateBar = (s) => {
         };
         chip.append(input);
         requestAnimationFrame(() => {
-          input.focus();
-          if (draft === null) input.select();
+          if (document.activeElement !== input) {
+            input.focus();
+            if (draft === null) input.select();
+          }
         });
       } else {
         const img = document.createElement("img");
@@ -166,11 +236,9 @@ window.updateBar = (s) => {
       };
       tabs.append(chip);
     }
-    requestAnimationFrame(() => {
-      reveal();
-      metrics();
-      window.previewSlot(preview);
-    });
+    reveal();
+    metrics();
+    window.previewSlot(preview);
   }
   for (const [index, chip] of [...tabs.children].entries()) {
     const t = s.tabs[index];
@@ -192,17 +260,17 @@ window.updateBar = (s) => {
     chip.classList.toggle("active", active);
     chip.setAttribute("aria-selected", active);
   }
-  if (old.active !== s.active)
-    requestAnimationFrame(() => {
-      reveal();
-      metrics();
-    });
+  if (old.active !== s.active) {
+    reveal();
+    metrics();
+  }
   if (s.editing) expand(true);
   else if (old.editing) {
     document.activeElement?.blur();
     pinned = false;
     collapse();
   }
+  pendingStart?.();
 };
 window.previewSlot = (index) => {
   preview = index;

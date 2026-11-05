@@ -16,6 +16,7 @@ pub struct FloatingBar {
     state: RefCell<String>,
     pub bounds: Rect,
     pub expanded: bool,
+    pub transitioning: bool,
     pub midpoints: Vec<f32>,
 }
 impl FloatingBar {
@@ -44,15 +45,16 @@ impl FloatingBar {
             state: RefCell::new(String::new()),
             bounds: Rect::new(0., 0., 1., 1.),
             expanded: false,
+            transitioning: false,
             midpoints: vec![],
         })
     }
-    pub fn place(&mut self, pane: Rect, state: Value) -> Result<()> {
+    pub fn place(&mut self, pane: Rect, mut state: Value) -> Result<()> {
         let editing = !state["editing"].is_null();
-        let width = if self.expanded || editing {
-            let count = state["tabs"].as_array().map_or(0, Vec::len);
-            let desired = 80. + count as f32 * 176. + if editing { 148. } else { 0. };
-            desired.min((pane.width - 24.).max(1.)).min(960.)
+        // Keep the native surface wide until the CSS collapse completes, so
+        // neither side of the animated pill gets clipped by its child view.
+        let width = if self.expanded || editing || self.transitioning {
+            (pane.width - 24.).max(1.)
         } else {
             144_f32.min(pane.width)
         };
@@ -67,6 +69,7 @@ impl FloatingBar {
             origin: point(px(r.x), px(r.y)),
             size: size(px(r.width), px(r.height)),
         }))?;
+        state["surfaceWidth"] = serde_json::json!(width);
         let serialized = state.to_string();
         if *self.state.borrow() != serialized {
             self.view

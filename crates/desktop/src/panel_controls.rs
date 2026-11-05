@@ -36,6 +36,15 @@ impl BrowserApp {
                 "expand" => {
                     if let Some(bar) = self.bars.get_mut(&pane) {
                         bar.expanded = event["value"].as_bool().unwrap_or(false);
+                        bar.transitioning = true;
+                    }
+                    cx.notify();
+                }
+                "settled" => {
+                    if let Some(bar) = self.bars.get_mut(&pane)
+                        && Some(bar.expanded) == event["value"].as_bool()
+                    {
+                        bar.transitioning = false;
                     }
                     cx.notify();
                 }

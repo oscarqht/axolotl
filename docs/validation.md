@@ -1,3 +1,25 @@
+# Floating bar animation and width
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Added a 240ms eased width transition with count/chip crossfades. Expanded bars
+  fill their panel with 16px visible edge margins, without the previous 960px cap.
+  Overflow uses native CSS masks at both scroll edges; each fade clears when its
+  corresponding first/last chip is fully reachable. Existing arrows remain.
+- Expansion starts after the host acknowledges wide native bounds, using a pixel
+  endpoint to avoid changing the interpolation basis during native resizing.
+  Collapse keeps the native surface wide until completion. An epoch-guarded
+  fallback finishes paused CSS timelines before shrinking an occluded view.
+  Reduced-motion preferences disable transitions. Editor focus and active-chip
+  reveal do not depend on frame callbacks that WebKit may pause when occluded.
+- All 24 unit tests, native WKWebView smoke, strict Clippy, formatting, JavaScript
+  syntax and whitespace checks passed. The local macOS app bundle was rebuilt.
+  Native smoke checks full-panel bounds and CSS interpolation, collapse without
+  native clipping, masks at the start/middle/end, editor focus and tab selection.
+  Because this test window is occluded, interpolation assertions explicitly seek
+  the native CSS width timeline to 70ms; these are not OS-frame or pointer tests.
+- Foreground hover animation and Windows runtime behavior remain unverified.
+
 # Floating panel tab chips
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

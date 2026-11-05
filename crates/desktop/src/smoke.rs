@@ -84,7 +84,8 @@ pub(crate) async fn bar_eval(
     })??;
     for _ in 0..50 {
         if let Some(value) = response.lock().unwrap().take() {
-            return serde_json::from_str(&value).context("Bar evaluation");
+            return serde_json::from_str(&value)
+                .with_context(|| format!("Bar evaluation returned {value:?} for {script}"));
         }
         pause(cx).await;
     }
@@ -433,7 +434,7 @@ async fn run(
     let new_tab = view.update_in(cx, |app, _, _| app.active_tab())?;
     wait_title(&host, new_tab, "New tab · Axolotl", cx).await?;
     let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
-    let editor = bar_eval(view,pane,"({focused:document.activeElement?.tagName==='INPUT',value:document.querySelector('input')?.value})",cx).await?;
+    let editor = bar_eval(view,pane,"({focused:document.activeElement?.tagName==='INPUT',value:document.querySelector('input')?.value,active:document.activeElement?.tagName,hasFocus:document.hasFocus(),bar:bar.className,expanded,hostExpanded:state.expanded,viewport:innerWidth,expected:state.surfaceWidth,visibility:getComputedStyle(tabs).visibility})",cx).await?;
     ensure!(
         editor["focused"] == true && editor["value"] == "about:blank",
         "New tab editor not focused: {editor}"

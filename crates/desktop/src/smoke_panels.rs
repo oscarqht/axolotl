@@ -41,11 +41,51 @@ pub(crate) async fn run(
     bar_eval(
         view,
         pane,
-        "document.querySelector('#count').click(); true",
+        "window.barTween=null;const probe=new MutationObserver(()=>{if(!bar.classList.contains('expanded'))return;probe.disconnect();window.barTween={start:bar.getBoundingClientRect().width,viewport:innerWidth};setTimeout(()=>{const width=bar.getAnimations().find(a=>a.transitionProperty==='width');if(width)width.currentTime=70;window.barTween.middle=bar.getBoundingClientRect().width;window.barTween.sameViewport=innerWidth===window.barTween.viewport},70)});probe.observe(bar,{attributes:true,attributeFilter:['class']}); document.querySelector('#count').click(); true",
         cx,
     )
     .await?;
     pause(cx).await;
+    pause(cx).await;
+    let animation=bar_eval(view,pane,"({width:bar.getBoundingClientRect().width,viewport:innerWidth,tween:window.barTween,classes:bar.className,expanded,hostExpanded:state.expanded,pending:!!pendingStart,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,transition:getComputedStyle(bar).transitionDuration})",cx).await?;
+    let expected = view.update_in(cx, |app, window, _| {
+        let v = window.viewport_size();
+        let geometry = app.model.active_space().layout.geometry(
+            workspace_core::Rect::new(
+                0.,
+                crate::render::TOP,
+                f32::from(v.width),
+                f32::from(v.height) - crate::render::TOP,
+            ),
+            6.,
+            100.,
+        );
+        let width = geometry
+            .panes
+            .iter()
+            .find(|p| p.id == pane)
+            .unwrap()
+            .bounds
+            .width;
+        ensure!(
+            (app.bars[&pane].bounds.width - (width - 24.)).abs() < 1.,
+            "Expanded native bar did not use full panel width"
+        );
+        Ok(width - 32.)
+    })??;
+    ensure!(
+        (animation["width"].as_f64().unwrap_or(0.) - f64::from(expected)).abs() < 2.,
+        "Expanded pill did not fill its surface: {animation}"
+    );
+    if animation["reduced"] == false {
+        let middle = animation["tween"]["middle"].as_f64().unwrap_or(0.);
+        ensure!(
+            middle > 129.
+                && middle < f64::from(expected) - 1.
+                && animation["tween"]["sameViewport"] == true,
+            "Expansion did not animate within a stable native viewport: {animation}"
+        );
+    }
     let overflow=bar_eval(view,pane,"({expanded:document.querySelector('#bar').classList.contains('expanded'),overflow:document.querySelector('#bar').classList.contains('overflow'),closes:document.querySelectorAll('.close').length,rows:new Set([...document.querySelectorAll('.chip')].map(c=>c.offsetTop)).size})",cx).await?;
     ensure!(
         overflow["expanded"] == true
@@ -54,6 +94,36 @@ pub(crate) async fn run(
             && overflow["rows"] == 1,
         "Native overflow layout failed: {overflow}"
     );
+    let fades=bar_eval(view,pane,"(()=>{tabs.scrollLeft=0;metrics();const start=!bar.classList.contains('fade-left')&&bar.classList.contains('fade-right');tabs.scrollLeft=(tabs.scrollWidth-tabs.clientWidth)/2;metrics();const middle=bar.classList.contains('fade-left')&&bar.classList.contains('fade-right');tabs.scrollLeft=tabs.scrollWidth;metrics();const end=bar.classList.contains('fade-left')&&!bar.classList.contains('fade-right');tabs.scrollLeft=0;metrics();return {start,middle,end,mask:getComputedStyle(tabs).maskImage||getComputedStyle(tabs).webkitMaskImage}})()",cx).await?;
+    ensure!(
+        fades["start"] == true
+            && fades["middle"] == true
+            && fades["end"] == true
+            && fades["mask"]
+                .as_str()
+                .is_some_and(|m| m.contains("linear-gradient")),
+        "Overflow fades did not track scroll edges: {fades}"
+    );
+    bar_eval(view,pane,"window.collapseTween=null;pinned=false;document.activeElement?.blur();expand(false);setTimeout(()=>{const width=bar.getAnimations().find(a=>a.transitionProperty==='width');if(width)width.currentTime=70;window.collapseTween={width:bar.getBoundingClientRect().width,viewport:innerWidth}},70);true",cx).await?;
+    pause(cx).await;
+    pause(cx).await;
+    let collapsed=bar_eval(view,pane,"({width:bar.getBoundingClientRect().width,viewport:innerWidth,tween:window.collapseTween})",cx).await?;
+    ensure!(
+        collapsed["width"].as_f64() == Some(128.) && collapsed["viewport"].as_f64() == Some(144.),
+        "Collapse did not restore compact native bounds: {collapsed}"
+    );
+    if animation["reduced"] == false {
+        ensure!(
+            collapsed["tween"]["width"]
+                .as_f64()
+                .is_some_and(|w| w > 129. && w < f64::from(expected))
+                && collapsed["tween"]["viewport"] == animation["viewport"],
+            "Native surface clipped the collapse animation: {collapsed}"
+        );
+    }
+    bar_eval(view, pane, "expand(true);true", cx).await?;
+    pause(cx).await;
+    pause(cx).await;
     ensure!(bar_eval(view,pane,"(()=>{const chip=document.querySelector('.chip'),saved=state;window.updateBar({...saved,active:saved.tabs.at(-1).id});const retained=chip===document.querySelector('.chip');window.updateBar(saved);return retained&&[...document.querySelectorAll('img')].every(i=>!i.draggable)})()",cx).await?==true,"Selection replaced chip nodes or enabled native image dragging");
     bar_eval(view,pane,"document.querySelector('.chip').dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); true",cx).await?;
     pause(cx).await;
@@ -69,6 +139,7 @@ pub(crate) async fn run(
     );
     bar_eval(view,pane,"document.querySelector('.active').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true})); true",cx).await?;
     pause(cx).await;
+    pause(cx).await;
     let last = view.update_in(cx, |app, _, _| {
         app.model.pane(pane).unwrap().tabs.last().unwrap().id
     })?;
@@ -76,15 +147,24 @@ pub(crate) async fn run(
         view.update_in(cx, |app, _, _| app.active_tab())? == last,
         "Previous-tab selection did not wrap to last"
     );
-    let revealed=bar_eval(view,pane,"(()=>{let t=document.querySelector('#tabs').getBoundingClientRect(),a=document.querySelector('.active').getBoundingClientRect();return a.left>=t.left-1&&a.right<=t.right+1})()",cx).await?;
-    ensure!(revealed == true, "Overflow did not reveal active chip");
+    // There is no real hover/focus in unattended native tests. Re-enter the
+    // expanded state after the lazy page creates a replacement native bar.
+    bar_eval(view, pane, "pinned=true;expand(true);true", cx).await?;
+    pause(cx).await;
+    pause(cx).await;
+    let revealed=bar_eval(view,pane,"(()=>{let t=document.querySelector('#tabs').getBoundingClientRect(),a=document.querySelector('.active').getBoundingClientRect();return {visible:a.left>=t.left-1&&a.right<=t.right+1,left:a.left,right:a.right,viewportLeft:t.left,viewportRight:t.right,barWidth:bar.getBoundingClientRect().width,scroll:tabs.scrollLeft,client:tabs.clientWidth,expanded,pending:!!pendingStart}})()",cx).await?;
+    ensure!(
+        revealed["visible"] == true,
+        "Overflow did not reveal active chip: {revealed}"
+    );
     bar_eval(view,pane,"document.querySelector('.active').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); true",cx).await?;
+    pause(cx).await;
     pause(cx).await;
     ensure!(
         view.update_in(cx, |app, _, _| app.active_tab())? == moved,
         "Next-tab selection did not wrap to first"
     );
-    checks.push("native compact count, expansion, single-row chip overflow, visible close buttons, double-click editing, Escape IPC, tab wraparound and active-chip reveal");
+    checks.push("native compact count, animated full-panel expansion, scroll-edge fades, single-row chip overflow, visible close buttons, double-click editing, Escape IPC, tab wraparound and active-chip reveal");
     // Move the complete panel using the same handle drag state, preserving every tab.
     for edge in [
         workspace_core::SplitEdge::Left,

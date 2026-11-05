@@ -82,6 +82,9 @@ machine running the executable. See the validation report below for tested scope
   a close button; double-click the label to edit its address. Enter navigates and
   Escape cancels. New tabs immediately open address editing. Long stacks remain
   in one horizontal row, with overflow arrows and automatic active-chip reveal.
+  The bar animates between compact and expanded states, filling the panel width
+  with 16px edge margins. Overflow fades indicate hidden chips on either side
+  and clear at the corresponding scroll end. Reduced-motion settings are respected.
 - Drag a chip to reorder within a panel, dock into another panel's chip row or
   center, or create a split at any edge. Drag the handle to move the complete
   stack: center drops merge panels and edge drops reposition the whole panel.

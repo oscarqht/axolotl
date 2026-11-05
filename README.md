@@ -140,8 +140,9 @@ Option+click a web link on macOS to open a temporary preview centered across the
 whole app window, including split layouts. The preview shares the browsing session;
 its links navigate inside it, and another Option+click replaces its page. Close it
 with **×**, Escape, or a click outside. **Open in new tab** moves the live page,
-including its history and form state, into the originating pane. Previews are not
-restored after restarting.
+including its history and form state, into the originating pane. On macOS the page
+and backdrop fade in together over 180ms and fade out over 140ms on dismissal.
+Reduce Motion disables the transitions. Previews are not restored after restarting.
 
 Open **Settings** with the header gear or Cmd/Ctrl+, to choose the search engine
 and homepage URL. The homepage is used for new tabs, new spaces, replacement tabs
@@ -228,6 +229,9 @@ python3 scripts/test-space-session.py target/debug/axolotl
 
 # Indexed macOS space shortcuts from page and app-control focus
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-shortcuts
+
+# Native overlay fades, interrupted closing, promotion reset and Reduce Motion
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-popup-transition
 
 # Temporary link preview, promotion, split centering and resize
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-link-popup

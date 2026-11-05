@@ -4,7 +4,10 @@ use crate::{
     native_webview::{BuildNativeChild, NativeWebView},
 };
 use gpui::*;
-use std::sync::mpsc::{self, Receiver};
+use std::{
+    sync::mpsc::{self, Receiver},
+    time::Instant,
+};
 use workspace_core::{PaneId, SpaceId, TabId};
 use wry::{NewWindowResponse, WebViewBuilder};
 
@@ -19,6 +22,10 @@ pub struct LinkPopup {
     pub(crate) backdrop: Option<NativeWebView>,
     events: Option<Receiver<String>>,
     focus_pending: bool,
+    pub(crate) ready: bool,
+    pub(crate) presented: bool,
+    pub(crate) closing_until: Option<Instant>,
+    opening_pending: bool,
 }
 
 /// Whole-window coordinates, deliberately independent of the originating pane.
@@ -91,7 +98,7 @@ impl BrowserApp {
                     _ => None,
                 };
                 if key == "escape" {
-                    self.close_link_popup(window, cx);
+                    self.dismiss_link_popup(window, cx);
                 } else if let Some(command) = command {
                     self.command(command, window, cx);
                 }
@@ -132,6 +139,9 @@ impl BrowserApp {
         self.dragging = None;
         self.moving_window = false;
         if let Some(popup) = &mut self.link_popup {
+            if popup.closing_until.take().is_some() {
+                popup.opening_pending = true;
+            }
             popup.source = source;
             popup.pane = pane;
             popup.space = space;
@@ -149,16 +159,57 @@ impl BrowserApp {
                 backdrop: None,
                 events: None,
                 focus_pending: true,
+                ready: false,
+                presented: false,
+                closing_until: None,
+                opening_pending: true,
             });
         }
         cx.notify();
     }
 
+    /// Natural dismissal keeps both surfaces alive until the fade finishes.
+    pub(crate) fn dismiss_link_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let duration = crate::popup_transition::duration(false);
+        let Some(popup) = &mut self.link_popup else {
+            return;
+        };
+        if popup.closing_until.is_some() {
+            return;
+        }
+        if duration.is_zero() || !popup.presented {
+            self.close_link_popup(window, cx);
+            return;
+        }
+        let result = (|| -> anyhow::Result<()> {
+            crate::popup_transition::animate(
+                popup.backdrop.as_ref().unwrap(),
+                false,
+                false,
+                duration,
+            )?;
+            self.host
+                .popup_transition(POPUP_TAB, false, false, duration)?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.report(Err(error));
+            self.close_link_popup(window, cx);
+            return;
+        }
+        self.link_popup.as_mut().unwrap().closing_until = Some(Instant::now() + duration);
+        self.report(self.host.focus_parent(POPUP_TAB));
+        self.focus.focus(window);
+        cx.notify();
+    }
+
+    /// Commands that replace the overlay dispose synchronously before new UI.
     pub(crate) fn close_link_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(popup) = self.link_popup.take() else {
             return;
         };
         self.report(self.host.focus_parent(POPUP_TAB));
+        self.report(self.host.reset_popup_transition(POPUP_TAB));
         self.report(self.host.show(POPUP_TAB, false));
         drop(popup);
         self.host.retain(
@@ -199,6 +250,7 @@ impl BrowserApp {
         self.model.switch_space(space);
         self.model.focus_pane(pane);
         let tab = self.model.add_tab(&url);
+        self.report(self.host.reset_popup_transition(POPUP_TAB));
         if let Err(error) = self.host.rekey(POPUP_TAB, tab) {
             self.model.close_tab(pane, tab);
             self.report(Err(error));
@@ -222,6 +274,7 @@ impl BrowserApp {
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
+                        .with_visible(false)
                         .with_accept_first_mouse(true)
                         .with_focused(false)
                         .with_new_window_req_handler(|_, _| NewWindowResponse::Deny)
@@ -249,6 +302,9 @@ impl BrowserApp {
             let state = serde_json::json!({"x":f32::from(bounds.origin.x), "y":f32::from(bounds.origin.y), "width":f32::from(bounds.size.width), "height":f32::from(bounds.size.height), "title":popup.title, "url":popup.url, "surface":format!("#{:06x}", colors.surface), "ink":format!("#{:06x}", colors.ink)});
             view.evaluate_script(&format!("window.updatePopup?.({state})"))?;
             self.host.ensure(POPUP_TAB, &popup.url, window, cx)?;
+            if !self.host.has_view(POPUP_TAB) {
+                return Ok(());
+            }
             self.host.place(
                 POPUP_TAB,
                 Bounds {
@@ -256,8 +312,21 @@ impl BrowserApp {
                     size: size(bounds.size.width, bounds.size.height - px(44.)),
                 },
             )?;
-            self.host.show(POPUP_TAB, true)?;
-            if popup.focus_pending {
+            // Wait for the backdrop document before revealing either surface.
+            if !popup.ready {
+                return Ok(());
+            }
+            if popup.opening_pending && popup.closing_until.is_none() {
+                let duration = crate::popup_transition::duration(true);
+                crate::popup_transition::animate(view, true, !popup.presented, duration)?;
+                self.host
+                    .popup_transition(POPUP_TAB, true, !popup.presented, duration)?;
+                view.set_visible(true)?;
+                self.host.show(POPUP_TAB, true)?;
+                popup.presented = true;
+                popup.opening_pending = false;
+            }
+            if popup.focus_pending && popup.closing_until.is_none() {
                 self.host.focus(POPUP_TAB)?;
                 popup.focus_pending = false;
             }
@@ -269,6 +338,14 @@ impl BrowserApp {
     }
 
     pub(crate) fn poll_link_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .link_popup
+            .as_ref()
+            .and_then(|p| p.closing_until)
+            .is_some_and(|until| Instant::now() >= until)
+        {
+            self.close_link_popup(window, cx);
+        }
         let events: Vec<_> = self
             .link_popup
             .as_ref()
@@ -277,8 +354,13 @@ impl BrowserApp {
             .unwrap_or_default();
         for event in events {
             match event.as_str() {
-                "ready" => cx.notify(),
-                "dismiss" => self.close_link_popup(window, cx),
+                "ready" => {
+                    if let Some(popup) = &mut self.link_popup {
+                        popup.ready = true;
+                    }
+                    cx.notify();
+                }
+                "dismiss" => self.dismiss_link_popup(window, cx),
                 "promote" => self.promote_link_popup(window, cx),
                 "new-space" | "new-tab" => {
                     self.close_link_popup(window, cx);

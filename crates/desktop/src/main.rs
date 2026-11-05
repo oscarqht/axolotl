@@ -25,6 +25,7 @@ mod native_webview;
 mod panel_controls;
 mod persistence;
 mod pinned_tabs;
+mod popup_transition;
 mod preferences;
 mod protection;
 mod protection_native;
@@ -37,10 +38,10 @@ mod sleep;
 mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
-#[cfg(feature = "smoke")]
-mod smoke_history;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_google_popup;
+#[cfg(feature = "smoke")]
+mod smoke_history;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -57,6 +58,8 @@ mod smoke_notifications;
 mod smoke_panels;
 #[cfg(feature = "smoke")]
 mod smoke_pins;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_popup_transition;
 #[cfg(feature = "smoke")]
 mod smoke_protection;
 #[cfg(feature = "smoke")]

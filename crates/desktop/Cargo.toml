@@ -28,9 +28,9 @@ objc2-authentication-services = { version = "=0.3.2", default-features = false, 
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFString", "CFNumber"] }
 objc2-security = { version = "0.3", default-features = false, features = ["std", "SecTask"] }
 objc2 = "0.6"
-objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWorkspace", "NSEvent", "NSGraphicsContext", "block2", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSURL", "NSDictionary", "NSData", "NSError", "NSNotification", "NSOperation", "NSString", "block2"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "CABase", "CAAnimation", "CAMediaTiming", "CAMediaTimingFunction"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWorkspace", "NSAccessibility", "NSEvent", "NSGraphicsContext", "block2", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSURL", "NSDictionary", "NSData", "NSError", "NSNotification", "NSOperation", "NSString", "NSValue", "block2"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["WKSnapshotConfiguration", "WKWebView", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKUserScript", "WKWebViewConfiguration"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]

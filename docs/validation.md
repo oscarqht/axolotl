@@ -1,3 +1,35 @@
+# Temporary preview transitions
+
+Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.
+
+The native page and full-window backdrop use coordinated Core Animation opacity
+transitions: 180ms ease-out on opening and 140ms ease-in on natural dismissal
+(close button, outside click, Escape or Cmd+W). Both surfaces remain alive until
+closing completes. Reopening reverses from the current presentation opacity and
+cancels the closing deadline. Promotion clears the page's animation and restores
+full opacity before transferring it into a regular tab. Commands that replace
+the popup with other UI dispose of it immediately. Reduce Motion skips both the
+animation and delayed disposal. Initial surfaces stay hidden until the backdrop
+is ready, preventing an unpositioned header flash.
+
+- `--smoke-popup-transition` passed in 7.274s. It measures actual native layer
+  presentation opacity on the page and backdrop during both directions, checks
+  retained/removed native views around the close deadline, repeated dismissal,
+  reopening past an old deadline, promotion during closing, immediate command
+  and Settings cleanup, and a test-local Reduce Motion override. No OS preference
+  is changed by the test.
+- `--smoke-link-popup` passed in 31.588s, including real Option-click, protection
+  policy off/on reloads, shared session, split/resized centering, popup navigation,
+  promotion/history, dismissal and existing shortcut behavior.
+- `cargo test --workspace --all-features --locked`: 72 tests passed using an
+  isolated target directory for this checkout.
+- Formatting and whitespace checks passed. Strict Clippy remains blocked by the
+  same two pre-existing pinned-tab drag `collapsible_if` warnings in `render.rs`.
+
+These checks use real WKWebViews, AppKit input and Core Animation presentation
+layers. Windows keeps its existing immediate behavior and was not interaction
+tested. The previously documented GPUI chrome redraw limitation remains.
+
 # Option-click after protection integration
 
 Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.

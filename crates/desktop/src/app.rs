@@ -448,7 +448,7 @@ impl BrowserApp {
         if self.link_popup.is_some() {
             match command {
                 Command::CloseTab => {
-                    self.close_link_popup(window, cx);
+                    self.dismiss_link_popup(window, cx);
                     return;
                 }
                 Command::Reload => {

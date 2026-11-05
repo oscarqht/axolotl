@@ -181,6 +181,10 @@ async fn run(
         return crate::smoke_sleep::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-popup-transition") {
+        return crate::smoke_popup_transition::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-google-popup") {
         return crate::smoke_google_popup::run(view, cx).await;
     }

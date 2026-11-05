@@ -604,7 +604,7 @@ impl Render for BrowserApp {
                         cx.notify();
                         return;
                     }
-                    this.close_link_popup(window, cx);
+                    this.dismiss_link_popup(window, cx);
                     this.close_settings(window, cx);
                     this.dismiss_pin(window, cx);
                     this.cancel_tab_drag(cx);

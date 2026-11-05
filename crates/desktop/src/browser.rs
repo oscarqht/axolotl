@@ -106,6 +106,17 @@ pub trait BrowserHost {
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>>;
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
+    fn popup_transition(
+        &self,
+        tab: TabId,
+        opening: bool,
+        initial: bool,
+        duration: std::time::Duration,
+    ) -> Result<()>;
+    fn reset_popup_transition(&self, tab: TabId) -> Result<()>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn popup_animation_state(&self, tab: TabId) -> Result<serde_json::Value>;
+
     fn rekey(&self, from: TabId, to: TabId) -> Result<()>;
     fn capture_sleep(&self, tab: TabId, image: crate::drag_preview::Snapshot) -> Result<()>;
     fn unload(&self, tab: TabId);
@@ -600,6 +611,28 @@ impl BrowserHost for WryHost {
     }
     fn has_view(&self, tab: TabId) -> bool {
         self.views.borrow().contains_key(&tab)
+    }
+
+    fn popup_transition(
+        &self,
+        tab: TabId,
+        opening: bool,
+        initial: bool,
+        duration: std::time::Duration,
+    ) -> Result<()> {
+        crate::popup_transition::animate(self.get(tab)?.as_ref(), opening, initial, duration)
+    }
+
+    fn reset_popup_transition(&self, tab: TabId) -> Result<()> {
+        if let Ok(view) = self.get(tab) {
+            crate::popup_transition::reset(&view)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn popup_animation_state(&self, tab: TabId) -> Result<serde_json::Value> {
+        Ok(crate::popup_transition::state(self.get(tab)?.as_ref()))
     }
 
     fn rekey(&self, from: TabId, to: TabId) -> Result<()> {

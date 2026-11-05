@@ -44,6 +44,7 @@ function metrics() {
   const fixed =
     document.querySelector("#handle").getBoundingClientRect().width +
     document.querySelector("#add").getBoundingClientRect().width +
+    document.querySelector("#shield").getBoundingClientRect().width + 4 +
     number(style.paddingLeft) +
     number(style.paddingRight) +
     number(style.borderLeftWidth) +
@@ -144,7 +145,7 @@ bar.addEventListener("transitionend", (event) => {
       bar.getBoundingClientRect().width -
         (expanded
           ? parseFloat(bar.style.getPropertyValue("--expanded-width"))
-          : 128),
+          : 160),
     ) < 1
   ) {
     clearTimeout(settleTimer);
@@ -191,6 +192,7 @@ document.querySelector("#count").onclick = () => {
   pinned = !pinned;
   expand(true);
 };
+document.querySelector("#shield").onclick = () => send({type:"protection", tab:state.active});
 document.querySelector("#add").onclick = () => send({ type: "new" });
 document.querySelector("#prev").onclick = () =>
   tabs.scrollBy({ left: -190, behavior: "smooth" });
@@ -199,6 +201,12 @@ document.querySelector("#next").onclick = () =>
 tabs.onscroll = metrics;
 new ResizeObserver(metrics).observe(tabs);
 window.updateBar = (s) => {
+  const shield=document.querySelector('#shield'), active=s.tabs.find(t=>t.id===s.active);
+  shield.disabled=!active?.protectionSite || !active?.protectionGlobal || active?.protectionReady===false;
+  shield.style.color=active?.protection ? 'var(--accent)' : 'var(--muted)';
+  shield.setAttribute('aria-pressed',String(!!active?.protection));
+  shield.title=active?.protectionReady===false ? 'Applying protection…' : active?.protectionSite ? (active.protectionGlobal ? `${active.protection?'Protection on':'Protection off'} for ${active.protectionSite}. Click to ${active.protection?'disable':'enable'} and reload.` : 'Protection is off in Settings.') : 'Protection is available on websites.';
+  shield.setAttribute('aria-label',shield.title);
   const old = state;
   state = s;
   bar.classList.toggle("editing", s.editing != null || renaming !== null);
@@ -472,7 +480,7 @@ bar.addEventListener("pointerdown", (e) => {
   if (
     !e.isTrusted ||
     e.button !== 0 ||
-    e.target.closest("input,.close,#add,.arrow,#count")
+    e.target.closest("input,.close,#add,#shield,.arrow,#count")
   )
     return;
   const chip = e.target.closest(".chip"),

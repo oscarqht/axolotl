@@ -54,7 +54,7 @@ impl FloatingBar {
             expanded: false,
             transitioning: false,
             menu_open: false,
-            expanded_width: 144.,
+            expanded_width: 176.,
             midpoints: vec![],
         })
     }
@@ -68,7 +68,7 @@ impl FloatingBar {
         // Chip width 172 + gap 4, fixed controls/padding 78, native inset 8.
         let count = state["tabs"].as_array().map_or(0, Vec::len);
         let expanded_width =
-            (86. + 176. * count as f32 + if editing { 148. } else { 0. }).min(available);
+            (118. + 176. * count as f32 + if editing { 148. } else { 0. }).min(available);
         let open = self.expanded || editing;
         if open && (expanded_width - self.expanded_width).abs() > 0.1 {
             self.transitioning = true;
@@ -77,7 +77,7 @@ impl FloatingBar {
         let target = if open {
             expanded_width
         } else {
-            144_f32.min(pane.width)
+            176_f32.min(pane.width)
         };
         // Retain room for the old pill while collapsing/removing chips or
         // leaving address editing; shrink the child only after CSS settles.

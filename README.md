@@ -168,10 +168,15 @@ original video playback API and shares masks across repeated assets. See
 [transparent WebM support](docs/webm-alpha-macos.md) for supported sources,
 resource limits, native before/after snapshots, and the regression runner.
 
+Built-in ad and tracker protection is enabled by default. Use **Settings → Block
+ads and trackers** or the website shield in each panel to change it. Lists update
+daily while the browser is open; **Update now** retries immediately. See
+[content protection and current YouTube limitations](docs/content-protection.md).
+
 ## Checks
 
 ```sh
-node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-webm-alpha.cjs
+node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-webm-alpha.cjs scripts/test-protection.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

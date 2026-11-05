@@ -65,6 +65,13 @@ impl BrowserApp {
                 }
                 "settings" => self.open_settings(false, window, cx),
                 "pin" => self.pin_page(pane, tab, window, cx),
+                "protection" => {
+                    if let Some(page) = self.model.tab(tab) {
+                        let result = self.host.protection().borrow_mut().toggle_site(&page.url);
+                        self.report(result);
+                        cx.notify();
+                    }
+                }
                 "select" => self.select_target(target, window, cx),
                 "edit" => self.begin_edit(target, window, cx),
                 "close" => self.tab_action(target, TabAction::Close, window, cx),
@@ -215,7 +222,9 @@ impl BrowserApp {
         for (id, url) in visible {
             let result = self.host.ensure(id, &url, window, cx);
             self.report(result);
-            self.report(self.host.show(id, true));
+            if self.host.has_view(id) {
+                self.report(self.host.show(id, true));
+            }
         }
         // Native children stack in creation order. Rebuild controls above newly
         // created page surfaces, after a captured drag has released its pointer.
@@ -265,6 +274,10 @@ impl BrowserApp {
                     let (back, forward) = self.history.get(&t.id).copied().unwrap_or_default();
                     serde_json::json!({
                         "id": t.id,
+                        "protection": self.host.protection().borrow().policy.allows(&t.url),
+                        "protectionGlobal": self.host.protection().borrow().policy.enabled,
+                        "protectionReady": self.host.protection().borrow().native.ready(),
+                        "protectionSite": crate::protection::host(&t.url),
                         "notifications": self.notifications.get(&t.id).copied().unwrap_or_default(),
                         "title": t.display_title(),
                         "customTitle": t.custom_title,

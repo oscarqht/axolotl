@@ -509,6 +509,7 @@ impl BrowserApp {
                         );
                     }
                 }
+                BrowserEvent::ProtectionChanged => {}
                 BrowserEvent::Notification(tab) => {
                     if self.model.tab(tab).is_some()
                         && !(window.is_window_active() && tab == self.active_tab())

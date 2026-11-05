@@ -23,6 +23,10 @@ mod panel_controls;
 mod persistence;
 mod pinned_tabs;
 mod preferences;
+mod protection;
+mod protection_native;
+#[cfg(any(test, target_os = "windows"))]
+mod protection_script;
 mod render;
 mod settings;
 #[cfg(feature = "smoke")]
@@ -43,6 +47,8 @@ mod smoke_notifications;
 mod smoke_panels;
 #[cfg(feature = "smoke")]
 mod smoke_pins;
+#[cfg(feature = "smoke")]
+mod smoke_protection;
 #[cfg(feature = "smoke")]
 mod smoke_settings;
 #[cfg(feature = "smoke")]

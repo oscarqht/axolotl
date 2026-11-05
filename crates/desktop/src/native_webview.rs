@@ -63,6 +63,7 @@ mod windows_view {
         bounds: Option<wry::Rect>,
         visible: Option<bool>,
         operations: Vec<Operation>,
+        protection_script: Rc<RefCell<crate::protection_native::windows::ScriptState>>,
     }
     pub struct NativeWebView(Rc<RefCell<State>>);
 
@@ -237,15 +238,54 @@ mod windows_view {
                 result => result,
             })
         }
+        pub fn setup_protection(
+            &self,
+            protection: Rc<RefCell<crate::protection::Protection>>,
+            script: String,
+            url: String,
+            initial: bool,
+            reload: bool,
+        ) -> Result<()> {
+            let id = self.0.borrow().protection_script.clone();
+            if initial {
+                id.borrow_mut().begin_setup(url);
+            }
+            self.call(move |view| {
+                if initial {
+                    crate::protection_native::windows::install(view, protection)
+                        .map_err(|e| wry::Error::Io(std::io::Error::other(e.to_string())))?;
+                }
+                crate::protection_native::windows::script(view, &script, id, None, reload)
+                    .map_err(|e| wry::Error::Io(std::io::Error::other(e.to_string())))
+            })
+        }
         pub fn reload(&self) -> Result<()> {
             self.call(|view| view.reload())
         }
         pub fn load_url(&self, url: &str) -> Result<()> {
             let url = url.to_owned();
+            if self
+                .0
+                .borrow()
+                .protection_script
+                .borrow_mut()
+                .defer_navigation(url.clone())
+            {
+                return Ok(());
+            }
             self.call(move |view| view.load_url(&url))
         }
         pub fn load_html(&self, html: &str) -> Result<()> {
             let html = html.to_owned();
+            if self
+                .0
+                .borrow()
+                .protection_script
+                .borrow_mut()
+                .defer_navigation("about:blank".into())
+            {
+                return Ok(());
+            }
             self.call(move |view| view.load_html(&html))
         }
         pub fn evaluate_script(&self, script: &str) -> Result<()> {

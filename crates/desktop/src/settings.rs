@@ -16,6 +16,7 @@ pub struct SettingsDialog {
     previous_focus: Option<FocusHandle>,
     return_to_page: bool,
     theme: Value,
+    protection_state: Value,
 }
 
 fn theme(cx: &App) -> Value {
@@ -54,6 +55,7 @@ impl BrowserApp {
             previous_focus,
             return_to_page,
             theme: Value::Null,
+            protection_state: Value::Null,
         });
         cx.notify();
     }
@@ -78,10 +80,11 @@ impl BrowserApp {
             return;
         };
         let current_theme = theme(cx);
+        let protection_state = self.host.protection().borrow().value();
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
                 let (sender, events) = mpsc::channel();
-                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "theme": current_theme});
+                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "theme": current_theme, "protection": protection_state});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -101,6 +104,10 @@ impl BrowserApp {
                 dialog.theme = current_theme.clone();
             }
             let view = dialog.view.as_ref().unwrap();
+            if dialog.protection_state != protection_state {
+                view.evaluate_script(&format!("window.protectionState?.({protection_state})"))?;
+                dialog.protection_state = protection_state;
+            }
             view.set_bounds(crate::browser::native_bounds(Bounds {
                 origin: point(px(0.), px(0.)),
                 size: window.viewport_size(),
@@ -133,6 +140,17 @@ impl BrowserApp {
                     if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
                         self.report(view.focus().map_err(Into::into));
                     }
+                }
+                "protection" => {
+                    if let Some(enabled) = event["value"].as_bool() {
+                        let result = self.host.protection().borrow_mut().set_enabled(enabled);
+                        self.report(result);
+                        cx.notify();
+                    }
+                }
+                "update-filters" => {
+                    self.host.protection().borrow_mut().update();
+                    cx.notify();
                 }
                 "engine" => {
                     if let Some(engine) = event["value"].as_str().and_then(SearchEngine::from_id) {

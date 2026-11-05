@@ -25,6 +25,12 @@ input{width:100%;padding:8px}.field{margin-top:22px}
 <p id="homepage-hint">Used for new tabs, new spaces, and startup without a saved session. Enter an HTTP or HTTPS URL. Leave blank or use about:blank for the built-in start page. Applied when you press Enter or leave the field.</p>
 <p id="homepage-error" role="alert" hidden></p>
 </div>
+<div class="field">
+<label><input id="protection-enabled" type="checkbox" style="width:auto;margin-right:8px">Block ads and trackers</label>
+<p>EasyList and EasyPrivacy. Enabled by default. Checks for updates daily while Axolotl is open. Changes reload open pages.</p>
+<p id="protection-status" role="status"></p>
+<button id="update-filters" style="width:auto;font-size:13px;padding:0 10px;margin-top:10px">Update now</button>
+</div>
 </section>
 <script>
 const select=document.querySelector('select'), closeButton=document.querySelector('#close');
@@ -32,6 +38,14 @@ const homepage=document.querySelector('#homepage-url');
 const send=(type,value)=>window.ipc.postMessage(JSON.stringify({type,value}));
 window.applyTheme=theme=>{for(const [key,value] of Object.entries(theme))document.documentElement.style.setProperty('--'+key,value);document.documentElement.style.colorScheme=theme.scheme};
 applyTheme(window.settingsState.theme);
+window.protectionState=state=>{
+ document.querySelector('#protection-enabled').checked=state.enabled;
+ document.querySelector('#protection-status').textContent=state.status+(state.updated?' · '+new Date(state.updated*1000).toLocaleString():'');
+ document.querySelector('#update-filters').disabled=state.updating;
+};
+protectionState(window.settingsState.protection);
+document.querySelector('#protection-enabled').onchange=event=>send('protection',event.target.checked);
+document.querySelector('#update-filters').onclick=()=>send('update-filters');
 select.value=window.settingsState.engine;
 select.onchange=()=>send('engine',select.value);
 homepage.value=window.settingsState.homepage;
@@ -50,7 +64,7 @@ document.addEventListener('keydown',event=>{
   if(event.key==='Escape'){event.preventDefault();send('dismiss')}
   if(event.key==='Tab'){
     event.preventDefault();
-    const controls=[closeButton,select,homepage];
+    const controls=[closeButton,select,homepage,document.querySelector('#protection-enabled'),document.querySelector('#update-filters')].filter(control=>!control.disabled);
     const index=controls.indexOf(document.activeElement);
     controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
   }

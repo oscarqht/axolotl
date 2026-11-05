@@ -44,6 +44,7 @@ pub fn with_inline_html<'a>(
 
 #[derive(Debug, Clone)]
 pub enum BrowserEvent {
+    ProtectionChanged,
     Focused(TabId),
     Favicon(TabId, String),
     Notification(TabId),
@@ -77,6 +78,8 @@ pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn present_video_test_window(&self, tab: TabId) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_click_at(&self, tab: TabId, x: f64, y: f64, modified: bool) -> Result<()>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
     #[cfg(feature = "smoke")]
     fn evaluate(
@@ -89,6 +92,7 @@ pub trait BrowserHost {
     fn is_visible(&self, tab: TabId) -> bool;
     #[cfg(feature = "smoke")]
     fn is_loaded(&self, tab: TabId) -> bool;
+    fn protection(&self) -> Rc<RefCell<crate::protection::Protection>>;
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
@@ -130,6 +134,9 @@ pub(crate) fn parse_history(value: &str) -> (bool, bool) {
 }
 
 pub struct WryHost {
+    protection: Rc<RefCell<crate::protection::Protection>>,
+    protection_revisions: RefCell<HashMap<TabId, (u64, u64)>>,
+    protection_notified: RefCell<String>,
     views: RefCell<HashMap<TabId, Rc<WebView>>>,
     events: Receiver<BrowserEvent>,
     sender: SyncSender<BrowserEvent>,
@@ -142,6 +149,9 @@ impl Default for WryHost {
         // Untrusted pages cannot cause unbounded allocation by flooding IPC.
         let (sender, events) = mpsc::sync_channel(512);
         Self {
+            protection: Rc::new(RefCell::new(crate::protection::Protection::restore())),
+            protection_revisions: RefCell::new(HashMap::new()),
+            protection_notified: RefCell::new(String::new()),
             views: RefCell::new(HashMap::new()),
             events,
             sender,
@@ -166,6 +176,10 @@ impl WryHost {
 }
 
 impl BrowserHost for WryHost {
+    fn protection(&self) -> Rc<RefCell<crate::protection::Protection>> {
+        self.protection.clone()
+    }
+
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_key(
         &self,
@@ -235,6 +249,10 @@ impl BrowserHost for WryHost {
 
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()> {
+        self.test_click_at(tab, 60., 50., modified)
+    }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_click_at(&self, tab: TabId, x: f64, y: f64, modified: bool) -> Result<()> {
         use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
         use objc2_foundation::NSPoint;
         use wry::WebViewExtMacOS;
@@ -242,11 +260,11 @@ impl BrowserHost for WryHost {
         let webview = view.webview();
         let window = view.ns_window();
         let point = NSPoint::new(
-            60.,
+            x,
             if webview.isFlipped() {
-                50.
+                y
             } else {
-                webview.frame().size.height - 50.
+                webview.frame().size.height - y
             },
         );
         let point = webview.convertPoint_toView(point, None);
@@ -311,6 +329,12 @@ impl BrowserHost for WryHost {
         }
         if !allowed_url(url) {
             bail!("Only HTTP, HTTPS, and about:blank pages are supported");
+        }
+        if !self.protection.borrow().native.ready() {
+            if let Some(error) = self.protection.borrow().native.error() {
+                bail!("Native protection: {error}");
+            }
+            return Ok(());
         }
         let ipc = self.sender.clone();
         let title = self.sender.clone();
@@ -436,14 +460,32 @@ impl BrowserHost for WryHost {
         } else {
             builder
         };
-        let builder = if url == "about:blank" {
-            builder.with_html(include_str!("../assets/start.html"))
-        } else {
-            builder.with_url(url)
-        };
+        // Build without a target URL: filtering must be installed before the
+        // first network navigation, including redirects and restored tabs.
         let view = builder
             .build_native_child(window, cx)
             .context("Creating native browser child view")?;
+        let p = self.protection.borrow();
+        let script = p.rules.script(&p.policy);
+        #[cfg(target_os = "macos")]
+        {
+            p.native.apply(&view, &script)?;
+            if url == "about:blank" {
+                view.load_html(START_HTML)?;
+            } else {
+                view.load_url(url)?;
+            }
+        }
+        #[cfg(target_os = "windows")]
+        view.setup_protection(self.protection.clone(), script, url.to_owned(), true, false)?;
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = script;
+            bail!("Built-in protection requires macOS or Windows");
+        }
+        self.protection_revisions
+            .borrow_mut()
+            .insert(tab, (p.revision, p.policy_revision));
         // `with_focused(false)` is ignored on macOS; explicitly return focus.
         view.focus_parent()
             .context("Returning focus from new browser view")?;
@@ -559,6 +601,9 @@ impl BrowserHost for WryHost {
     }
 
     fn retain(&self, tabs: &HashSet<TabId>) {
+        self.protection_revisions
+            .borrow_mut()
+            .retain(|id, _| tabs.contains(id));
         self.visible.borrow_mut().retain(|id| tabs.contains(id));
         self.loaded.borrow_mut().retain(|id| tabs.contains(id));
         self.views.borrow_mut().retain(|id, view| {
@@ -625,7 +670,65 @@ impl BrowserHost for WryHost {
     }
 
     fn drain_events(&self) -> Vec<BrowserEvent> {
-        self.events.try_iter().collect()
+        if let Err(error) = self.protection.borrow_mut().poll() {
+            eprintln!("Protection: {error}");
+        }
+        let p = self.protection.borrow();
+        if p.native.ready() {
+            let needs: Vec<_> = self
+                .protection_revisions
+                .borrow()
+                .iter()
+                .filter(|(_, r)| r.0 != p.revision || r.1 != p.policy_revision)
+                .map(|(id, r)| (*id, r.1 != p.policy_revision))
+                .collect();
+            if !needs.is_empty() {
+                let script = p.rules.script(&p.policy);
+                for (tab, reload) in needs {
+                    #[cfg(feature = "smoke")]
+                    eprintln!(
+                        "Protection: applying revision {} policy {} to tab {tab}; reload={reload}",
+                        p.revision, p.policy_revision
+                    );
+                    if let Ok(view) = self.get(tab) {
+                        #[cfg(target_os = "macos")]
+                        let result = p.native.apply(&view, &script).and_then(|_| {
+                            if reload {
+                                view.reload().map_err(Into::into)
+                            } else {
+                                Ok(())
+                            }
+                        });
+                        #[cfg(target_os = "windows")]
+                        let result = view.setup_protection(
+                            self.protection.clone(),
+                            script.clone(),
+                            String::new(),
+                            false,
+                            reload,
+                        );
+                        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                        let result: Result<()> = Ok(());
+                        match result {
+                            Ok(()) => {
+                                self.protection_revisions
+                                    .borrow_mut()
+                                    .insert(tab, (p.revision, p.policy_revision));
+                            }
+                            Err(error) => eprintln!("Applying protection: {error}"),
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut events: Vec<_> = self.events.try_iter().collect();
+        let state = format!("{}:{}:{}", p.revision, p.native.ready(), p.value());
+        if *self.protection_notified.borrow() != state {
+            *self.protection_notified.borrow_mut() = state;
+            events.push(BrowserEvent::ProtectionChanged);
+        }
+        events
     }
 }
 

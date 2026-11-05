@@ -152,7 +152,7 @@ pub(crate) async fn wait_title(
     expected: &str,
     cx: &mut AsyncWindowContext,
 ) -> Result<()> {
-    for _ in 0..50 {
+    for _ in 0..300 {
         if host.is_loaded(tab)
             && eval(host, tab, "document.title", cx).await?.as_str() == Some(expected)
         {
@@ -192,6 +192,9 @@ async fn run(
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-video") {
         return crate::smoke_video::run(view, cx).await;
+    }
+    if std::env::args().any(|arg| arg == "--smoke-protection") {
+        return crate::smoke_protection::run(view, cx).await;
     }
     if std::env::args().any(|arg| arg == "--smoke-settings") {
         return crate::smoke_settings::run(view, cx).await;

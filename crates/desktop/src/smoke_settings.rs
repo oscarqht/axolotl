@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use workspace_core::SearchEngine;
 
-async fn dialog_eval(
+pub(crate) async fn dialog_eval(
     view: &WeakEntity<BrowserApp>,
     script: &str,
     cx: &mut AsyncWindowContext,
@@ -21,7 +21,7 @@ async fn dialog_eval(
             .as_ref()
             .and_then(|d| d.view.as_ref())
             .ok_or_else(|| anyhow::anyhow!("Settings not mounted"))?
-            .evaluate_script_with_callback(script, move |value| {
+            .evaluate_script_with_callback(&format!("(()=>{{try{{return eval({})}}catch(error){{return {{scriptError:String(error)}}}}}})()",serde_json::to_string(script).unwrap()), move |value| {
                 *target.lock().unwrap() = Some(value)
             })
             .map_err(anyhow::Error::from)
@@ -32,7 +32,10 @@ async fn dialog_eval(
         }
         pause(cx).await;
     }
-    anyhow::bail!("Settings evaluation timed out")
+    anyhow::bail!(
+        "Settings evaluation timed out: {}",
+        script.chars().take(120).collect::<String>()
+    )
 }
 
 pub(crate) async fn run(
@@ -78,9 +81,21 @@ pub(crate) async fn run(
     );
     for shift in [false, true] {
         let expected = if shift {
-            ["close", "homepage-url", "search-engine"]
+            [
+                "close",
+                "update-filters",
+                "protection-enabled",
+                "homepage-url",
+                "search-engine",
+            ]
         } else {
-            ["homepage-url", "close", "search-engine"]
+            [
+                "homepage-url",
+                "protection-enabled",
+                "update-filters",
+                "close",
+                "search-engine",
+            ]
         };
         for id in expected {
             let focused = dialog_eval(view, &format!("document.dispatchEvent(new KeyboardEvent('keydown',{{key:'Tab',shiftKey:{shift},bubbles:true,cancelable:true}}));document.activeElement.id"), cx).await?;

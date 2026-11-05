@@ -49,6 +49,8 @@ mod smoke_settings;
 mod smoke_space_drag;
 #[cfg(feature = "smoke")]
 mod smoke_space_menu;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_video;
 mod space_drag;
 mod space_menu;
 mod split_preview;

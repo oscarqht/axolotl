@@ -162,10 +162,16 @@ on macOS it is clamped to the usable screen area. Missing or invalid state uses 
 existing centered 1280×860 startup window. `AXOLOTL_DATA_DIR` also isolates window
 state; `--smoke-test` never reads or writes the real profile.
 
+On macOS, decorative VP8/VP9 WebM animations receive an alpha compatibility
+fallback so transparent regions reveal the page beneath them. It preserves the
+original video playback API and shares masks across repeated assets. See
+[transparent WebM support](docs/webm-alpha-macos.md) for supported sources,
+resource limits, native before/after snapshots, and the regression runner.
+
 ## Checks
 
 ```sh
-node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs
+node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-webm-alpha.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

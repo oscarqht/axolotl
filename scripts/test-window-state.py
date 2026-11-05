@@ -5,6 +5,7 @@ Usage: cargo build -p axolotl --features smoke
 """
 import json
 import os
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
@@ -18,7 +19,15 @@ def close(a, b):
 def main():
     binary = str(Path(sys.argv[1]).resolve())
     with tempfile.TemporaryDirectory(prefix='axolotl-window-') as directory:
-        path = Path(directory) / 'window-state.json'
+        path = Path(directory) / 'app.sqlite3'
+
+        def load():
+            with sqlite3.connect(path) as db:
+                return json.loads(db.execute("SELECT json FROM app_state WHERE key='window'").fetchone()[0])
+
+        def save(value):
+            with sqlite3.connect(path) as db:
+                db.execute("UPDATE app_state SET json=? WHERE key='window'", (value,))
         env = dict(os.environ, AXOLOTL_DATA_DIR=directory)
 
         def run(stage):
@@ -38,7 +47,7 @@ def main():
 
         _, seed = run('seed')
         normal = seed['bounds']
-        close(json.loads(path.read_text())['normal'], normal)
+        close(load()['normal'], normal)
         before, _ = run('zoom')
         close(before['bounds'], normal)
         before, after = run('unzoom')
@@ -61,9 +70,9 @@ def main():
         assert before['fullscreen'] and after['maximized'], (before, after)
         before, after = run('unzoom')
         close(after['bounds'], normal)
-        state = json.loads(path.read_text())
+        state = load()
         state['normal'].update(x=100000, y=-100000, width=10000, height=10000)
-        path.write_text(json.dumps(state))
+        save(json.dumps(state))
         _, after = run('none')
         bounds, area = after['bounds'], after['visible']
         assert bounds['x'] >= area['x'] and bounds['y'] >= area['y'], after
@@ -71,7 +80,7 @@ def main():
         assert bounds['y'] + bounds['height'] <= area['y'] + area['height'] + 1, after
         for invalid in ['{bad json', json.dumps(dict(state, version=999)),
                         json.dumps(dict(state, normal=dict(x=0, y=0, width=-1, height=20)))]:
-            path.write_text(invalid)
+            save(invalid)
             before, _ = run('none')
             assert not before['fullscreen'] and not before['maximized'], before
             assert before['bounds']['width'] >= 640 and before['bounds']['height'] >= 420

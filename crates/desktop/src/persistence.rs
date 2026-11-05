@@ -1,16 +1,23 @@
-//! Session persistence glue: where the file lives and when to write it.
+//! Durable application state lives in app.sqlite3; models stay in memory.
+pub use crate::persistence_worker::error_status;
+use crate::persistence_worker::{Value, store};
+use serde::{Serialize, de::DeserializeOwned};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
+    cell::Cell,
+    ops::{Deref, DerefMut},
     path::PathBuf,
-    time::{Duration, Instant},
+    time::Instant,
 };
-use workspace_core::{Workspace, load_workspace, write_atomic};
+use workspace_core::Workspace;
 
-const DEBOUNCE: Duration = Duration::from_millis(500);
+static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
 
 /// `AXOLOTL_DATA_DIR` overrides the OS app-data directory (used for testing).
 pub(crate) fn data_dir() -> Option<PathBuf> {
-    // Smoke runs must neither read nor clobber the user's real session.
-    if std::env::args().any(|arg| arg == "--smoke-test") {
+    if std::env::args().any(|arg| arg == "--smoke-test")
+        || (cfg!(test) && std::env::var_os("AXOLOTL_DATA_DIR").is_none())
+    {
         return None;
     }
     let dir = if let Some(dir) = std::env::var_os("AXOLOTL_DATA_DIR") {
@@ -26,129 +33,220 @@ pub(crate) fn data_dir() -> Option<PathBuf> {
     };
     Some(dir)
 }
-
-pub fn session_path() -> Option<PathBuf> {
-    Some(data_dir()?.join("session.json"))
+#[cfg(not(test))]
+pub fn load<T: DeserializeOwned>(key: &str) -> anyhow::Result<Option<T>> {
+    store()?
+        .load(key)
+        .map(|s| serde_json::from_str(&s).map_err(Into::into))
+        .transpose()
+}
+#[cfg(not(test))]
+pub fn save<T: Serialize>(key: &str, value: &T) -> anyhow::Result<()> {
+    store()?.save(vec![(
+        key.to_owned(),
+        Value::Json(serde_json::to_string(value)?),
+    )])
+}
+#[cfg(test)]
+pub fn load_from<T: DeserializeOwned>(
+    dir: &std::path::Path,
+    key: &str,
+) -> anyhow::Result<Option<T>> {
+    crate::app_database::AppDatabase::open(dir)?
+        .load(key)?
+        .map(|s| serde_json::from_str(&s).map_err(Into::into))
+        .transpose()
+}
+#[cfg(test)]
+pub fn save_to<T: Serialize>(dir: &std::path::Path, key: &str, value: &T) -> anyhow::Result<()> {
+    crate::app_database::AppDatabase::open(dir)?
+        .write_batch(&[(key.into(), serde_json::to_string(value)?)])
+}
+pub fn flush() -> anyhow::Result<()> {
+    store()?.flush()
 }
 
-/// Restore the saved workspace, or the default start state when the file is
-/// absent, corrupt or from an unknown version. A bad file is kept aside.
-pub fn restore(homepage_url: &str) -> Workspace {
-    let Some(path) = session_path() else {
-        return Workspace::new(homepage_url);
-    };
-    match load_workspace(&path) {
-        Ok(Some(workspace)) => workspace,
-        Ok(None) => Workspace::new(homepage_url),
-        Err(error) => {
-            eprintln!("Axolotl: ignoring saved session: {error}");
-            let _ = std::fs::rename(&path, path.with_extension("json.bad"));
-            Workspace::new(homepage_url)
-        }
-    }
+/// All mutable access (including direct field edits) advances the revision.
+/// Immutable access and idle UI polling are constant time. Native views and
+/// interaction state live outside this wrapper and never dirty the snapshot.
+#[derive(Clone, Debug)]
+pub struct TrackedWorkspace {
+    workspace: Workspace,
+    revision: u64,
+    dirty_since: Cell<Option<Instant>>,
 }
-
-/// Writes a snapshot once the model has been stable for the debounce period.
-pub struct SessionSaver {
-    path: Option<PathBuf>,
-    written: Option<String>,
-    pending: Option<(String, Instant)>,
-}
-
-impl SessionSaver {
-    pub fn new(initial: &Workspace) -> Self {
+impl From<Workspace> for TrackedWorkspace {
+    fn from(workspace: Workspace) -> Self {
         Self {
-            path: session_path(),
-            written: Some(initial.to_json()),
-            pending: None,
+            workspace,
+            revision: NEXT_REVISION.fetch_add(1, Ordering::Relaxed),
+            dirty_since: Cell::new(None),
         }
     }
+}
+impl Deref for TrackedWorkspace {
+    type Target = Workspace;
+    fn deref(&self) -> &Workspace {
+        &self.workspace
+    }
+}
+impl DerefMut for TrackedWorkspace {
+    fn deref_mut(&mut self) -> &mut Workspace {
+        self.revision = NEXT_REVISION.fetch_add(1, Ordering::Relaxed);
+        if self.dirty_since.get().is_none() {
+            self.dirty_since.set(Some(Instant::now()));
+        }
+        &mut self.workspace
+    }
+}
+pub fn restore(homepage_url: &str) -> TrackedWorkspace {
+    let result = (|| -> anyhow::Result<_> {
+        Ok(store()?
+            .load("session")
+            .map(|json| Workspace::from_json(&json))
+            .transpose()?)
+    })();
+    match result {
+        Ok(workspace) => workspace
+            .unwrap_or_else(|| Workspace::new(homepage_url))
+            .into(),
+        Err(error) => {
+            crate::persistence_worker::report(format!("{error:#}"));
+            Workspace::new(homepage_url).into()
+        }
+    }
+}
 
-    /// Called from the UI poll loop.
-    pub fn tick(&mut self, workspace: &Workspace, now: Instant) {
-        let json = workspace.to_json();
-        if self.written.as_deref() == Some(json.as_str()) {
-            self.pending = None;
+pub struct SessionSaver {
+    revision: Option<u64>,
+}
+impl SessionSaver {
+    pub fn new(initial: &TrackedWorkspace) -> Self {
+        Self {
+            revision: Some(initial.revision),
+        }
+    }
+    fn snapshot(&mut self, workspace: &TrackedWorkspace) -> Option<(Value, Instant)> {
+        if self.revision == Some(workspace.revision) {
+            return None;
+        }
+        self.revision = Some(workspace.revision);
+        Some((
+            Value::Workspace(workspace.workspace.clone()),
+            workspace.dirty_since.take().unwrap_or_else(Instant::now),
+        ))
+    }
+    /// Queue only changed revisions. Serialization and SQLite run on the writer.
+    pub fn tick<T: Serialize>(&mut self, workspace: &TrackedWorkspace, sleep: &T, _: Instant) {
+        if store().is_err() {
             return;
         }
-        match &self.pending {
-            Some((pending, since)) if *pending == json => {
-                if now.duration_since(*since) >= DEBOUNCE {
-                    self.write(json);
-                }
-            }
-            _ => self.pending = Some((json, now)),
+        if let Some((value, since)) = self.snapshot(workspace) {
+            self.submit_snapshot(workspace, value, sleep, since);
         }
     }
-
-    /// Pair durable tab metadata with the exact workspace/IDs it refers to.
-    pub fn checkpoint(&mut self, workspace: &Workspace) {
-        self.write(workspace.to_json());
-    }
-
-    /// Unconditional save for shutdown.
-    pub fn flush(&mut self, workspace: &Workspace) {
-        let json = workspace.to_json();
-        if self.written.as_deref() != Some(json.as_str()) {
-            self.write(json);
+    fn submit(&mut self, entries: Vec<(String, Value)>, since: Instant) {
+        if let Err(error) = store().and_then(|s| s.save_since(entries, since)) {
+            crate::persistence_worker::report(format!("{error:#}"));
         }
     }
-
-    fn write(&mut self, json: String) {
-        self.pending = None;
-        let Some(path) = &self.path else { return };
-        match write_atomic(path, json.as_bytes()) {
-            Ok(()) => self.written = Some(json),
-            Err(error) => eprintln!("Axolotl: failed to save session: {error}"),
+    fn submit_snapshot<T: Serialize>(
+        &mut self,
+        workspace: &TrackedWorkspace,
+        snapshot: Value,
+        sleep: &T,
+        since: Instant,
+    ) {
+        match sleep_json(workspace, sleep) {
+            Ok(json) => self.submit(
+                vec![
+                    ("session".into(), snapshot),
+                    ("sleep".into(), Value::Json(json)),
+                ],
+                since,
+            ),
+            Err(error) => crate::persistence_worker::report(error),
         }
     }
+    /// Every workspace revision pairs with metadata for exactly its tab IDs,
+    /// including when a close event reaches the poll before render cleanup.
+    pub fn checkpoint<T: Serialize>(&mut self, workspace: &TrackedWorkspace, sleep: &T) {
+        self.revision = Some(workspace.revision);
+        self.submit_snapshot(
+            workspace,
+            Value::Workspace(workspace.workspace.clone()),
+            sleep,
+            workspace.dirty_since.take().unwrap_or_else(Instant::now),
+        );
+    }
+}
+fn sleep_json<T: Serialize>(workspace: &Workspace, sleep: &T) -> anyhow::Result<String> {
+    let mut value = serde_json::to_value(sleep)?;
+    let entries = value
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("sleep metadata must be an object"))?;
+    entries.retain(|id, _| {
+        id.parse()
+            .ok()
+            .is_some_and(|id| workspace.tab(id).is_some())
+    });
+    Ok(serde_json::to_string(&value)?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn saver(name: &str) -> (SessionSaver, PathBuf) {
-        let path = std::env::temp_dir()
-            .join(format!("axolotl-saver-{}-{name}", std::process::id()))
-            .join("session.json");
-        let workspace = Workspace::new("about:blank");
-        let mut saver = SessionSaver::new(&workspace);
-        saver.path = Some(path.clone());
-        (saver, path)
-    }
-
     #[test]
-    fn writes_only_after_model_is_stable_and_flush_is_immediate() {
-        let (mut saver, path) = saver("debounce");
-        let mut workspace = Workspace::new("about:blank");
-        let t0 = Instant::now();
-        saver.tick(&workspace, t0);
-        assert!(!path.exists(), "unchanged model is not written");
-        workspace.add_space("Two", "https://example.com/");
-        saver.tick(&workspace, t0);
-        saver.tick(&workspace, t0 + Duration::from_millis(100));
-        assert!(!path.exists(), "debounced");
-        workspace.add_tab("https://rust-lang.org/");
-        saver.tick(&workspace, t0 + Duration::from_millis(400));
-        saver.tick(&workspace, t0 + Duration::from_millis(800));
-        assert!(!path.exists(), "a new change restarts the debounce");
-        saver.tick(&workspace, t0 + Duration::from_millis(1000));
-        assert!(path.exists());
-        let saved = load_workspace(&path).unwrap().unwrap();
-        assert_eq!(saved.spaces, workspace.spaces);
-        let selected = workspace.active_space;
-        assert!(workspace.move_space(selected, 0));
-        workspace.add_tab("https://gpui.rs/");
-        saver.flush(&workspace);
-        assert_eq!(
-            load_workspace(&path).unwrap().unwrap().spaces,
-            workspace.spaces
+    fn idle_polls_do_not_capture_or_serialize_workspace() {
+        let mut workspace: TrackedWorkspace = Workspace::default().into();
+        let mut saver = SessionSaver::new(&workspace);
+        assert!(saver.snapshot(&workspace).is_none());
+        for _ in 0..10000 {
+            assert!(saver.snapshot(&workspace).is_none());
+        }
+        workspace.add_space("Two", "https://example.com");
+        assert!(saver.snapshot(&workspace).is_some());
+        workspace.spaces[0].name = "Direct edit".into();
+        assert!(saver.snapshot(&workspace).is_some());
+        let tab = workspace.focused_pane().active_tab;
+        workspace.tab_mut(tab).unwrap().title = "Title".into();
+        assert!(saver.snapshot(&workspace).is_some());
+    }
+    #[test]
+    fn workspace_snapshot_drops_metadata_for_tabs_closed_before_render_cleanup() {
+        let mut workspace = Workspace::default();
+        let closed = workspace.add_tab("https://closed.test");
+        let keep = workspace.focused_pane().tabs[0].id;
+        let sleep = serde_json::json!({closed.to_string(): {"sleeping":true}, keep.to_string(): {"keep_alive":true}});
+        workspace.close_tab(workspace.focused_pane().id, closed);
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&sleep_json(&workspace, &sleep).unwrap()).unwrap();
+        assert!(snapshot.get(closed.to_string()).is_none());
+        assert_eq!(snapshot[keep.to_string()]["keep_alive"], true);
+    }
+    #[test]
+    #[ignore = "manual idle persistence benchmark"]
+    fn measure_idle_snapshot_overhead() {
+        let mut workspace: TrackedWorkspace = Workspace::default().into();
+        for _ in 0..250 {
+            workspace.add_tab("https://example.com/a-longer-url");
+        }
+        let mut saver = SessionSaver::new(&workspace);
+        saver.snapshot(&workspace);
+        let start = Instant::now();
+        for _ in 0..10000 {
+            std::hint::black_box(workspace.to_json());
+        }
+        let before = start.elapsed();
+        let start = Instant::now();
+        for _ in 0..10000 {
+            std::hint::black_box(saver.snapshot(&workspace));
+        }
+        eprintln!(
+            "{}-tab idle polls, 10000 iterations: serialize {:?}; revision {:?}",
+            workspace.focused_pane().tabs.len(),
+            before,
+            start.elapsed()
         );
-        assert_eq!(
-            load_workspace(&path).unwrap().unwrap().active_space,
-            selected
-        );
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

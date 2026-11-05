@@ -4,10 +4,7 @@ use gpui::{App, Bounds, DisplayId, Window, WindowBounds, px, size};
 #[cfg(not(target_os = "macos"))]
 use gpui::{Pixels, point};
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, time::Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 struct Rect {
@@ -52,8 +49,18 @@ pub(crate) struct SavedWindow {
     display: Option<uuid::Uuid>,
 }
 impl SavedWindow {
-    fn load(path: &std::path::Path) -> Option<Self> {
-        let saved: Self = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    fn load(_path: &std::path::Path) -> Option<Self> {
+        #[cfg(test)]
+        let result = crate::persistence::load_from(_path, "window");
+        #[cfg(not(test))]
+        let result = crate::persistence::load("window");
+        let saved: Self = match result {
+            Ok(value) => value?,
+            Err(error) => {
+                eprintln!("Axolotl: failed to restore window state: {error}");
+                return None;
+            }
+        };
         (saved.version == 1 && saved.normal.is_some_and(Rect::valid)).then_some(saved)
     }
     pub fn restore() -> Self {
@@ -102,7 +109,7 @@ impl SavedWindow {
     }
 }
 fn path() -> Option<PathBuf> {
-    Some(crate::persistence::data_dir()?.join("window-state.json"))
+    crate::persistence::data_dir()
 }
 
 struct Store {
@@ -122,21 +129,21 @@ impl Store {
         if self.written.as_ref() == Some(&self.state) || self.state.normal.is_none() {
             return;
         }
-        let Some(path) = &self.path else {
+        let Some(_path) = &self.path else {
             return;
         };
-        match workspace_core::write_atomic(
-            path,
-            &serde_json::to_vec(&self.state).expect("finite window geometry"),
-        ) {
+        #[cfg(test)]
+        let result = crate::persistence::save_to(_path, "window", &self.state);
+        #[cfg(not(test))]
+        let result = crate::persistence::save("window", &self.state);
+        match result {
             Ok(()) => self.written = Some(self.state.clone()),
             Err(error) => eprintln!("Axolotl: failed to save window state: {error}"),
         }
     }
     fn tick(&mut self) {
-        if self.changed.elapsed() >= Duration::from_millis(500) {
-            self.flush();
-        }
+        // The shared worker owns the fixed 500 ms batching deadline.
+        self.flush();
     }
 }
 
@@ -227,15 +234,21 @@ mod tests {
     }
     #[test]
     fn rejects_invalid_geometry_and_unknown_versions() {
-        let dir = std::env::temp_dir().join(format!("axolotl-window-unit-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("axolotl-window-unit-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("window-state.json");
+        let path = dir.clone();
         for json in [
-            "{",
+            "{}",
             r#"{"version":1,"normal":{"x":0,"y":0,"width":-1,"height":860},"maximized":false,"fullscreen":false,"display":null}"#,
             r#"{"version":2,"normal":{"x":0,"y":0,"width":1280,"height":860},"maximized":false,"fullscreen":false,"display":null}"#,
         ] {
-            std::fs::write(&path, json).unwrap();
+            crate::persistence::save_to(
+                &path,
+                "window",
+                &serde_json::from_str::<serde_json::Value>(json).unwrap(),
+            )
+            .unwrap();
             assert!(SavedWindow::load(&path).is_none());
         }
         let state = SavedWindow {

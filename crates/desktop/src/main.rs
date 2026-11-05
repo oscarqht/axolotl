@@ -1,4 +1,5 @@
 mod app;
+mod app_database;
 mod browser;
 #[cfg(target_os = "macos")]
 mod browser_identity;
@@ -34,6 +35,7 @@ mod native_popup_tabs;
 mod native_webview;
 mod panel_controls;
 mod persistence;
+mod persistence_worker;
 mod pinned_tabs;
 mod popup_transition;
 mod preferences;
@@ -74,6 +76,8 @@ mod smoke_notifications;
 mod smoke_oauth;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
+#[cfg(feature = "smoke")]
+mod smoke_persistence;
 #[cfg(feature = "smoke")]
 mod smoke_pins;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -231,6 +235,8 @@ fn main() {
                 window_state::probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_space_menu::session_probe(&app, window, cx);
+                #[cfg(feature = "smoke")]
+                smoke_persistence::probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 if std::env::args()
                     .any(|arg| arg == "--smoke-test" || arg == "--smoke-sleep-session")

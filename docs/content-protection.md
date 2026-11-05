@@ -9,9 +9,9 @@ off, and a dotted indicator means the change is being applied. A disabled global
 is unavailable on the built-in start page. Exceptions do not automatically apply
 to sibling hosts or subdomains.
 
-The global setting and hostname exceptions are saved atomically to
-`protection.json` in the normal app-data directory, independently of session and
-search/homepage settings. Write failures are reported, and the in-memory choice
+The global setting and hostname exceptions are saved to `app.sqlite3` in the normal
+app-data directory, together with other durable state. Downloaded filter lists
+remain in `filter-lists.json` outside the database. Write failures are reported, and the in-memory choice
 still applies. The native views remain alive across protection changes, retaining
 back/forward history. A policy change reloads only open pages whose effective protection changed,
 including hidden pages on the affected hostname; unsent form state on those

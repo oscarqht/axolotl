@@ -182,11 +182,12 @@ URL, including query strings and fragments, without changing an unfinished
 address edit. Open pinned pages and temporary previews copy their own URL.
 
 Window size and position, zoom/maximized state, and macOS full-screen state are
-saved in `window-state.json` alongside the browsing session. Normal bounds survive
+saved in `app.sqlite3` alongside the browsing session. Normal bounds survive
 zoom and full-screen transitions. Restored geometry is kept on an available display;
 on macOS it is clamped to the usable screen area. Missing or invalid state uses the
 existing centered 1280×860 startup window. `AXOLOTL_DATA_DIR` also isolates window
-state; `--smoke-test` never reads or writes the real profile.
+state; `--smoke-test` never reads or writes the real profile. See
+[app persistence](docs/persistence.md) for automatic legacy import and save recovery.
 
 Built-in ad and tracker protection is enabled by default. Use **Settings → Block
 ads and trackers** or the website shield in each panel to change it. Lists update

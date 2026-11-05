@@ -657,7 +657,8 @@ async fn run(
             app.model.close_pane(other);
         }
         while app.model.pane(pane).unwrap().tabs.len() > 1 {
-            app.model.close_tab(pane, app.active_tab());
+            let active = app.active_tab();
+            app.model.close_tab(pane, active);
         }
         let last = app.active_tab();
         app.tab_action(TabTarget::Page(pane, last), TabAction::Close, window, cx);
@@ -671,7 +672,7 @@ async fn run(
     checks.push("targeted sibling, split and close actions; final tab and space guards; switching cancels edits");
     // Route CloseTab through the GPUI action used by Cmd+W, with actual native views.
     let (original, right, bottom, closed, extra) = view.update_in(cx, |app, window, cx| {
-        app.model = workspace_core::Workspace::default();
+        app.model = workspace_core::Workspace::default().into();
         let original = app.model.focused_pane().id;
         let right = app.model.split_focused(Axis::Horizontal, "about:blank");
         let bottom = app.model.split_focused(Axis::Vertical, "about:blank");
@@ -758,7 +759,7 @@ async fn run(
     checks.push("CloseTab action selects tabs, collapses nested/root splits, transfers focus, expands native panes and replaces final tab");
     // Exercise the drag handlers against retained native documents, including cancellation.
     let (source, moved, destination, destination_tab) = view.update_in(cx, |app, window, cx| {
-        app.model = workspace_core::Workspace::default();
+        app.model = workspace_core::Workspace::default().into();
         let source = app.model.focused_pane().id;
         let moved = app.active_tab();
         let destination = app.model.split_focused(Axis::Horizontal, "about:blank");

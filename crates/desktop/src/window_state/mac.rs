@@ -9,6 +9,8 @@ use objc2::{
 use objc2_foundation::{
     NSNotification, NSNotificationCenter, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
+#[cfg(feature = "smoke")]
+use std::time::Duration;
 use std::{
     cell::{Cell, RefCell},
     ptr::NonNull,
@@ -35,7 +37,6 @@ struct Native {
     window: Retained<AnyObject>,
     store: RefCell<Store>,
     transitioning: Cell<bool>,
-    candidate: RefCell<Option<(SavedWindow, Instant)>>,
 }
 impl Native {
     fn capture(&self) {
@@ -58,22 +59,7 @@ impl Native {
                     }
                 }
             }
-            let mut candidate = self.candidate.borrow_mut();
-            match &*candidate {
-                Some((previous, since)) if *previous == state => {
-                    if since.elapsed() >= Duration::from_millis(500) {
-                        self.store.borrow_mut().set(state);
-                    }
-                }
-                _ => *candidate = Some((state, Instant::now())),
-            }
-        }
-    }
-    fn commit(&self) {
-        if !self.transitioning.get()
-            && let Some((state, _)) = self.candidate.borrow().as_ref()
-        {
-            self.store.borrow_mut().set(state.clone());
+            self.store.borrow_mut().set(state);
         }
     }
 }
@@ -129,13 +115,11 @@ impl WindowSaver {
                     path: path(),
                 }),
                 transitioning: Cell::new(false),
-                candidate: RefCell::new(None),
             });
             // Establish normal bounds before changing mode, so AppKit also knows
             // the correct unzoom/exit-full-screen frame after restoration.
             if !maximize {
                 native.capture();
-                native.commit();
             }
             let center = NSNotificationCenter::defaultCenter();
             let mut observers = Vec::new();
@@ -156,8 +140,6 @@ impl WindowSaver {
                     match name {
                         "NSWindowWillEnterFullScreenNotification" => {
                             native.capture();
-                            native.commit();
-                            native.candidate.borrow_mut().take();
                             native.transitioning.set(true);
                             let mut store = native.store.borrow_mut();
                             let mut state = store.state.clone();
@@ -172,10 +154,25 @@ impl WindowSaver {
                             native.transitioning.set(false);
                             native.capture();
                         }
+                        "NSWindowDidMoveNotification" | "NSWindowDidResizeNotification" => {
+                            // AppKit emits resize callbacks from inside zoom's
+                            // animated frame changes, before isZoomed updates.
+                            // Only a real mouse drag may update normal bounds
+                            // here; the next UI poll samples programmatic changes
+                            // once the native call has returned.
+                            let application: *mut AnyObject =
+                                msg_send![objc2::class!(NSApplication), sharedApplication];
+                            let event: *mut AnyObject = msg_send![application, currentEvent];
+                            if !event.is_null() {
+                                let kind: objc2_app_kit::NSEventType = msg_send![event, type];
+                                if kind == objc2_app_kit::NSEventType::LeftMouseDragged {
+                                    native.capture();
+                                }
+                            }
+                        }
                         _ => native.capture(),
                     }
                     if name == "NSWindowWillCloseNotification" {
-                        native.commit();
                         native.store.borrow_mut().flush();
                     }
                 });
@@ -203,7 +200,6 @@ impl WindowSaver {
     }
     pub fn flush(&mut self) {
         self.native.capture();
-        self.native.commit();
         self.native.store.borrow_mut().flush();
     }
 }

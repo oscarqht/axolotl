@@ -14,7 +14,7 @@ use std::{
 use workspace_core::{TabId, write_atomic};
 
 #[derive(Default, Serialize, Deserialize)]
-struct Entry {
+pub(crate) struct Entry {
     #[serde(default)]
     sleeping: bool,
     #[serde(default)]
@@ -31,7 +31,7 @@ struct Probe {
 }
 #[derive(Default)]
 pub struct SleepState {
-    entries: HashMap<TabId, Entry>,
+    pub(crate) entries: HashMap<TabId, Entry>,
     images: HashMap<TabId, Arc<Image>>,
     encoded: HashMap<TabId, String>,
     hover: Option<(TabId, Point<Pixels>, crate::drag_preview::DragPreview)>,
@@ -55,8 +55,19 @@ impl SleepState {
         state.entries = state
             .directory
             .as_ref()
-            .and_then(|p| std::fs::read(p.join("state.json")).ok())
-            .and_then(|b| serde_json::from_slice(&b).ok())
+            .and_then(|_dir| {
+                #[cfg(test)]
+                let result = crate::persistence::load_from(_dir.parent().unwrap(), "sleep");
+                #[cfg(not(test))]
+                let result = crate::persistence::load("sleep");
+                match result {
+                    Ok(value) => value,
+                    Err(error) => {
+                        crate::persistence_worker::report(error);
+                        None
+                    }
+                }
+            })
             .unwrap_or_default();
         for (&id, entry) in &state.entries {
             if entry.sleeping
@@ -77,16 +88,17 @@ impl SleepState {
         }
         state
     }
+    #[cfg(test)]
     fn save(&self) {
-        if let Some(dir) = &self.directory
-            && let Err(error) = write_atomic(
-                &dir.join("state.json"),
-                &serde_json::to_vec(&self.entries).unwrap(),
-            )
-        {
-            eprintln!("Sleep state: {error}");
+        if let Some(_dir) = &self.directory {
+            let result =
+                crate::persistence::save_to(_dir.parent().unwrap(), "sleep", &self.entries);
+            if let Err(error) = result {
+                crate::persistence_worker::report(error);
+            }
         }
     }
+
     pub fn is_sleeping(&self, id: TabId) -> bool {
         self.entries.get(&id).is_some_and(|e| e.sleeping)
     }
@@ -100,7 +112,6 @@ impl SleepState {
         let e = self.entries.entry(id).or_default();
         e.keep_alive = !e.keep_alive;
         self.probes.remove(&id);
-        self.save();
     }
     fn clear_image(&mut self, id: TabId) {
         self.images.remove(&id);
@@ -112,24 +123,27 @@ impl SleepState {
             let _ = std::fs::remove_file(dir.join(format!("{id}.png")));
         }
     }
-    pub fn retain(&mut self, ids: &HashSet<TabId>) {
+    pub fn retain(&mut self, ids: &HashSet<TabId>) -> bool {
         let removed: Vec<_> = self
             .entries
             .keys()
             .copied()
             .filter(|id| !ids.contains(id))
             .collect();
-        if !removed.is_empty() {
+        let changed = !removed.is_empty();
+        if changed {
             for id in removed {
                 self.entries.remove(&id);
                 self.clear_image(id);
             }
+            #[cfg(test)]
             self.save();
         }
         self.captures.retain(|id, _| ids.contains(id));
         self.probes.retain(|id, _| ids.contains(id));
         self.hidden.retain(|id, _| ids.contains(id));
         self.last_probe.retain(|id, _| ids.contains(id));
+        changed
     }
     fn due(&self, id: TabId, now: Instant, minutes: u64) -> bool {
         !self.is_sleeping(id)
@@ -247,8 +261,8 @@ impl BrowserApp {
     }
     pub(crate) fn toggle_keep_alive(&mut self, id: TabId) {
         if self.model.tab(id).is_some() {
-            self.saver.checkpoint(&self.model);
             self.sleep.toggle_keep_alive(id);
+            self.saver.checkpoint(&self.model, &self.sleep.entries);
         }
     }
     pub(crate) fn wake_newly_visible(&mut self, visible: HashSet<TabId>) {
@@ -273,7 +287,7 @@ impl BrowserApp {
             if id == self.active_tab() || self.pins.open == Some(id) {
                 self.sleep.pending_focus = Some(id);
             }
-            self.sleep.save();
+            self.saver.checkpoint(&self.model, &self.sleep.entries);
         }
     }
     pub(crate) fn sleep_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
@@ -401,8 +415,7 @@ impl BrowserApp {
                     .insert(id, Arc::new(Image::from_bytes(ImageFormat::Png, bytes)));
             }
             self.sleep.entries.entry(id).or_default().sleeping = true;
-            self.saver.checkpoint(&self.model);
-            self.sleep.save();
+            self.saver.checkpoint(&self.model, &self.sleep.entries);
             // Invalidate AppKit's covered GPUI layer while the native parent is
             // still reachable, including when this is the last loaded page.
             self.host.request_redraw();
@@ -511,7 +524,8 @@ mod tests {
     }
     #[test]
     fn restart_and_close_cleanup() {
-        let dir = std::env::temp_dir().join(format!("axolotl-sleep-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("axolotl-sleep-{}", uuid::Uuid::new_v4()));
+        let dir = root.join("sleep");
         let mut s = SleepState::load(Some(dir.clone()));
         s.entries.insert(
             4,
@@ -529,6 +543,6 @@ mod tests {
         restored.retain(&HashSet::new());
         assert!(!dir.join("4.png").exists());
         assert!(!SleepState::load(Some(dir.clone())).is_sleeping(4));
-        std::fs::remove_dir_all(dir).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

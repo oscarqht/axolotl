@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use workspace_core::{Divider, PaneId, SpaceId, TabId, Workspace, normalize_url_with_engine};
+use workspace_core::{Divider, PaneId, SpaceId, TabId, normalize_url_with_engine};
 
 #[cfg(feature = "smoke")]
 use workspace_core::Axis;
@@ -93,7 +93,7 @@ pub struct BrowserApp {
     pub swipes: HashMap<PaneId, SwipeState>,
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
-    pub model: Workspace,
+    pub model: crate::persistence::TrackedWorkspace,
     pub pins: crate::pinned_tabs::PinnedUi,
     pub browsing_history: Option<crate::browsing_history::BrowsingHistory>,
     pub visit_ids: HashMap<TabId, (i64, String)>,
@@ -132,6 +132,7 @@ pub struct BrowserApp {
     /// Native context menu/editor for the right-clicked space.
     pub space_menu: Option<crate::space_menu::SpaceMenu>,
     pub status: String,
+    pub(crate) persistence_error: Option<String>,
     pub poll_count: u8,
     /// Last history probe per tab: (can go back, can go forward).
     pub history: HashMap<TabId, (bool, bool)>,
@@ -251,8 +252,7 @@ impl BrowserApp {
         let saver = crate::persistence::SessionSaver::new(&model);
         // Cmd+Q, window close and the app menu all end in cx.quit().
         cx.on_app_quit(|this, _| {
-            this.saver.flush(&this.model);
-            this.window_saver.flush();
+            this.flush_persistence();
             async {}
         })
         .detach();
@@ -298,6 +298,7 @@ impl BrowserApp {
             space_menu: None,
             pins: Default::default(),
             status: String::new(),
+            persistence_error: None,
             poll_count: 0,
             history: HashMap::new(),
             notifications: HashMap::new(),
@@ -332,6 +333,14 @@ impl BrowserApp {
         window.activate_window();
         cx.activate(true);
         cx.notify();
+    }
+
+    fn flush_persistence(&mut self) {
+        self.saver.checkpoint(&self.model, &self.sleep.entries);
+        self.window_saver.flush();
+        if let Err(error) = crate::persistence::flush() {
+            eprintln!("Axolotl: shutdown save failed; recovery data retained: {error:#}");
+        }
     }
 
     pub fn report(&mut self, result: anyhow::Result<()>) {
@@ -615,10 +624,18 @@ impl BrowserApp {
         let fullscreen = window.is_fullscreen();
         if self.last_fullscreen != fullscreen {
             self.last_fullscreen = fullscreen;
+            // Native children can suspend GPUI's display link across transitions.
+            self.host.request_redraw();
             cx.notify();
         }
-        self.saver.tick(&self.model, Instant::now());
+        self.saver
+            .tick(&self.model, &self.sleep.entries, Instant::now());
         self.window_saver.tick(window, cx);
+        let error = crate::persistence::error_status();
+        if self.persistence_error != error {
+            self.persistence_error = error;
+            cx.notify();
+        }
         if self.last_history_prune.elapsed() >= Duration::from_secs(3600) {
             self.prune_history(cx);
         }
@@ -932,5 +949,13 @@ impl BrowserApp {
             }
         }
         cx.notify();
+    }
+}
+
+// Window close can release this entity before GPUI's weak app-quit observer
+// runs. Flush while the model and retained native window are still available.
+impl Drop for BrowserApp {
+    fn drop(&mut self) {
+        self.flush_persistence();
     }
 }

@@ -181,8 +181,19 @@ impl Protection {
     fn load(path: Option<PathBuf>) -> Self {
         let prefs = path
             .as_ref()
-            .and_then(|p| std::fs::read(p.join("protection.json")).ok())
-            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .and_then(|_dir| {
+                #[cfg(test)]
+                let result = crate::persistence::load_from::<Value>(_dir, "protection");
+                #[cfg(not(test))]
+                let result = crate::persistence::load::<Value>("protection");
+                match result {
+                    Ok(value) => value,
+                    Err(error) => {
+                        eprintln!("Axolotl: failed to restore protection preferences: {error}");
+                        None
+                    }
+                }
+            })
             .unwrap_or_default();
         let policy = Policy {
             enabled: prefs["enabled"].as_bool().unwrap_or(true),
@@ -241,11 +252,11 @@ impl Protection {
         json!({"enabled":self.policy.enabled,"ready":self.native.ready(),"status":if !self.native.ready() && self.native.error().is_none() {"Preparing native protection…"} else {&self.status},"updating":self.pending.is_some()||self.candidate.is_some(),"updated":self.last_updated,"rules":self.rules.converted})
     }
     fn save_policy(&self) -> Result<()> {
-        if let Some(path) = &self.path {
-            workspace_core::write_atomic(
-                &path.join("protection.json"),
-                self.policy.value().to_string().as_bytes(),
-            )?;
+        if let Some(_path) = &self.path {
+            #[cfg(test)]
+            crate::persistence::save_to(_path, "protection", &self.policy.value())?;
+            #[cfg(not(test))]
+            crate::persistence::save("protection", &self.policy.value())?;
         }
         Ok(())
     }

@@ -23,8 +23,8 @@ shows its title and URL. Use Up/Down and Enter or click a result to open it in t
 current tab. Escape dismisses suggestions; Enter with no selected result keeps
 normal URL/search submission.
 
-History is shared across spaces and stored locally in `history.sqlite3` beside
-`settings.json`. Completed HTTP/HTTPS main-frame visits are recorded, including
+History is shared across spaces and stored locally in `app.sqlite3` with the
+other durable app state. Completed HTTP/HTTPS main-frame visits are recorded, including
 reloads and Back/Forward visits. Internal pages, failed loads, subframes, and
 redirect intermediates are excluded. Titles can update after a visit completes.
 History persists across app restarts independently of session snapshots.
@@ -40,18 +40,20 @@ login sessions, saved tabs, live pages, and native Back/Forward navigation.
 
 ## Persistence
 
-The choice is written atomically to `settings.json`, separately from
-`session.json`, in the app's data directory:
+Preferences, workspace snapshots, window geometry, sleep metadata, protection
+preferences, and browsing history share `app.sqlite3` in the app's data directory:
 
 - macOS: `~/Library/Application Support/Axolotl/`
 - Windows: `%APPDATA%\Axolotl\`
 - `AXOLOTL_DATA_DIR` overrides the directory for isolated development runs.
 
 The persisted `search_engine` identifiers are `google`, `duckduckgo`, and `bing`.
-Missing/unreadable files, malformed JSON, missing fields, and unknown or invalid
-values fall back to Google. If saving fails, the current choice still applies
-in memory and the dialog displays a warning that it may not survive restart.
-Smoke runs neither read nor write the user's session or settings.
+Missing fields and unknown preference values fall back to defaults. Invalid legacy
+files or corrupt database records are retained and persistence is disabled for the
+run, with an error in the browser status. A failed background save keeps the current
+choice in memory, reports an error, and retains the batch for retry and recovery.
+Smoke runs neither read nor write the user's session or settings. See
+[app persistence](persistence.md) for migration, batching, and recovery details.
 
 ## Verification
 
@@ -113,8 +115,8 @@ titles show 💤 and exactly 50% text opacity. Hover previews use the cached
 images without creating or waking page views; space previews include sleeping
 visible panes.
 
-Sleep/Keep Alive metadata lives in `sleep/state.json`, with local `sleep/<tab-id>.png`
-caches alongside the session and settings. Waking or closing tabs removes their
+Sleep/Keep Alive metadata lives in `app.sqlite3`, with local `sleep/<tab-id>.png`
+caches outside the database. Waking or closing tabs removes their
 cached images. Sleep state and previews survive restarts; restored visible
 sleepers wait for user activation too.
 

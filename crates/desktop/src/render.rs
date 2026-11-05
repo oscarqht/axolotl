@@ -938,18 +938,26 @@ impl Render for BrowserApp {
                         }),
                     )
             }))
-            .when(!self.status.is_empty(), |root| {
-                root.child(
-                    div()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .h(px(22.))
-                        .px_2()
-                        .bg(rgb(colors.surface))
-                        .child(self.status.clone()),
-                )
-            })
+            .when(
+                self.persistence_error.is_some() || !self.status.is_empty(),
+                |root| {
+                    root.child(
+                        div()
+                            .absolute()
+                            .bottom_0()
+                            .left_0()
+                            .right_0()
+                            .h(px(22.))
+                            .px_2()
+                            .bg(rgb(colors.surface))
+                            .child(
+                                self.persistence_error
+                                    .as_ref()
+                                    .unwrap_or(&self.status)
+                                    .clone(),
+                            ),
+                    )
+                },
+            )
     }
 }

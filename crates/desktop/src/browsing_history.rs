@@ -1,9 +1,7 @@
 //! Shared, local visit log. Session state and native Back/Forward are independent.
-use rusqlite::{Connection, params};
-use std::{
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use crate::persistence_worker::Store;
+use rusqlite::types::Value;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HistoryItem {
@@ -18,31 +16,19 @@ pub fn now() -> i64 {
         .as_secs() as i64
 }
 
-pub struct BrowsingHistory(Connection);
+pub struct BrowsingHistory {
+    writer: Store,
+}
 impl BrowsingHistory {
     pub fn restore() -> anyhow::Result<Self> {
-        match crate::persistence::data_dir() {
-            Some(dir) => {
-                std::fs::create_dir_all(&dir)?;
-                Self::open(&dir.join("history.sqlite3"))
-            }
-            None => Self::from_connection(Connection::open_in_memory()?),
-        }
+        Self::from_store(crate::persistence_worker::store()?.clone())
     }
-    pub fn open(path: &Path) -> anyhow::Result<Self> {
-        Self::from_connection(Connection::open(path)?)
+    #[cfg(test)]
+    fn open(directory: &std::path::Path) -> anyhow::Result<Self> {
+        Self::from_store(Store::new(Some(directory.to_owned()))?)
     }
-    fn from_connection(connection: Connection) -> anyhow::Result<Self> {
-        connection.busy_timeout(std::time::Duration::from_millis(250))?;
-        connection.execute_batch(
-            "PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS visits (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL,
-                visited_at INTEGER NOT NULL);
-            CREATE INDEX IF NOT EXISTS visits_time ON visits(visited_at);
-            PRAGMA user_version=1;",
-        )?;
-        Ok(Self(connection))
+    fn from_store(writer: Store) -> anyhow::Result<Self> {
+        Ok(Self { writer })
     }
     pub fn record(&self, url: &str, title: &str, time: i64) -> anyhow::Result<Option<i64>> {
         if !url.to_ascii_lowercase().starts_with("http://")
@@ -50,64 +36,52 @@ impl BrowsingHistory {
         {
             return Ok(None);
         }
-        self.0.execute(
-            "INSERT INTO visits(title,url,visited_at) VALUES (?1,?2,?3)",
-            params![title, url, time],
+        // Reserve from the shared writer so multiple consumers cannot collide.
+        let id = self.writer.reserve_history_id()?;
+        self.writer.history(
+            "INSERT INTO visits(id,title,url,visited_at) VALUES (?1,?2,?3,?4)",
+            vec![
+                Value::Integer(id),
+                Value::Text(title.into()),
+                Value::Text(url.into()),
+                Value::Integer(time),
+            ],
         )?;
-        Ok(Some(self.0.last_insert_rowid()))
+        Ok(Some(id))
     }
     pub fn title(&self, visit: i64, title: &str) -> anyhow::Result<()> {
-        self.0.execute(
+        self.writer.history(
             "UPDATE visits SET title=?1 WHERE id=?2",
-            params![title, visit],
-        )?;
-        Ok(())
+            vec![Value::Text(title.into()), Value::Integer(visit)],
+        )
     }
     pub fn clear(&self) -> anyhow::Result<()> {
-        self.0.execute("DELETE FROM visits", [])?;
-        Ok(())
+        self.writer.history("DELETE FROM visits", vec![])?;
+        // A confirmed clear acknowledges the actual transaction, preserving the
+        // current error-reporting contract of the settings dialog.
+        self.writer.flush()
     }
     pub fn prune(&self, days: Option<u32>, time: i64) -> anyhow::Result<()> {
         if let Some(days) = days {
-            self.0.execute(
+            self.writer.history(
                 "DELETE FROM visits WHERE visited_at < ?1",
-                [time.saturating_sub(i64::from(days) * 86400)],
+                vec![Value::Integer(time.saturating_sub(i64::from(days) * 86400))],
             )?;
         }
         Ok(())
     }
-    #[cfg(feature = "smoke")]
+    #[cfg(any(test, feature = "smoke"))]
     pub fn count(&self) -> anyhow::Result<i64> {
-        Ok(self
-            .0
-            .query_row("SELECT count(*) FROM visits", [], |row| row.get(0))?)
+        self.writer.history_scalar("SELECT count(*) FROM visits")
     }
     pub fn search(&self, query: &str) -> anyhow::Result<Vec<HistoryItem>> {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
             return Ok(vec![]);
         }
-        // Rust lowercase handles Unicode; literal substring matching keeps %, _ and
-        // quotes literal. Deduplicate before matching so only the latest title wins.
-        let mut stmt = self
-            .0
-            .prepare("SELECT title,url FROM visits ORDER BY visited_at DESC,id DESC")?;
-        let mut rows = stmt.query([])?;
-        let mut seen = std::collections::HashSet::new();
-        let mut matches = Vec::new();
-        while let Some(row) = rows.next()? {
-            let title: String = row.get(0)?;
-            let url: String = row.get(1)?;
-            if seen.insert(url.clone())
-                && (title.to_lowercase().contains(&query) || url.to_lowercase().contains(&query))
-            {
-                matches.push(HistoryItem { title, url });
-                if matches.len() == 8 {
-                    break;
-                }
-            }
-        }
-        Ok(matches)
+        // Matching and the eight-result limit run on the writer, avoiding an
+        // allocation of the full visit log on the UI thread.
+        self.writer.history_search(&query)
     }
 }
 
@@ -116,8 +90,7 @@ mod tests {
     use super::*;
     #[test]
     fn persistence_repeats_titles_matching_retention_and_clear() {
-        let path =
-            std::env::temp_dir().join(format!("axolotl-history-{}.sqlite3", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("axolotl-history-{}", uuid::Uuid::new_v4()));
         {
             let db = BrowsingHistory::open(&path).unwrap();
             assert!(db.record("about:blank", "internal", 0).unwrap().is_none());
@@ -126,11 +99,7 @@ mod tests {
             let id = db.record("https://one.test/", "", 86400).unwrap().unwrap();
             db.title(id, "Über 100%_'").unwrap();
             db.record("http://two.test/", "Other", 86401).unwrap();
-            assert_eq!(
-                db.0.query_row("SELECT count(*) FROM visits", [], |r| r.get::<_, i64>(0))
-                    .unwrap(),
-                3
-            );
+            assert_eq!(db.count().unwrap(), 3);
             assert_eq!(db.search("ÜBER").unwrap()[0].title, "Über 100%_'");
             assert_eq!(db.search("%_'").unwrap().len(), 1);
             assert!(db.search("Old").unwrap().is_empty());
@@ -159,6 +128,81 @@ mod tests {
             assert_eq!(db.search("match").unwrap().len(), 8);
             assert_eq!(db.search("match").unwrap()[0].url, "https://test/11");
         }
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(path);
+    }
+    #[test]
+    fn background_visits_flush_and_ids_survive_clear_and_restart() {
+        let directory =
+            std::env::temp_dir().join(format!("axolotl-history-batch-{}", uuid::Uuid::new_v4()));
+        let first_id;
+        {
+            let db = BrowsingHistory::open(&directory).unwrap();
+            first_id = db
+                .record("https://batched.test/", "Queued", 1)
+                .unwrap()
+                .unwrap();
+            // The read waits behind pending writes, so a late title and immediate
+            // search see the same reserved identity before the 500 ms deadline.
+            db.title(first_id, "Updated before commit").unwrap();
+            assert_eq!(
+                db.search("updated").unwrap()[0].url,
+                "https://batched.test/"
+            );
+            db.clear().unwrap();
+            assert_eq!(db.count().unwrap(), 0);
+        }
+        {
+            let db = BrowsingHistory::open(&directory).unwrap();
+            let next_id = db.record("https://next.test/", "Next", 2).unwrap().unwrap();
+            assert!(
+                next_id > first_id,
+                "Clearing history must not reuse visit IDs"
+            );
+            db.writer.flush().unwrap();
+            let reader = rusqlite::Connection::open(directory.join("app.sqlite3")).unwrap();
+            assert_eq!(
+                reader
+                    .query_row("SELECT id FROM visits", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                next_id
+            );
+        }
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn smoke_history_uses_the_same_in_memory_writer_for_reads() {
+        let db = BrowsingHistory::from_store(Store::new(None).unwrap()).unwrap();
+        db.record("https://memory.test/", "Memory", 1).unwrap();
+        assert_eq!(db.count().unwrap(), 1);
+        assert_eq!(db.search("memory").unwrap().len(), 1);
+        db.clear().unwrap();
+        assert!(db.search("memory").unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod shared_writer_tests {
+    use super::*;
+    #[test]
+    fn consumers_share_visit_id_reservations() {
+        let writer = Store::new(None).unwrap();
+        let first = BrowsingHistory::from_store(writer.clone()).unwrap();
+        let second = BrowsingHistory::from_store(writer).unwrap();
+        let a = first
+            .record("https://first.test", "First", 1)
+            .unwrap()
+            .unwrap();
+        let b = second
+            .record("https://second.test", "Second", 1)
+            .unwrap()
+            .unwrap();
+        assert!(b > a);
+        assert_eq!(first.count().unwrap(), 2);
+        first.title(a, "First updated").unwrap();
+        assert_eq!(
+            second.search("updated").unwrap()[0].url,
+            "https://first.test"
+        );
     }
 }

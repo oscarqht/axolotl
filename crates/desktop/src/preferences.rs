@@ -1,6 +1,6 @@
 //! App preferences are independent of workspace/session snapshots.
 use std::path::PathBuf;
-use workspace_core::{NavigationError, SearchEngine, normalize_url, write_atomic};
+use workspace_core::{NavigationError, SearchEngine, normalize_url};
 
 pub struct Preferences {
     pub auto_sleep: bool,
@@ -13,14 +13,25 @@ pub struct Preferences {
 
 impl Preferences {
     pub fn restore() -> Self {
-        Self::load(crate::persistence::data_dir().map(|dir| dir.join("settings.json")))
+        Self::load(crate::persistence::data_dir())
     }
 
     fn load(path: Option<PathBuf>) -> Self {
         let value = path
             .as_ref()
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .and_then(|_dir| {
+                #[cfg(test)]
+                let result = crate::persistence::load_from::<serde_json::Value>(_dir, "settings");
+                #[cfg(not(test))]
+                let result = crate::persistence::load::<serde_json::Value>("settings");
+                match result {
+                    Ok(value) => value,
+                    Err(error) => {
+                        eprintln!("Axolotl: failed to restore preferences: {error}");
+                        None
+                    }
+                }
+            })
             .unwrap_or_default();
         Self {
             auto_sleep: value["auto_sleep"].as_bool().unwrap_or(true),
@@ -90,7 +101,7 @@ impl Preferences {
         self.save()
     }
     fn save(&self) -> std::io::Result<()> {
-        let Some(path) = &self.path else {
+        let Some(_path) = &self.path else {
             return Ok(());
         };
         let json = serde_json::json!({
@@ -100,7 +111,11 @@ impl Preferences {
             "homepage_url": self.homepage_url,
             "history_retention_days": self.history_retention_days,
         });
-        write_atomic(path, json.to_string().as_bytes())
+        #[cfg(test)]
+        let result = crate::persistence::save_to(_path, "settings", &json);
+        #[cfg(not(test))]
+        let result = crate::persistence::save("settings", &json);
+        result.map_err(std::io::Error::other)
     }
 }
 
@@ -128,26 +143,30 @@ mod tests {
     fn missing_invalid_and_unknown_preferences_default_to_google() {
         let dir = std::env::temp_dir()
             .join(["axolotl-preferences-", &uuid::Uuid::new_v4().to_string()].concat());
-        let path = dir.join("settings.json");
+        let path = dir.clone();
         assert_eq!(
             Preferences::load(Some(path.clone())).search_engine,
             SearchEngine::Google
         );
         std::fs::create_dir_all(&dir).unwrap();
         for json in [
-            "{bad",
             "{}",
-            "null",
             r#"{"search_engine":false}"#,
             r#"{"search_engine":"unknown"}"#,
         ] {
-            std::fs::write(&path, json).unwrap();
+            crate::persistence::save_to(
+                &path,
+                "settings",
+                &serde_json::from_str::<serde_json::Value>(json).unwrap(),
+            )
+            .unwrap();
             assert_eq!(
                 Preferences::load(Some(path.clone())).search_engine,
                 SearchEngine::Google
             );
         }
-        std::fs::write(dir.join("session.json"), "unrelated session").unwrap();
+        let legacy = dir.join("settings.json");
+        std::fs::write(&legacy, "retained migration backup").unwrap();
         for engine in [
             SearchEngine::Bing,
             SearchEngine::DuckDuckGo,
@@ -158,8 +177,8 @@ mod tests {
             assert_eq!(prefs.search_engine, engine);
             assert_eq!(Preferences::load(Some(path.clone())).search_engine, engine);
             assert_eq!(
-                std::fs::read_to_string(dir.join("session.json")).unwrap(),
-                "unrelated session"
+                std::fs::read_to_string(&legacy).unwrap(),
+                "retained migration backup"
             );
         }
         std::fs::remove_dir_all(dir).unwrap();
@@ -169,7 +188,7 @@ mod tests {
     fn homepage_validation_defaults_and_independent_persistence() {
         let dir = std::env::temp_dir()
             .join(["axolotl-homepage-", &uuid::Uuid::new_v4().to_string()].concat());
-        let path = dir.join("settings.json");
+        let path = dir.clone();
         let mut prefs = Preferences::load(Some(path.clone()));
         assert_eq!(prefs.homepage_url, "about:blank");
         prefs.set_homepage_url(" https://example.com ").unwrap();
@@ -212,9 +231,10 @@ mod tests {
             serde_json::json!(false),
             serde_json::json!("javascript:alert(1)"),
         ] {
-            std::fs::write(
+            crate::persistence::save_to(
                 &path,
-                serde_json::json!({"search_engine":"bing", "homepage_url":value}).to_string(),
+                "settings",
+                &serde_json::json!({"search_engine":"bing", "homepage_url":value}),
             )
             .unwrap();
             let loaded = Preferences::load(Some(path.clone()));
@@ -227,7 +247,7 @@ mod tests {
     #[test]
     fn history_retention_defaults_validates_and_persists() {
         let dir = std::env::temp_dir().join(format!("axolotl-retention-{}", uuid::Uuid::new_v4()));
-        let path = dir.join("settings.json");
+        let path = dir.clone();
         let mut prefs = Preferences::load(Some(path.clone()));
         assert_eq!(prefs.history_retention_days, Some(30));
         for days in [None, Some(1), Some(365), Some(u32::MAX)] {
@@ -245,9 +265,10 @@ mod tests {
             serde_json::json!("never"),
             serde_json::json!(4294967296_u64),
         ] {
-            std::fs::write(
+            crate::persistence::save_to(
                 &path,
-                serde_json::json!({"history_retention_days":value}).to_string(),
+                "settings",
+                &serde_json::json!({"history_retention_days":value}),
             )
             .unwrap();
             assert_eq!(
@@ -262,7 +283,7 @@ mod tests {
     fn sleep_preferences_defaults_validation_and_round_trip() {
         let dir =
             std::env::temp_dir().join(format!("axolotl-sleep-prefs-{}", uuid::Uuid::new_v4()));
-        let path = dir.join("settings.json");
+        let path = dir.clone();
         let mut prefs = Preferences::load(Some(path.clone()));
         assert!(prefs.auto_sleep);
         assert_eq!(prefs.sleep_minutes, 30);
@@ -279,9 +300,10 @@ mod tests {
             serde_json::json!(1.5),
             serde_json::json!("30"),
         ] {
-            std::fs::write(
+            crate::persistence::save_to(
                 &path,
-                serde_json::json!({"sleep_minutes":value}).to_string(),
+                "settings",
+                &serde_json::json!({"sleep_minutes":value}),
             )
             .unwrap();
             assert_eq!(Preferences::load(Some(path.clone())).sleep_minutes, 30);
@@ -294,6 +316,7 @@ mod tests {
         let dir = std::env::temp_dir()
             .join(["axolotl-preferences-", &uuid::Uuid::new_v4().to_string()].concat());
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir(dir.join("app.sqlite3")).unwrap();
         let mut prefs = Preferences::load(Some(dir.clone()));
         assert!(prefs.set_search_engine(SearchEngine::Bing).is_err());
         assert_eq!(prefs.search_engine, SearchEngine::Bing);

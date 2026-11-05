@@ -226,7 +226,9 @@ impl BrowserApp {
         self.host.retain(&ids);
         #[cfg(target_os = "macos")]
         self.native_popup_sources.retain(|id, _| ids.contains(id));
-        self.sleep.retain(&ids);
+        if self.sleep.retain(&ids) {
+            self.saver.checkpoint(&self.model, &self.sleep.entries);
+        }
         self.notifications.retain(|id, _| ids.contains(id));
         self.favicons.retain(|id, _| ids.contains(id));
         for pin in self

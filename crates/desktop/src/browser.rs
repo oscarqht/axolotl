@@ -151,6 +151,8 @@ pub trait BrowserHost {
     fn reset_popup_transition(&self, tab: TabId) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn popup_animation_state(&self, tab: TabId) -> Result<serde_json::Value>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn panel_clip_state(&self, tab: TabId) -> Result<serde_json::Value>;
 
     fn rekey(&self, from: TabId, to: TabId) -> Result<()>;
     fn capture_sleep(&self, tab: TabId, image: crate::drag_preview::Snapshot) -> Result<()>;
@@ -479,6 +481,18 @@ impl WryHost {
         // Build without a target URL: filtering must be installed before the
         // first network navigation, including redirects and restored tabs.
         let view = build(builder).context("Creating native browser child view")?;
+        #[cfg(target_os = "macos")]
+        {
+            use wry::WebViewExtMacOS;
+            // Native pages are siblings above GPUI, so the pane's overflow clip
+            // cannot clip them. A layer mask follows the view through relayout,
+            // tab moves and popup promotion without touching document styles.
+            let native = view.webview();
+            native.setWantsLayer(true);
+            let layer = native.layer().context("Creating browser panel layer")?;
+            layer.setCornerRadius(f64::from(crate::render::PANEL_CORNER_RADIUS));
+            layer.setMasksToBounds(true);
+        }
         #[cfg(target_os = "macos")]
         crate::downloads::install(&view, self.downloads.clone())?;
         #[cfg(target_os = "windows")]
@@ -844,6 +858,22 @@ impl BrowserHost for WryHost {
         self.get(tab)?
             .set_bounds(native_bounds(bounds))
             .context("Positioning browser view")
+    }
+
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn panel_clip_state(&self, tab: TabId) -> Result<serde_json::Value> {
+        use wry::WebViewExtMacOS;
+        let view = self.get(tab)?;
+        let native = view.webview();
+        let layer = native.layer().context("Missing panel layer")?;
+        let frame = native.frame();
+        Ok(serde_json::json!({
+            "radius": layer.cornerRadius(),
+            "clips": layer.masksToBounds(),
+            "corners": layer.maskedCorners().0,
+            "width": frame.size.width,
+            "height": frame.size.height,
+        }))
     }
 
     fn show(&self, tab: TabId, visible: bool) -> Result<()> {

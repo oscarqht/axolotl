@@ -177,6 +177,10 @@ async fn run(
         return crate::smoke_sleep::session(view, cx).await;
     }
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-corners") {
+        return crate::smoke_corners::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-sleep") {
         return crate::smoke_sleep::run(view, cx).await;
     }

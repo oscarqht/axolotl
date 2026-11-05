@@ -246,6 +246,10 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-downloads
 # macOS native pointer-capture split release regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
 
+# macOS four-corner native clipping through splits, resizing and panel moves
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-corners
+# Add --smoke-hold-corners to pause each colored layout for visual inspection.
+
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
 

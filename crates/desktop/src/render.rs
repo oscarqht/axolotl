@@ -5,6 +5,7 @@ use workspace_core::{Axis, PaneId, Rect};
 
 pub const TOP: f32 = 38.;
 pub const TAB_WIDTH: f32 = 204.;
+pub const PANEL_CORNER_RADIUS: f32 = 10.;
 
 #[cfg(target_os = "windows")]
 fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
@@ -454,6 +455,8 @@ impl BrowserApp {
             .top(px(rect.y - TOP))
             .w(px(rect.width))
             .h(px(rect.height))
+            .rounded(px(PANEL_CORNER_RADIUS))
+            .overflow_hidden()
             .bg(rgb(colors.surface))
             .child(
                 div()
@@ -462,6 +465,7 @@ impl BrowserApp {
                     .bottom_0()
                     .left_0()
                     .right_0()
+                    .rounded(px(PANEL_CORNER_RADIUS))
                     .bg(rgb(colors.page))
                     .child(if self.sleep.is_sleeping(tab) {
                         div()
@@ -469,11 +473,12 @@ impl BrowserApp {
                             .size_full()
                             .relative()
                             .cursor_pointer()
-                            .children(
-                                self.sleep
-                                    .image(tab)
-                                    .map(|image| img(image).size_full().opacity(0.5)),
-                            )
+                            .children(self.sleep.image(tab).map(|image| {
+                                img(image)
+                                    .size_full()
+                                    .rounded(px(PANEL_CORNER_RADIUS))
+                                    .opacity(0.5)
+                            }))
                             .when(self.sleep.image(tab).is_none(), |el| {
                                 el.child(div().opacity(0.5).child(format!(
                                     "💤 {}",

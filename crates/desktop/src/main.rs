@@ -51,6 +51,8 @@ mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_copy_url;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_corners;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
 #[cfg(feature = "smoke")]
 mod smoke_external_urls;

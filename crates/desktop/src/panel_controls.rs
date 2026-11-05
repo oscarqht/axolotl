@@ -168,6 +168,10 @@ impl BrowserApp {
             .map(|t| t.id)
             .collect();
         self.host.retain(&ids);
+        self.notifications.retain(|id, _| ids.contains(id));
+        if window.is_window_active() {
+            self.notifications.remove(&self.active_tab());
+        }
         let viewport = window.viewport_size();
         let content = Rect::new(
             0.,
@@ -244,6 +248,7 @@ impl BrowserApp {
                     let (back, forward) = self.history.get(&t.id).copied().unwrap_or_default();
                     serde_json::json!({
                         "id": t.id,
+                        "notifications": self.notifications.get(&t.id).copied().unwrap_or_default(),
                         "title": t.display_title(),
                         "customTitle": t.custom_title,
                         "url": t.url,

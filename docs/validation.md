@@ -1,3 +1,29 @@
+# Page notification badges
+
+Run on 2026-11-05 in `bro-tab-notification-badges` on macOS.
+
+- Page `new Notification(...)` calls reach the tab host even from hidden tabs.
+  Unfocused tabs accumulate unread counts; foreground selected tabs do not.
+  Selecting a chip, focusing its pane/native page, or reactivating the window
+  clears the selected tab. Closed tabs are removed from unread state.
+- Chips show red rounded badges with white numbers; the compact bar sums the
+  current panel's tabs alongside its active index/count. Values above 99 display
+  `99+`, with the exact count in a tooltip and accessible label.
+- The page shim supports badge-only notifications without OS permissions and
+  forwards to a native constructor only when native permission is already
+  granted. Its permission methods describe in-app badge support. Service-worker
+  and push notifications are excluded; counts are not persisted.
+- Passed: 42 Rust tests (all features), nine JavaScript bridge/fallback tests,
+  formatting, whitespace checks, and strict Clippy for all targets/features.
+- `cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications`
+  passed in the native WKWebView host. It checks the page API, foreground
+  suppression, native focus and chip-selection clearing, combined panel totals,
+  expanded/compact badge text and computed colors/geometry, moves and closes.
+  It uses programmatic native evaluation and chip clicks, without physical OS
+  mouse/keyboard input. Startup attempts while the login window owned the
+  session could not exercise foreground behavior; the final run did exercise it.
+- Windows runtime and actual OS notification delivery were not exercised.
+
 # Tab chip context menu
 
 Run on 2026-11-05 in `bro-tab-chip-context-menu` on macOS.

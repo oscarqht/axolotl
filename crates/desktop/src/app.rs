@@ -101,6 +101,7 @@ pub struct BrowserApp {
     pub poll_count: u8,
     /// Last history probe per tab: (can go back, can go forward).
     pub history: HashMap<TabId, (bool, bool)>,
+    pub notifications: HashMap<TabId, u32>,
 }
 
 impl BrowserApp {
@@ -140,6 +141,9 @@ impl BrowserApp {
         cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
                 this.cancel_tab_drag(cx);
+            } else {
+                this.notifications.remove(&this.active_tab());
+                cx.notify();
             }
         })
         .detach();
@@ -179,6 +183,7 @@ impl BrowserApp {
             status: String::new(),
             poll_count: 0,
             history: HashMap::new(),
+            notifications: HashMap::new(),
         }
     }
 
@@ -236,6 +241,7 @@ impl BrowserApp {
         if self.editing.is_none() {
             self.focus.focus(window);
         }
+        self.notifications.remove(&self.active_tab());
         self.sync_address(window, cx);
         self.reveal_focused();
         cx.notify();
@@ -289,6 +295,7 @@ impl BrowserApp {
             self.cancel_edit(window, cx);
         }
         self.model.focus_pane(pane);
+        self.notifications.remove(&self.active_tab());
         self.sync_address(window, cx);
         cx.notify();
     }
@@ -398,7 +405,16 @@ impl BrowserApp {
         }
         for event in events {
             match event {
+                BrowserEvent::Notification(tab) => {
+                    if self.model.tab(tab).is_some()
+                        && !(window.is_window_active() && tab == self.active_tab())
+                    {
+                        let count = self.notifications.entry(tab).or_default();
+                        *count = count.saturating_add(1);
+                    }
+                }
                 BrowserEvent::Focused(tab) => {
+                    self.notifications.remove(&tab);
                     // Native child focus is outside GPUI's focus tree, so it may
                     // not emit InputEvent::Blur (including clicks in the same pane).
                     self.cancel_edit(window, cx);

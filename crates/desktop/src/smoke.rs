@@ -173,6 +173,9 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-input") {
         return crate::smoke_input::run(view, cx).await;
     }
+    if std::env::args().any(|arg| arg == "--smoke-notifications") {
+        return crate::smoke_notifications::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-bar-sizing") {
         return crate::smoke_panels::check_sizing(view, cx).await;
     }

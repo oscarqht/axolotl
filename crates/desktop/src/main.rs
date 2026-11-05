@@ -23,6 +23,8 @@ mod smoke_input;
 #[cfg(feature = "smoke")]
 mod smoke_menu;
 #[cfg(feature = "smoke")]
+mod smoke_notifications;
+#[cfg(feature = "smoke")]
 mod smoke_panels;
 mod split_preview;
 

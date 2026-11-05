@@ -45,6 +45,7 @@ pub fn with_inline_html<'a>(
 #[derive(Debug, Clone)]
 pub enum BrowserEvent {
     Focused(TabId),
+    Notification(TabId),
     Navigated(TabId, String),
     Title(TabId, String),
     Loaded(TabId),
@@ -247,6 +248,7 @@ impl BrowserHost for WryHost {
                 },
             )
             .replace("__GESTURES__", include_str!("../assets/gestures.js"));
+        let notifications = include_str!("../assets/notifications.js").replace("__NONCE__", &nonce);
         let start_url = html_data_url(START_HTML);
         let builder = WebViewBuilder::new()
             .with_visible(false)
@@ -264,10 +266,16 @@ impl BrowserHost for WryHost {
                 false,
             )
             .with_initialization_script_for_main_only(input_bridge, false)
+            .with_initialization_script_for_main_only(notifications, false)
             .with_navigation_handler(move |url| {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
             })
             .with_ipc_handler(move |request| {
+                // Notifications must also arrive from hidden tabs and spaces.
+                if request.body() == &format!("{nonce}:notification") {
+                    let _ = ipc.try_send(BrowserEvent::Notification(tab));
+                    return;
+                }
                 if !visible.borrow().contains(&tab) {
                     return;
                 }

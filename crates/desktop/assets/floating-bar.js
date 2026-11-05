@@ -1,3 +1,15 @@
+function updateBadge(parent, count) {
+  let badge = parent.querySelector('.notification-badge');
+  if (!count) { badge?.remove(); return; }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'notification-badge';
+    badge.setAttribute('aria-hidden', 'true');
+    parent.insertBefore(badge, parent.querySelector(".close"));
+  }
+  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.title = `${count} unread notifications`;
+}
 const send = (v) => window.ipc.postMessage(JSON.stringify(v)),
   bar = document.querySelector("#bar"),
   tabs = document.querySelector("#tabs");
@@ -209,6 +221,10 @@ window.updateBar = (s) => {
   }
   document.querySelector("#count").textContent =
     `${s.tabs.findIndex((t) => t.id === s.active) + 1}/${s.tabs.length}`;
+  const countButton = document.querySelector("#count");
+  const total = s.tabs.reduce((sum, t) => sum + (t.notifications || 0), 0);
+  updateBadge(countButton, total);
+  countButton.setAttribute("aria-label", `Show tabs${total ? `, ${total} unread notifications` : ''}`);
   if (
     old.tabs.map((t) => t.id).join(",") !== s.tabs.map((t) => t.id).join(",") ||
     old.editing !== s.editing ||
@@ -338,6 +354,8 @@ window.updateBar = (s) => {
   for (const [index, chip] of [...tabs.children].entries()) {
     const t = s.tabs[index];
     chip.title = t.title || t.url || "New tab";
+    updateBadge(chip, t.notifications || 0);
+    chip.setAttribute("aria-label", `${chip.title}${t.notifications ? `, ${t.notifications} unread notifications` : ''}`);
     const label = chip.querySelector(".label");
     if (label) label.textContent = t.title || t.url || "New tab";
     const image = chip.querySelector("img");

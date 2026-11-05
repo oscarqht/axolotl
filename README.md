@@ -92,6 +92,16 @@ machine running the executable. See the validation report below for tested scope
   The bar animates between compact and expanded states, fitting the handle,
   chips and add button. Its maximum is the panel width with 16px edge margins. Overflow fades indicate hidden chips on either side
   and clear at the corresponding scroll end. Reduced-motion settings are respected.
+- Page JavaScript `new Notification(...)` adds an unread count while its tab
+  is unfocused, including hidden tabs and spaces. Red badges with white numbers
+  appear on tab chips; the collapsed bar shows the panel sum beside its tab
+  index/count. Selecting or focusing a tab clears its count. Counts are in memory
+  and disappear on restart. Badges display `99+` above 99, with the exact count
+  in the tooltip and accessible label.
+  The page API supports badges without a system notification prompt; its
+  `permission`/`requestPermission()` report permission for in-app badges. Native
+  delivery is forwarded only when the engine already has permission and supports
+  the constructor. Service-worker and push notifications are not included.
 - Drag a chip to reorder within a panel, dock into another panel's chip row or
   center, or create a split at any edge. Drag the handle to move the complete
   stack: center drops merge panels and edge drops reposition the whole panel.
@@ -127,7 +137,7 @@ supplies standard copy/paste actions to both web content and the inline URL inpu
 ## Checks
 
 ```sh
-node --test scripts/test-input-bridge.cjs
+node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -139,6 +149,9 @@ exits. It requires a GUI session and HTTPS access to example.com:
 
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
+
+# Focused native check for page notifications and unread badges (no network needed)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications
 
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing

@@ -53,7 +53,9 @@ impl BrowserApp {
                 let colors = crate::chrome_theme::ChromeColors::current(cx);
                 let state = serde_json::json!({
                     "x": f32::from(menu.position.x), "y": f32::from(menu.position.y),
-                    "title": space.custom_title.as_deref().unwrap_or(space.display_title()),
+                    "title": space.custom_title.as_deref().unwrap_or(""),
+                    "placeholder": space.display_title(),
+                    "icon": space.icon,
                     "ink": format!("#{:06x}", colors.ink),
                     "surface": format!("#{:06x}", colors.surface),
                     "hover": format!("#{:06x}", colors.hover),
@@ -64,6 +66,10 @@ impl BrowserApp {
                         .with_transparent(true)
                         .with_focused(false)
                         .with_initialization_script(format!("window.spaceMenuState={state}"))
+                        .with_initialization_script(format!(
+                            "window.spaceEmojiData={}",
+                            include_str!("../assets/emoji-data.json")
+                        ))
                         .with_new_window_req_handler(|_, _| NewWindowResponse::Deny)
                         .with_ipc_handler(move |request| {
                             if let Ok(event) = serde_json::from_str(request.body()) {
@@ -112,7 +118,13 @@ impl BrowserApp {
                     if event["type"] == "save"
                         && let Some(value) = event["value"].as_str()
                     {
-                        self.model.set_space_title(menu.space, value);
+                        let icon = event["icon"].as_str().filter(|icon| {
+                            serde_json::from_str::<Vec<(String, String)>>(include_str!(
+                                "../assets/emoji-data.json"
+                            ))
+                            .is_ok_and(|items| items.iter().any(|(emoji, _)| emoji == icon))
+                        });
+                        self.model.set_space_details(menu.space, value, icon);
                     }
                     self.space_menu = None;
                     self.focus.focus(window);

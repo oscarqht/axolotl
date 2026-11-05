@@ -244,6 +244,18 @@ impl BrowserApp {
                     .items_center()
                     .overflow_hidden()
                     .cursor_pointer()
+                    .children(
+                        match target {
+                            TabTarget::Space(id) => self
+                                .model
+                                .spaces
+                                .iter()
+                                .find(|s| s.id == id)
+                                .and_then(|s| s.icon.as_ref()),
+                            TabTarget::Page(_, _) => None,
+                        }
+                        .map(|icon| div().flex_shrink_0().mr_1().child(icon.clone())),
+                    )
                     .child(div().truncate().child(if title.is_empty() {
                         "New tab".to_owned()
                     } else {

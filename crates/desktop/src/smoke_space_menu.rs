@@ -15,7 +15,7 @@ async fn eval(
     view.update_in(cx, |app, _, _| {
         app.space_menu
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing space menu"))?
+            .ok_or_else(|| anyhow::anyhow!("Missing space menu evaluating: {script}"))?
             .evaluate(script, move |v| *target.lock().unwrap() = Some(v))
     })??;
     for _ in 0..50 {
@@ -50,7 +50,16 @@ pub(crate) async fn run(
             .collect();
         (active, other, page_titles)
     })?;
-    for action in ["save", "clear", "escape", "outside"] {
+    // Let newly created native page surfaces settle before mounting the menu.
+    pause(cx).await;
+    pause(cx).await;
+    for action in ["save", "escape", "outside", "enter", "clear", "blank"] {
+        view.update_in(cx, |_, window, cx| {
+            window.activate_window();
+            cx.activate(true);
+        })?;
+        pause(cx).await;
+        pause(cx).await;
         view.update_in(cx, |app, window, cx| {
             let size = window.viewport_size();
             // Near both viewport edges; the menu/editor must remain inside them.
@@ -65,33 +74,63 @@ pub(crate) async fn run(
         pause(cx).await;
         let snapshot = eval(view, "(()=>{const r=menu.getBoundingClientRect();return {items:[...menu.querySelectorAll('[role=menuitem]')].map(b=>b.textContent),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight}})()", cx).await?;
         ensure!(
-            snapshot["items"] == serde_json::json!(["Set title…"]) && snapshot["fits"] == true,
+            snapshot["items"] == serde_json::json!(["Edit space"]) && snapshot["fits"] == true,
             "Incorrect/clipped space menu: {snapshot}"
         );
-        match action {
-            "save" | "clear" => {
-                let editor = eval(view, "button.click();({focused:document.activeElement===input,selected:input.selectionEnd-input.selectionStart,fits:menu.getBoundingClientRect().bottom<=innerHeight})", cx).await?;
-                ensure!(
-                    editor["focused"] == true && editor["fits"] == true,
-                    "Space title editor is not usable: {editor}"
-                );
-                let value = if action == "save" {
-                    "  Fixed space  "
+        let editor = eval(view, "button.click();({focused:document.activeElement===input,fits:menu.getBoundingClientRect().bottom<=innerHeight,icon:icon})", cx).await?;
+        ensure!(
+            editor["focused"] == true && editor["fits"] == true,
+            "Editor unusable: {editor}"
+        );
+        ensure!(
+            editor["icon"]
+                == if action == "save" || action == "blank" {
+                    Value::Null
                 } else {
-                    ""
-                };
+                    serde_json::json!("🚀")
+                },
+            "Wrong initial icon: {editor}"
+        );
+        let picker = eval(view, "iconButton.click();search.value='rocket';search.dispatchEvent(new Event('input'));(()=>{const r=menu.getBoundingClientRect();return {rocket:[...emojis.children].some(b=>b.textContent==='🚀'),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,focused:document.activeElement===search}})()", cx).await?;
+        ensure!(
+            picker["rocket"] == true && picker["fits"] == true && picker["focused"] == true,
+            "Picker failed: {picker}"
+        );
+        let selected = eval(view, "[...emojis.children].find(b=>b.textContent==='🚀').click();({icon,closed:picker.hidden})", cx).await?;
+        ensure!(
+            selected["icon"] == "🚀" && selected["closed"] == true,
+            "Selection failed: {selected}"
+        );
+        match action {
+            "save" => {
                 eval(
                     view,
-                    &format!("input.value={value:?};form.requestSubmit();true"),
+                    "input.value='  Fixed space  ';document.querySelector('#save').click();true",
                     cx,
                 )
                 .await?;
             }
+            "enter" => {
+                eval(view, "input.value='Fixed space';input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true", cx).await?;
+            }
+            "clear" => {
+                let cleared = eval(view, "iconButton.click();search.value='zzzz-no-match';search.dispatchEvent(new Event('input'));(()=>{const empty=!document.querySelector('#empty').hidden&&emojis.children.length===0;document.querySelector('#clear').click();return {empty,icon,closed:picker.hidden}})()", cx).await?;
+                ensure!(
+                    cleared["empty"] == true
+                        && cleared["icon"].is_null()
+                        && cleared["closed"] == true,
+                    "Clear failed: {cleared}"
+                );
+                eval(view, "form.requestSubmit();true", cx).await?;
+            }
+            "blank" => {
+                eval(view, "input.value=' ';form.requestSubmit();true", cx).await?;
+            }
             "escape" => {
-                eval(view, "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true", cx).await?;
+                eval(view, "input.value='Discard me';iconButton.click();document.querySelector('#clear').click();document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true", cx).await?;
             }
             _ => {
-                eval(view, "document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));true", cx).await?;
+                eval(view, "input.value='Discard me';iconButton.click();document.querySelector('#clear').click();document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));true", cx).await?;
             }
         }
         pause(cx).await;
@@ -104,12 +143,28 @@ pub(crate) async fn run(
             let space = app.model.spaces.iter().find(|s| s.id == other).unwrap();
             ensure!(
                 space.custom_title.as_deref()
-                    == if action == "save" {
+                    == if action != "blank" {
                         Some("Fixed space")
                     } else {
                         None
                     },
                 "Space title targeted the wrong space or failed to clear"
+            );
+            ensure!(
+                space.icon.as_deref()
+                    == if action == "clear" {
+                        None
+                    } else {
+                        Some("🚀")
+                    },
+                "Wrong icon after {action}"
+            );
+            let restored = workspace_core::Workspace::from_json(&app.model.to_json())?;
+            let restored_space = restored.spaces.iter().find(|s| s.id == other).unwrap();
+            ensure!(
+                restored_space.icon == space.icon
+                    && restored_space.custom_title == space.custom_title,
+                "Space edit did not persist"
             );
             ensure!(
                 space.focused_pane().active_tab().title == "Original page title"
@@ -139,6 +194,49 @@ pub(crate) async fn run(
         app.model.close_space(other);
     })?;
     Ok(
-        "native space menu: single Set title item, inactive-space targeting, save/clear without changing page titles, focused editor, viewport clamping, Escape/outside dismissal",
+        "native Edit space: emoji search/select/clear, no results, Save/Enter, draft cancellation, title fallback, session roundtrip, inactive targeting, unchanged page titles, viewport clamping",
     )
+}
+
+/// Multi-process persistence regression, isolated from the user's profile.
+pub(crate) fn session_probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
+    let Some(stage) =
+        std::env::args().find_map(|a| a.strip_prefix("--space-session-probe=").map(str::to_owned))
+    else {
+        return;
+    };
+    assert!(
+        std::env::var_os("AXOLOTL_DATA_DIR").is_some(),
+        "Session probe requires an isolated profile"
+    );
+    let view = app.downgrade();
+    window.spawn(cx, async move |cx| {
+        let result: Result<Value> = async {
+            pause(cx).await;
+            pause(cx).await;
+            view.update_in(cx, |app, window, cx| {
+                window.activate_window();
+                cx.activate(true);
+                app.open_space_menu(app.model.active_space, point(px(120.), px(40.)), window, cx);
+            })?;
+            pause(cx).await;
+            pause(cx).await;
+            let before = eval(&view, "button.click();({title:input.value,icon})", cx).await?;
+            if stage == "seed" {
+                eval(&view, "input.value='Restart space';iconButton.click();search.value='rocket';search.dispatchEvent(new Event('input'));[...emojis.children].find(b=>b.textContent==='🚀').click();document.querySelector('#save').click();true", cx).await?;
+            } else {
+                ensure!(before["title"] == "Restart space", "Title not restored: {before}");
+                ensure!(before["icon"] == if stage == "restore" { serde_json::json!("🚀") } else { Value::Null }, "Icon not restored: {before}");
+                eval(&view, "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true", cx).await?;
+            }
+            // Let the real SessionSaver debounce write before process shutdown.
+            for _ in 0..6 { pause(cx).await; }
+            Ok(before)
+        }.await;
+        match result {
+            Ok(before) => println!("AXOLOTL_SPACE_SESSION {}", serde_json::json!({"stage":stage,"before":before})),
+            Err(error) => { eprintln!("Session probe failed: {error:#}"); std::process::exit(1); }
+        }
+        let _ = cx.update(|_, cx| cx.quit());
+    }).detach();
 }

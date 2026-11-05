@@ -89,6 +89,11 @@ machine running the executable. See the validation report below for tested scope
   the strip to scroll through overflow. Drop inside the strip to save the new
   order across restarts. Escape or dropping outside cancels and retains the
   active space.
+- Right-click a space tab and choose **Edit space** to set a fixed title and an
+  optional emoji icon. Click the icon button to search emoji by name or clear the
+  icon. **Save** or Enter saves both fields; Escape or clicking outside discards
+  changes. A blank title follows the focused page title. Titles and icons survive
+  restarts. Editing an inactive space keeps the active space selected.
 - Each panel has a bottom-centered floating bar above its live page: a panel
   drag handle, active index/count (for example **2/5**), and **+**. Hover or focus
   the count/chip area, or tap the count, to expand it into favicon/title chips.
@@ -196,6 +201,12 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
 
+# Space editor, emoji search/select/clear, save/cancel and session roundtrip
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-menu
+
+# Title/icon persistence across separate native processes and legacy sessions
+python3 scripts/test-space-session.py target/debug/axolotl
+
 # Space order, measured insertion slots, edge scrolling and cancellation
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-drag
 ```
@@ -270,6 +281,11 @@ this milestone. Chrome extensions are not supported by this Wry backend.
 The GUI-independent workspace core can be reused by future mobile shells. See
 [architecture and integration findings](docs/architecture.md) for the engine
 boundary, platform tradeoffs, and follow-up work.
+
+The bundled emoji catalog contains Unicode Emoji 16.0 fully-qualified sequences
+and English names from [Unicode emoji-test.txt](https://unicode.org/Public/emoji/16.0/emoji-test.txt),
+under the [Unicode License](crates/desktop/assets/unicode-license.txt). Emoji
+appearance and glyph availability depend on the operating system.
 
 ### Pinned tab popups
 

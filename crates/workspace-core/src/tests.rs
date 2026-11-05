@@ -748,6 +748,52 @@ fn space_title_is_independent_of_pages_focus_and_selection_and_round_trips() {
 }
 
 #[test]
+fn space_details_save_together_and_survive_session_restore() {
+    let mut workspace = Workspace::default();
+    let first = workspace.active_space;
+    let tab = workspace.focused_pane().active_tab;
+    workspace.tab_mut(tab).unwrap().title = "Page title".into();
+    let other = workspace.add_space("Other", "about:blank");
+    assert!(workspace.spaces.iter().all(|space| space.icon.is_none()));
+    assert!(!workspace.to_json().contains("\"icon\""));
+
+    assert!(workspace.set_space_details(first, "  Work  ", Some("  🧑‍💻  ")));
+    assert_eq!(workspace.active_space, other);
+    assert_eq!(workspace.tab(tab).unwrap().title, "Page title");
+    assert!(workspace.tab(tab).unwrap().custom_title.is_none());
+    assert!(workspace.active_space().icon.is_none());
+    let restored = Workspace::from_json(&workspace.to_json()).unwrap();
+    let space = restored
+        .spaces
+        .iter()
+        .find(|space| space.id == first)
+        .unwrap();
+    assert_eq!(space.custom_title.as_deref(), Some("Work"));
+    assert_eq!(space.icon.as_deref(), Some("🧑‍💻"));
+    assert_eq!(restored.active_space, other);
+
+    // Title-only callers retain the chosen icon.
+    assert!(workspace.set_space_title(first, "Renamed"));
+    assert_eq!(workspace.spaces[0].icon.as_deref(), Some("🧑‍💻"));
+    assert!(workspace.set_space_details(first, " ", None));
+    assert_eq!(workspace.spaces[0].custom_title, None);
+    assert_eq!(workspace.spaces[0].icon, None);
+    assert_eq!(workspace.spaces[0].display_title(), "Page title");
+    assert!(workspace.set_space_details(first, "", Some(" ")));
+    assert_eq!(workspace.spaces[0].icon, None);
+    assert!(!workspace.set_space_details(u64::MAX, "Missing", Some("🚀")));
+
+    // Existing sessions have no icon property and must continue to load.
+    let mut legacy: serde_json::Value = serde_json::from_str(&restored.to_json()).unwrap();
+    for space in legacy["spaces"].as_array_mut().unwrap() {
+        space.as_object_mut().unwrap().remove("icon");
+    }
+    let legacy = Workspace::from_json(&legacy.to_string()).unwrap();
+    assert!(legacy.spaces.iter().all(|space| space.icon.is_none()));
+    assert_eq!(legacy.spaces[0].custom_title.as_deref(), Some("Work"));
+}
+
+#[test]
 fn search_providers_encode_queries_without_changing_url_navigation() {
     use crate::{normalize_url_with_engine, SearchEngine};
     assert_eq!(

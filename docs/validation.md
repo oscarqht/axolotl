@@ -30,6 +30,30 @@ Run on 2026-11-05 in `bro-fix-webpage-arrow-keys` on macOS.
 - Passed: 49 Rust tests with all features, 10 JavaScript bridge/notification
   tests, formatting, whitespace checks and strict all-target/all-feature Clippy.
 
+# Edit space and emoji icons
+
+Run on 2026-11-05 in `bro-edit-space-emoji` on macOS.
+
+- Space context menu now opens Edit space with a title field, optional icon,
+  searchable offline Unicode emoji catalog, Clear, and Save. Save/Enter commits
+  title and icon together; Escape/outside click discards the draft. Blank titles
+  continue following the focused page. Icons render before the space title and
+  clearing removes their spacing.
+- Passed: 52 workspace unit tests, 10 JavaScript tests, formatting, whitespace
+  checks, and all-target/all-feature strict Clippy.
+- Focused native WebKit smoke covers search/select/clear/no results, Save/Enter,
+  cancellation after changes, inactive-space targeting without selection or
+  page-title changes, and viewport-edge clamping. Native document interactions
+  are programmatic; this check does not inject physical OS input.
+- `scripts/test-space-session.py` saved through the real native editor, restarted
+  the app with an isolated temporary profile, verified the restored title/icon
+  in the editor, and checked a legacy session with the icon property removed.
+- Repeated focused smoke runs were interrupted by window deactivation, which
+  correctly dismisses the popup. One complete popup run and the three-process
+  persistence check passed; reliable repeats require retaining foreground focus.
+- Windows runtime and OS-specific emoji glyph availability were not checked on
+  this Mac.
+
 # Queued native tab split release
 
 Run on 2026-11-05 in `bro-fix-tab-split-drop` on macOS.

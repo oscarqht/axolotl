@@ -61,6 +61,8 @@ struct SpaceDto {
     name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     custom_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
     focused_pane: u64,
     layout: LayoutDto,
     panes: Vec<PaneDto>,
@@ -192,6 +194,7 @@ impl Workspace {
                     id: s.id,
                     name: s.name.clone(),
                     custom_title: s.custom_title.clone(),
+                    icon: s.icon.clone(),
                     focused_pane: s.focused_pane,
                     layout: (&s.layout).into(),
                     panes: s
@@ -282,6 +285,10 @@ impl Workspace {
                 id: s.id,
                 name: s.name,
                 custom_title: s.custom_title.filter(|c| !c.trim().is_empty()),
+                icon: s
+                    .icon
+                    .map(|icon| icon.trim().to_owned())
+                    .filter(|icon| !icon.is_empty()),
                 layout,
                 panes,
                 focused_pane: s.focused_pane,

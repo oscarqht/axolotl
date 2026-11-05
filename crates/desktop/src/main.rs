@@ -143,6 +143,8 @@ fn main() {
                 #[cfg(all(feature = "smoke", target_os = "macos"))]
                 window_state::probe(window, cx);
                 #[cfg(feature = "smoke")]
+                smoke_space_menu::session_probe(&app, window, cx);
+                #[cfg(feature = "smoke")]
                 if std::env::args().any(|arg| arg == "--smoke-test") {
                     smoke::start(&app, window, cx);
                 }

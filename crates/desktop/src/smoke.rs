@@ -192,6 +192,9 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-settings") {
         return crate::smoke_settings::run(view, cx).await;
     }
+    if std::env::args().any(|arg| arg == "--smoke-space-menu") {
+        return Ok(vec![crate::smoke_space_menu::run(view, cx).await?]);
+    }
     if std::env::args().any(|arg| arg == "--smoke-space-drag") {
         return crate::smoke_space_drag::run(view, cx).await;
     }

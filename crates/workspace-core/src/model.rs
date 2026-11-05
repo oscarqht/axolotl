@@ -43,6 +43,7 @@ pub struct Space {
     pub id: SpaceId,
     pub name: String,
     pub custom_title: Option<String>,
+    pub icon: Option<String>,
     pub layout: Layout,
     pub panes: Vec<Pane>,
     pub focused_pane: PaneId,
@@ -238,6 +239,20 @@ impl Workspace {
         true
     }
 
+    /// Save a space's title and optional emoji together, without changing focus.
+    pub fn set_space_details(&mut self, id: SpaceId, title: &str, icon: Option<&str>) -> bool {
+        let Some(space) = self.spaces.iter_mut().find(|space| space.id == id) else {
+            return false;
+        };
+        let title = title.trim();
+        space.custom_title = (!title.is_empty()).then(|| title.to_owned());
+        space.icon = icon
+            .map(str::trim)
+            .filter(|icon| !icon.is_empty())
+            .map(str::to_owned);
+        true
+    }
+
     pub fn add_space(&mut self, name: impl Into<String>, url: &str) -> SpaceId {
         let id = self.allocate();
         let pane = self.new_pane(url);
@@ -246,6 +261,7 @@ impl Workspace {
             id,
             name: name.into(),
             custom_title: None,
+            icon: None,
             layout: Layout::Pane(pane_id),
             panes: vec![pane],
             focused_pane: pane_id,

@@ -390,14 +390,14 @@ pub(crate) async fn check_sizing(
         before == 1
             && single["width"]
                 .as_f64()
-                .is_some_and(|w| (w - 250.).abs() < 1.)
+                .is_some_and(|w| (w - 254.).abs() < 1.)
             && single["overflow"] == false
             && single["gap"].as_f64().is_some_and(|g| g <= 12.),
         "Single-chip bar did not fit contents: {single}"
     );
     view.update_in(cx, |app, _, _| {
         ensure!(
-            (app.bars[&control_pane].bounds.width - 258.).abs() < 1.,
+            (app.bars[&control_pane].bounds.width - 262.).abs() < 1.,
             "Single-chip native surface is oversized"
         );
         Ok(())
@@ -420,7 +420,7 @@ pub(crate) async fn check_sizing(
     )
     .await?;
     ensure!(
-        two["width"].as_f64().is_some_and(|w| (w - 426.).abs() < 1.) && two["overflow"] == false,
+        two["width"].as_f64().is_some_and(|w| (w - 430.).abs() < 1.) && two["overflow"] == false,
         "Two-chip bar did not fit contents: {two}"
     );
     view.update_in(cx, |app, _, cx| {
@@ -434,7 +434,7 @@ pub(crate) async fn check_sizing(
         bar_eval(view, control_pane, "bar.getBoundingClientRect().width", cx)
             .await?
             .as_f64()
-            .is_some_and(|w| (w - 250.).abs() < 1.),
+            .is_some_and(|w| (w - 254.).abs() < 1.),
         "Removing chip did not restore natural width"
     );
 

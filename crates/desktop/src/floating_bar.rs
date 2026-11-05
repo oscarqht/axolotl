@@ -54,10 +54,10 @@ impl FloatingBar {
     pub fn place(&mut self, pane: Rect, mut state: Value) -> Result<()> {
         let editing = !state["editing"].is_null();
         let available = (pane.width - 24.).max(1.);
-        // Chip width 172 + gap 4, fixed controls/padding 74, native inset 8.
+        // Chip width 172 + gap 4, fixed controls/padding 78, native inset 8.
         let count = state["tabs"].as_array().map_or(0, Vec::len);
         let expanded_width =
-            (82. + 176. * count as f32 + if editing { 148. } else { 0. }).min(available);
+            (86. + 176. * count as f32 + if editing { 148. } else { 0. }).min(available);
         let open = self.expanded || editing;
         if open && (expanded_width - self.expanded_width).abs() > 0.1 {
             self.transitioning = true;

@@ -1,3 +1,14 @@
+# Circular floating controls
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Handle and plus are equal 28px circular buttons with zero padding and centered
+  inline SVG icons, eliminating font-baseline offsets. Compact count insets are
+  symmetric. Native content sizing accounts for the handle's extra 4px.
+- Focused native sizing/transition/overflow checks, formatting, whitespace checks,
+  and strict Clippy passed. The macOS app bundle was rebuilt. Foreground OS input
+  and Windows validation remain unverified.
+
 # Continuous chip hover expansion
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

@@ -77,18 +77,27 @@
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
+  #handle,
+  #add {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    line-height: 1;
+  }
   #handle {
     cursor: grab;
-    width: 24px;
-    font-size: 18px;
   }
-  #add {
-    width: 28px;
-    font-size: 22px;
+  #handle svg,
+  #add svg {
+    display: block;
+    pointer-events: none;
   }
   #count {
     position: absolute;
-    left: 32px;
+    left: 36px;
     right: 36px;
     min-width: 0;
     opacity: 1;
@@ -236,12 +245,40 @@
     title="Drag panel to merge or split"
     aria-label="Drag panel"
   >
-    ⠿</button
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="8" cy="5" r="1.8" />
+      <circle cx="16" cy="5" r="1.8" />
+      <circle cx="8" cy="12" r="1.8" />
+      <circle cx="16" cy="12" r="1.8" />
+      <circle cx="8" cy="19" r="1.8" />
+      <circle cx="16" cy="19" r="1.8" />
+    </svg></button
   ><button id="count" title="Show tabs" aria-label="Show tabs"></button
   ><button class="arrow" id="prev" aria-label="Scroll tabs left">‹</button>
   <div id="tabs" role="tablist"></div>
   <button class="arrow" id="next" aria-label="Scroll tabs right">›</button
-  ><button id="add" title="New tab (⌘/Ctrl+T)" aria-label="New tab">+</button>
+  ><button id="add" title="New tab (⌘/Ctrl+T)" aria-label="New tab">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  </button>
 </div>
 <script>
   __FLOATING_SCRIPT__;

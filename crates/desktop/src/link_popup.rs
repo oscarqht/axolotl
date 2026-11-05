@@ -65,6 +65,8 @@ impl BrowserApp {
             | E::Gesture(t, _, _)
             | E::History(t, _, _)
             | E::Favicon(t, _) => *t,
+            #[cfg(target_os = "macos")]
+            E::NativePopup(..) | E::Closed(_) => return false,
             E::ProtectionChanged => return false,
         };
         if tab != POPUP_TAB {

@@ -277,6 +277,17 @@ impl BrowserApp {
         }
     }
     pub(crate) fn sleep_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
+        // A live popup and its opener are one browsing interaction. Recreating
+        // either engine would sever their WindowProxy and callback relationship.
+        #[cfg(target_os = "macos")]
+        if self.native_popup_sources.contains_key(&id)
+            || self
+                .native_popup_sources
+                .values()
+                .any(|source| *source == id)
+        {
+            return;
+        }
         if self.model.tab(id).is_none()
             || self.sleep.is_sleeping(id)
             || self.sleep.captures.contains_key(&id)

@@ -893,3 +893,48 @@ its window, so no successful visual or OS-input verification is claimed here.
   increases width, vertical movement changes height, and the left edge stays fixed.
   This check dispatches fixture pointer events; it does not simulate OS pointer input.
 - The popup script passes `node --check`; formatting and whitespace checks pass.
+
+
+## Native Google OAuth popup linkage (2026-11-05)
+
+Run on macOS in `bro-fix-google-oauth`.
+
+- Reproduced the regression on an archived unchanged `main`: the new native
+  `--smoke-oauth` fixture failed because `window.open` returned null. The previous
+  native handler denied the request and reopened its URL in an unrelated view.
+- `--smoke-oauth` passed on real WKWebViews in 17.527s. It covers native
+  WindowProxy/opener linkage, named reuse, empty-URL popup navigation, separate
+  origins, message source/origin and targetOrigin checks, blocked cross-origin
+  DOM access and file navigation, shared cookies, account-button redirect,
+  callback messaging, native close, restored source focus, shell cancellation,
+  ordinary noopener links, preview promotion without reload, sleep protection,
+  and background closure after pinning the child without stealing focus.
+- Existing native `--smoke-link-popup` passed in 34.975s, including protection
+  reloads, source preservation, ordinary navigation, promotion, Cmd-click sibling
+  insertion and ordinary new-tab editing.
+- Live `--smoke-x-oauth` reached X's actual Google button, opened a native Axolotl
+  tab at `accounts.google.com/v3/signin/identifier`, and verified non-null
+  `window.opener`. One run stopped at the email/phone prompt; the final run
+  reached `/v3/signin/accountchooser` in 15.999s with two available accounts and
+  a non-null opener. Neither account was selected. Live account selection,
+  credentials, MFA/consent and completed X sign-in remain unverified. Earlier probe attempts
+  exposed iframe-loading/focus and pre-navigation evaluation races; the probe now
+  waits for button loading, activates the native window, and waits for a finished
+  provider document before inspection. Later unattended runs also intermittently
+  failed to open the embedded button's popup, so the live probe is not a reliable
+  unattended acceptance check; the successful identifier-page observation is
+  partial verification only. The final probe waited for the source document and
+  native activation before measuring/clicking the button, and reached the account
+  chooser. No account identifiers, credentials or OAuth query values were recorded.
+- All 73 Rust tests and five new favicon JavaScript regressions passed. The
+  favicon tests first reproduced three failures on the previous bridge.
+- Formatting and whitespace checks passed. Strict Clippy reports two existing
+  `collapsible_if` findings in unchanged `render.rs`; Clippy passes with that
+  lint allowed. Combined input/favicons JavaScript tests pass 15/16: the existing
+  Shift+Escape expectation in `scripts/test-input-bridge.cjs:161` fails identically
+  on unchanged HEAD and was left outside this fix.
+
+The checks use programmatic native AppKit input, not physical OS mouse/keyboard
+input. WebKit retains security decisions; the fix does not synthesize opener
+objects, relay OAuth messages in JavaScript, fetch favicons with native privilege,
+or bypass CSP, CORS, same-origin checks or provider restrictions.

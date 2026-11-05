@@ -266,6 +266,12 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-popup-tra
 # Temporary link preview, promotion, split centering and resize
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-link-popup
 
+# Native Google-style OAuth opener, postMessage, redirect and close regression (offline, macOS)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-oauth
+
+# Opt-in live X Google-sign-in probe (stops before account choice/credentials)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-x-oauth
+
 # Opt-in live Google result Option-click regression (network required, macOS)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-google-popup
 

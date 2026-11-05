@@ -4,17 +4,26 @@
     const send = value => post(nonce + ':' + value);
     // Read favicons in the page's own origin and send only a small raster to chrome.
     const favicon = () => {
-        if (window.top !== window) return;
+        if (window.top !== window || !/^https?:$/.test(location.protocol)) return;
         const icon = document.querySelector('link[rel~="icon"]');
+        const fallback = location.origin + '/favicon.ico';
+        let source = fallback;
+        try {
+            const url = new URL(icon?.href || fallback, location.href);
+            if ((/^https?:$/.test(url.protocol) && url.origin === location.origin) || /^data:image\//i.test(url.href)) source = url.href;
+        } catch {}
         const image = new Image();
-        image.crossOrigin = 'anonymous';
+        // Ordinary image mode avoids unnecessary CORS failures when a same-origin
+        // favicon redirects. Canvas origin checks still reject unreadable pixels;
+        // declared cross-origin icons use the page-origin fallback instead.
+        const failed = () => { if (image.src !== fallback) image.src = fallback; };
         image.onload = () => { try {
             const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
             canvas.getContext('2d').drawImage(image, 0, 0, 32, 32);
             send('favicon:' + canvas.toDataURL('image/png').split(',')[1]);
-        } catch {} };
-        image.onerror = () => { if (icon && image.src !== location.origin + '/favicon.ico') image.src = location.origin + '/favicon.ico'; };
-        if (/^https?:$/.test(location.protocol)) image.src = icon?.href || location.origin + '/favicon.ico';
+        } catch { failed(); } };
+        image.onerror = failed;
+        image.src = source;
     };
     window.addEventListener('load', favicon);
     window.addEventListener('pointerdown' , event => {

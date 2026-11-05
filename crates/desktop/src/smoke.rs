@@ -185,6 +185,14 @@ async fn run(
         return crate::smoke_popup_transition::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-x-oauth") {
+        return crate::smoke_x_oauth::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-oauth") {
+        return crate::smoke_oauth::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-google-popup") {
         return crate::smoke_google_popup::run(view, cx).await;
     }

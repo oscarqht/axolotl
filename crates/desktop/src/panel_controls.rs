@@ -224,6 +224,8 @@ impl BrowserApp {
             ids.insert(crate::link_popup::POPUP_TAB);
         }
         self.host.retain(&ids);
+        #[cfg(target_os = "macos")]
+        self.native_popup_sources.retain(|id, _| ids.contains(id));
         self.sleep.retain(&ids);
         self.notifications.retain(|id, _| ids.contains(id));
         self.favicons.retain(|id, _| ids.contains(id));

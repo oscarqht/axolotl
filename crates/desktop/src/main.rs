@@ -24,9 +24,13 @@ mod macos_keyboard;
 #[cfg(target_os = "macos")]
 mod macos_passkeys;
 #[cfg(target_os = "macos")]
+mod macos_popup;
+#[cfg(target_os = "macos")]
 mod macos_quit;
 #[cfg(target_os = "macos")]
 mod macos_titlebar;
+#[cfg(target_os = "macos")]
+mod native_popup_tabs;
 mod native_webview;
 mod panel_controls;
 mod persistence;
@@ -66,6 +70,8 @@ mod smoke_link_popup;
 mod smoke_menu;
 #[cfg(feature = "smoke")]
 mod smoke_notifications;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_oauth;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
 #[cfg(feature = "smoke")]
@@ -84,6 +90,8 @@ mod smoke_space_drag;
 mod smoke_space_menu;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_space_shortcuts;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_x_oauth;
 mod space_drag;
 mod space_menu;
 mod space_shortcuts;

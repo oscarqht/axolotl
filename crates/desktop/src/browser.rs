@@ -57,13 +57,47 @@ pub enum BrowserEvent {
     Loaded(TabId),
     LoadStarted(TabId),
     VisitCompleted(TabId, String, std::time::Instant),
+    // Other platforms still reopen native requests as independent tabs.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     NewTab(TabId, String),
+    #[cfg(target_os = "macos")]
+    NativePopup(TabId, TabId, String),
+    #[cfg(target_os = "macos")]
+    Closed(TabId),
     OpenLink(TabId, String),
     PopupLink(TabId, String),
     Shortcut(TabId, String),
     Gesture(TabId, f64, f64),
     /// Whether the page can navigate back/forward, from a context-menu probe.
     History(TabId, bool, bool),
+}
+
+#[cfg(target_os = "macos")]
+impl BrowserEvent {
+    pub fn remap(&mut self, ids: &HashMap<TabId, TabId>) {
+        let tab = match self {
+            Self::ProtectionChanged => return,
+            Self::Focused(t)
+            | Self::Favicon(t, _)
+            | Self::Notification(t)
+            | Self::Navigated(t, _)
+            | Self::Title(t, _, _)
+            | Self::Loaded(t)
+            | Self::LoadStarted(t)
+            | Self::VisitCompleted(t, _, _)
+            | Self::NewTab(t, _)
+            | Self::OpenLink(t, _)
+            | Self::PopupLink(t, _)
+            | Self::Shortcut(t, _)
+            | Self::Gesture(t, _, _)
+            | Self::History(t, _, _)
+            | Self::Closed(t)
+            | Self::NativePopup(t, _, _) => t,
+        };
+        if let Some(id) = ids.get(tab) {
+            *tab = *id;
+        }
+    }
 }
 
 /// The operations a replacement engine must provide. Browser state is never
@@ -160,8 +194,24 @@ pub(crate) fn parse_history(value: &str) -> (bool, bool) {
     }
 }
 
-pub struct WryHost {
+pub struct WryHost(Rc<WryState>);
+
+impl std::ops::Deref for WryHost {
+    type Target = WryState;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct WryState {
     downloads: Rc<RefCell<crate::downloads::DownloadManager>>,
+    #[cfg(target_os = "macos")]
+    pending_popups: RefCell<HashSet<TabId>>,
+    #[cfg(target_os = "macos")]
+    next_popup: std::cell::Cell<TabId>,
+    #[cfg(target_os = "macos")]
+    popup_delegates:
+        RefCell<HashMap<TabId, objc2::rc::Retained<crate::macos_popup::PopupDelegate>>>,
     protection: Rc<RefCell<crate::protection::Protection>>,
     protection_revisions: RefCell<HashMap<TabId, (u64, crate::protection::Policy)>>,
     protection_notified: RefCell<String>,
@@ -178,8 +228,14 @@ impl Default for WryHost {
     fn default() -> Self {
         // Untrusted pages cannot cause unbounded allocation by flooding IPC.
         let (sender, events) = mpsc::sync_channel(512);
-        Self {
+        Self(Rc::new(WryState {
             downloads: Rc::new(RefCell::new(crate::downloads::DownloadManager::default())),
+            #[cfg(target_os = "macos")]
+            pending_popups: RefCell::new(HashSet::new()),
+            #[cfg(target_os = "macos")]
+            next_popup: std::cell::Cell::new(u64::MAX - 1),
+            #[cfg(target_os = "macos")]
+            popup_delegates: RefCell::new(HashMap::new()),
             protection: Rc::new(RefCell::new(crate::protection::Protection::restore())),
             protection_revisions: RefCell::new(HashMap::new()),
             protection_notified: RefCell::new(String::new()),
@@ -190,7 +246,7 @@ impl Default for WryHost {
             sender,
             visible: Rc::new(RefCell::new(HashSet::new())),
             loaded: Rc::new(RefCell::new(HashSet::new())),
-        }
+        }))
     }
 }
 
@@ -242,6 +298,296 @@ impl WryHost {
             .get(&tab)
             .cloned()
             .with_context(|| format!("Browser view for tab {tab} is unavailable"))
+    }
+}
+
+impl WryHost {
+    fn create_view(
+        &self,
+        tab: TabId,
+        url: &str,
+        navigate: bool,
+        build: impl FnOnce(WebViewBuilder<'static>) -> Result<WebView>,
+    ) -> Result<()> {
+        #[cfg(not(target_os = "macos"))]
+        let _ = navigate;
+        let identity = Arc::new(AtomicU64::new(tab));
+        let ipc_identity = identity.clone();
+        let title_identity = identity.clone();
+        let load_identity = identity.clone();
+        let popup_identity = identity.clone();
+        let ipc = self.sender.clone();
+        let title = self.sender.clone();
+        // Title KVO can precede load-start. Snapshot its document URL so a new
+        // page title cannot overwrite the previous visit while events are queued.
+        let title_view = Rc::new(RefCell::new(None::<std::rc::Weak<WebView>>));
+        let title_source = title_view.clone();
+        let load = self.sender.clone();
+        let loaded = self.loaded.clone();
+        let completed = Rc::new(std::cell::Cell::new(false));
+        #[cfg(not(target_os = "macos"))]
+        let popup = self.sender.clone();
+        #[cfg(target_os = "macos")]
+        let popup_host = Rc::downgrade(&self.0);
+        let visible = self.visible.clone();
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
+        let input_bridge = INPUT_BRIDGE
+            .replace("__NONCE__", &nonce)
+            .replace(
+                "__LINK_MODIFIER__",
+                if cfg!(target_os = "macos") {
+                    "event.metaKey && !event.ctrlKey"
+                } else {
+                    "event.ctrlKey && !event.metaKey"
+                },
+            )
+            .replace("__GESTURES__", include_str!("../assets/gestures.js"));
+        let notifications = include_str!("../assets/notifications.js").replace("__NONCE__", &nonce);
+        let start_url = html_data_url(START_HTML);
+        let builder = WebViewBuilder::new()
+            .with_visible(false)
+            .with_focused(false)
+            .with_bounds(wry::Rect {
+                position: wry::dpi::LogicalPosition::new(0.0, 0.0).into(),
+                size: wry::dpi::LogicalSize::new(1.0, 1.0).into(),
+            })
+            .with_devtools(cfg!(debug_assertions))
+            .with_accept_first_mouse(true)
+            // Apply on every document, including subframes on WKWebView and
+            // WebView2. Keep this separate from the privileged input bridge.
+            .with_initialization_script_for_main_only(
+                include_str!("../assets/hide-scrollbars.js"),
+                false,
+            )
+            .with_initialization_script_for_main_only(input_bridge, false)
+            .with_initialization_script_for_main_only(
+                include_str!("../assets/sleep-activity.js"),
+                false,
+            )
+            .with_initialization_script_for_main_only(notifications, false)
+            .with_navigation_handler(move |url| {
+                allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
+            })
+            .with_ipc_handler(move |request| {
+                let tab = ipc_identity.load(Ordering::Relaxed);
+                // Notifications must also arrive from hidden tabs and spaces.
+                if request.body() == &format!("{nonce}:notification") {
+                    let _ = ipc.try_send(BrowserEvent::Notification(tab));
+                    return;
+                }
+                if let Some(encoded) = request.body().strip_prefix(&format!("{nonce}:favicon:")) {
+                    if encoded.len() <= 32768 {
+                        let _ = ipc.try_send(BrowserEvent::Favicon(tab, encoded.to_owned()));
+                    }
+                    return;
+                }
+                if !visible.borrow().contains(&tab) {
+                    return;
+                }
+                if let Some(value) = request.body().strip_prefix(&format!("{nonce}:wheel:"))
+                    && let Some((x, y)) = value.split_once(':')
+                    && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
+                    && x.is_finite()
+                    && y.is_finite()
+                {
+                    let _ = ipc.try_send(BrowserEvent::Gesture(tab, x, y));
+                    return;
+                }
+                if let Some(url) = authenticated_popup_link(request.body(), &nonce) {
+                    let _ = ipc.try_send(BrowserEvent::PopupLink(tab, url.to_owned()));
+                    return;
+                }
+                if let Some(url) = authenticated_link(request.body(), &nonce) {
+                    let _ = ipc.try_send(BrowserEvent::OpenLink(tab, url.to_owned()));
+                    return;
+                }
+                let Some(command) = authenticated_command(request.body(), &nonce) else {
+                    return;
+                };
+                let event = match command {
+                    "focus" => BrowserEvent::Focused(tab),
+                    "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
+                    | "reload" | "swipe-next" | "swipe-prev" => {
+                        BrowserEvent::Shortcut(tab, command.to_owned())
+                    }
+                    _ => return,
+                };
+                let _ = ipc.try_send(event);
+            })
+            .with_document_title_changed_handler(move |value| {
+                let tab = title_identity.load(Ordering::Relaxed);
+                let url = title_source
+                    .borrow()
+                    .as_ref()
+                    .and_then(|v| v.upgrade())
+                    .and_then(|v| v.url().ok());
+                let _ = title.try_send(BrowserEvent::Title(tab, value, url));
+            })
+            .with_on_page_load_handler(move |event, url| {
+                let tab = load_identity.load(Ordering::Relaxed);
+                if matches!(event, PageLoadEvent::Finished) {
+                    loaded.borrow_mut().insert(tab);
+                } else {
+                    loaded.borrow_mut().remove(&tab);
+                    completed.set(false);
+                    #[cfg(not(target_os = "windows"))]
+                    let _ = load.try_send(BrowserEvent::LoadStarted(tab));
+                }
+                let _ = load.try_send(BrowserEvent::Navigated(tab, url.clone()));
+                if matches!(event, PageLoadEvent::Finished) {
+                    let _ = load.try_send(BrowserEvent::Loaded(tab));
+                    // WKWebView calls Finished only from didFinishNavigation (main frame).
+                    // WebView2 requires IsSuccess, handled by the native callback below.
+                    #[cfg(not(target_os = "windows"))]
+                    if !completed.replace(true) {
+                        let _ = load.try_send(BrowserEvent::VisitCompleted(
+                            tab,
+                            url,
+                            std::time::Instant::now(),
+                        ));
+                    }
+                }
+            })
+            .with_new_window_req_handler(move |url, features| {
+                let tab = popup_identity.load(Ordering::Relaxed);
+                #[cfg(target_os = "macos")]
+                {
+                    let Some(state) = popup_host.upgrade() else {
+                        return NewWindowResponse::Deny;
+                    };
+                    WryHost(state).create_popup(tab, url, features)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = features;
+                    if allowed_url(&url) {
+                        let _ = popup.try_send(BrowserEvent::NewTab(tab, url));
+                    }
+                    NewWindowResponse::Deny
+                }
+            })
+            // Native download hooks own the destination, progress and cancellation.
+            .with_download_started_handler(|_, _| true);
+        // Set the native UA before the first request, so HTTP and JavaScript
+        // detection agree on initial loads, redirects, frames and new tabs.
+        #[cfg(target_os = "macos")]
+        let builder = if let Some(agent) = crate::browser_identity::user_agent() {
+            builder.with_user_agent(agent)
+        } else {
+            builder
+        };
+        // Build without a target URL: filtering must be installed before the
+        // first network navigation, including redirects and restored tabs.
+        let view = build(builder).context("Creating native browser child view")?;
+        #[cfg(target_os = "macos")]
+        crate::downloads::install(&view, self.downloads.clone())?;
+        #[cfg(target_os = "windows")]
+        view.setup_downloads(self.downloads.clone())?;
+        let view = Rc::new(view);
+        *title_view.borrow_mut() = Some(Rc::downgrade(&view));
+        #[cfg(target_os = "windows")]
+        {
+            let sender = self.sender.clone();
+            let visit_identity = identity.clone();
+            view.observe_visits(move |url| {
+                let tab = visit_identity.load(Ordering::Relaxed);
+                let event = match url {
+                    Some(url) => BrowserEvent::VisitCompleted(tab, url, std::time::Instant::now()),
+                    None => BrowserEvent::LoadStarted(tab),
+                };
+                let _ = sender.try_send(event);
+            })?;
+        }
+        let p = self.protection.borrow();
+        let script = p.rules.script(&p.policy);
+        #[cfg(target_os = "macos")]
+        {
+            p.native.apply(&view, &script)?;
+            // WebKit performs popup navigation after its delegate returns. A
+            // second load here would discard the native WindowProxy linkage.
+            if navigate {
+                if url == "about:blank" {
+                    view.load_html(START_HTML)?;
+                } else {
+                    view.load_url(url)?;
+                }
+            }
+        }
+        #[cfg(target_os = "windows")]
+        view.setup_protection(self.protection.clone(), script, url.to_owned(), true, false)?;
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = script;
+            bail!("Built-in protection requires macOS or Windows");
+        }
+        self.protection_revisions
+            .borrow_mut()
+            .insert(tab, (p.revision, p.policy.clone()));
+        // `with_focused(false)` is ignored on macOS; explicitly return focus.
+        view.focus_parent()
+            .context("Returning focus from new browser view")?;
+        #[cfg(target_os = "macos")]
+        {
+            let sender = self.sender.clone();
+            let close_identity = identity.clone();
+            let delegate = crate::macos_popup::install(&view, move || {
+                let _ =
+                    sender.try_send(BrowserEvent::Closed(close_identity.load(Ordering::Relaxed)));
+            })?;
+            self.popup_delegates.borrow_mut().insert(tab, delegate);
+        }
+        self.views.borrow_mut().insert(tab, view);
+        self.identities.borrow_mut().insert(tab, identity);
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_popup(
+        &self,
+        source: TabId,
+        url: String,
+        features: wry::NewWindowFeatures,
+    ) -> NewWindowResponse {
+        use wry::WebViewExtMacOS;
+        // WebKit reports window.open('') as an empty request URL. It still
+        // creates an about:blank context which script may navigate afterward.
+        let url = if url.is_empty() {
+            "about:blank".to_owned()
+        } else {
+            url
+        };
+        if !allowed_url(&url)
+            || self.pending_popups.borrow().len() >= 32
+            || !self.protection.borrow().native.ready()
+        {
+            return NewWindowResponse::Deny;
+        }
+        let id = self.next_popup.get();
+        self.next_popup.set(id - 1);
+        let result = self.create_view(id, &url, false, |builder| {
+            crate::macos_popup::build_child(
+                builder,
+                &features.opener.webview,
+                features.opener.target_configuration,
+            )
+        });
+        if let Err(error) = result {
+            eprintln!("Creating linked popup: {error:#}");
+            return NewWindowResponse::Deny;
+        }
+        let view = self.get(id).expect("created popup");
+        self.pending_popups.borrow_mut().insert(id);
+        if self
+            .sender
+            .try_send(BrowserEvent::NativePopup(source, id, url))
+            .is_err()
+        {
+            self.unload(id);
+            return NewWindowResponse::Deny;
+        }
+        NewWindowResponse::Create {
+            webview: view.webview().into_super(),
+        }
     }
 }
 
@@ -401,215 +747,20 @@ impl BrowserHost for WryHost {
             }
             return Ok(());
         }
-        let identity = Arc::new(AtomicU64::new(tab));
-        let ipc_identity = identity.clone();
-        let title_identity = identity.clone();
-        let load_identity = identity.clone();
-        let popup_identity = identity.clone();
-        let ipc = self.sender.clone();
-        let title = self.sender.clone();
-        // Title KVO can precede load-start. Snapshot its document URL so a new
-        // page title cannot overwrite the previous visit while events are queued.
-        let title_view = Rc::new(RefCell::new(None::<std::rc::Weak<WebView>>));
-        let title_source = title_view.clone();
-        let load = self.sender.clone();
-        let loaded = self.loaded.clone();
-        let completed = Rc::new(std::cell::Cell::new(false));
-        let popup = self.sender.clone();
-        let visible = self.visible.clone();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
-        let input_bridge = INPUT_BRIDGE
-            .replace("__NONCE__", &nonce)
-            .replace(
-                "__LINK_MODIFIER__",
-                if cfg!(target_os = "macos") {
-                    "event.metaKey && !event.ctrlKey"
-                } else {
-                    "event.ctrlKey && !event.metaKey"
-                },
-            )
-            .replace("__GESTURES__", include_str!("../assets/gestures.js"));
-        let notifications = include_str!("../assets/notifications.js").replace("__NONCE__", &nonce);
-        let start_url = html_data_url(START_HTML);
-        let builder = WebViewBuilder::new()
-            .with_visible(false)
-            .with_focused(false)
-            .with_bounds(wry::Rect {
-                position: wry::dpi::LogicalPosition::new(0.0, 0.0).into(),
-                size: wry::dpi::LogicalSize::new(1.0, 1.0).into(),
-            })
-            .with_devtools(cfg!(debug_assertions))
-            .with_accept_first_mouse(true)
-            // Apply on every document, including subframes on WKWebView and
-            // WebView2. Keep this separate from the privileged input bridge.
-            .with_initialization_script_for_main_only(
-                include_str!("../assets/hide-scrollbars.js"),
-                false,
-            )
-            .with_initialization_script_for_main_only(input_bridge, false)
-            .with_initialization_script_for_main_only(
-                include_str!("../assets/sleep-activity.js"),
-                false,
-            )
-            .with_initialization_script_for_main_only(notifications, false)
-            .with_navigation_handler(move |url| {
-                allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
-            })
-            .with_ipc_handler(move |request| {
-                let tab = ipc_identity.load(Ordering::Relaxed);
-                // Notifications must also arrive from hidden tabs and spaces.
-                if request.body() == &format!("{nonce}:notification") {
-                    let _ = ipc.try_send(BrowserEvent::Notification(tab));
-                    return;
-                }
-                if let Some(encoded) = request.body().strip_prefix(&format!("{nonce}:favicon:")) {
-                    if encoded.len() <= 32768 {
-                        let _ = ipc.try_send(BrowserEvent::Favicon(tab, encoded.to_owned()));
-                    }
-                    return;
-                }
-                if !visible.borrow().contains(&tab) {
-                    return;
-                }
-                if let Some(value) = request.body().strip_prefix(&format!("{nonce}:wheel:"))
-                    && let Some((x, y)) = value.split_once(':')
-                    && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
-                    && x.is_finite()
-                    && y.is_finite()
-                {
-                    let _ = ipc.try_send(BrowserEvent::Gesture(tab, x, y));
-                    return;
-                }
-                if let Some(url) = authenticated_popup_link(request.body(), &nonce) {
-                    let _ = ipc.try_send(BrowserEvent::PopupLink(tab, url.to_owned()));
-                    return;
-                }
-                if let Some(url) = authenticated_link(request.body(), &nonce) {
-                    let _ = ipc.try_send(BrowserEvent::OpenLink(tab, url.to_owned()));
-                    return;
-                }
-                let Some(command) = authenticated_command(request.body(), &nonce) else {
-                    return;
-                };
-                let event = match command {
-                    "focus" => BrowserEvent::Focused(tab),
-                    "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
-                    | "reload" | "swipe-next" | "swipe-prev" => {
-                        BrowserEvent::Shortcut(tab, command.to_owned())
-                    }
-                    _ => return,
-                };
-                let _ = ipc.try_send(event);
-            })
-            .with_document_title_changed_handler(move |value| {
-                let tab = title_identity.load(Ordering::Relaxed);
-                let url = title_source
-                    .borrow()
-                    .as_ref()
-                    .and_then(|v| v.upgrade())
-                    .and_then(|v| v.url().ok());
-                let _ = title.try_send(BrowserEvent::Title(tab, value, url));
-            })
-            .with_on_page_load_handler(move |event, url| {
-                let tab = load_identity.load(Ordering::Relaxed);
-                if matches!(event, PageLoadEvent::Finished) {
-                    loaded.borrow_mut().insert(tab);
-                } else {
-                    loaded.borrow_mut().remove(&tab);
-                    completed.set(false);
-                    #[cfg(not(target_os = "windows"))]
-                    let _ = load.try_send(BrowserEvent::LoadStarted(tab));
-                }
-                let _ = load.try_send(BrowserEvent::Navigated(tab, url.clone()));
-                if matches!(event, PageLoadEvent::Finished) {
-                    let _ = load.try_send(BrowserEvent::Loaded(tab));
-                    // WKWebView calls Finished only from didFinishNavigation (main frame).
-                    // WebView2 requires IsSuccess, handled by the native callback below.
-                    #[cfg(not(target_os = "windows"))]
-                    if !completed.replace(true) {
-                        let _ = load.try_send(BrowserEvent::VisitCompleted(
-                            tab,
-                            url,
-                            std::time::Instant::now(),
-                        ));
-                    }
-                }
-            })
-            .with_new_window_req_handler(move |url, _| {
-                let tab = popup_identity.load(Ordering::Relaxed);
-                if allowed_url(&url) {
-                    let _ = popup.try_send(BrowserEvent::NewTab(tab, url));
-                }
-                // The shell creates a normal tab, never a second native window.
-                NewWindowResponse::Deny
-            })
-            // Native download hooks own the destination, progress and cancellation.
-            .with_download_started_handler(|_, _| true);
-        // Set the native UA before the first request, so HTTP and JavaScript
-        // detection agree on initial loads, redirects, frames and new tabs.
-        #[cfg(target_os = "macos")]
-        let builder = if let Some(agent) = crate::browser_identity::user_agent() {
-            builder.with_user_agent(agent)
-        } else {
-            builder
-        };
-        // Build without a target URL: filtering must be installed before the
-        // first network navigation, including redirects and restored tabs.
-        let view = builder
-            .build_native_child(window, cx)
-            .context("Creating native browser child view")?;
-        #[cfg(target_os = "macos")]
-        crate::downloads::install(&view, self.downloads.clone())?;
-        #[cfg(target_os = "windows")]
-        view.setup_downloads(self.downloads.clone())?;
-        let view = Rc::new(view);
-        *title_view.borrow_mut() = Some(Rc::downgrade(&view));
-        #[cfg(target_os = "windows")]
-        {
-            let sender = self.sender.clone();
-            let visit_identity = identity.clone();
-            view.observe_visits(move |url| {
-                let tab = visit_identity.load(Ordering::Relaxed);
-                let event = match url {
-                    Some(url) => BrowserEvent::VisitCompleted(tab, url, std::time::Instant::now()),
-                    None => BrowserEvent::LoadStarted(tab),
-                };
-                let _ = sender.try_send(event);
-            })?;
-        }
-        let p = self.protection.borrow();
-        let script = p.rules.script(&p.policy);
-        #[cfg(target_os = "macos")]
-        {
-            p.native.apply(&view, &script)?;
-            if url == "about:blank" {
-                view.load_html(START_HTML)?;
-            } else {
-                view.load_url(url)?;
-            }
-        }
-        #[cfg(target_os = "windows")]
-        view.setup_protection(self.protection.clone(), script, url.to_owned(), true, false)?;
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            let _ = script;
-            bail!("Built-in protection requires macOS or Windows");
-        }
-        self.protection_revisions
-            .borrow_mut()
-            .insert(tab, (p.revision, p.policy.clone()));
-        // `with_focused(false)` is ignored on macOS; explicitly return focus.
-        view.focus_parent()
-            .context("Returning focus from new browser view")?;
-        self.views.borrow_mut().insert(tab, view);
-        self.identities.borrow_mut().insert(tab, identity);
-        Ok(())
+        self.create_view(tab, url, true, |builder| {
+            builder.build_native_child(window, cx)
+        })
     }
 
     fn capture_sleep(&self, tab: TabId, image: crate::drag_preview::Snapshot) -> Result<()> {
         crate::drag_preview::capture(self.get(tab)?.as_ref(), image)
     }
     fn unload(&self, tab: TabId) {
+        #[cfg(target_os = "macos")]
+        {
+            self.pending_popups.borrow_mut().remove(&tab);
+            self.popup_delegates.borrow_mut().remove(&tab);
+        }
         if let Some(view) = self.views.borrow_mut().remove(&tab) {
             let _ = view.set_visible(false);
             if self.downloads_active() {
@@ -665,6 +816,14 @@ impl BrowserHost for WryHost {
             .borrow_mut()
             .remove(&from)
             .expect("view identity");
+        #[cfg(target_os = "macos")]
+        {
+            self.pending_popups.borrow_mut().remove(&from);
+            let mut delegates = self.popup_delegates.borrow_mut();
+            if let Some(delegate) = delegates.remove(&from) {
+                delegates.insert(to, delegate);
+            }
+        }
         identity.store(to, Ordering::Relaxed);
         self.identities.borrow_mut().insert(to, identity);
         views.insert(to, view);
@@ -795,6 +954,15 @@ impl BrowserHost for WryHost {
     }
 
     fn retain(&self, tabs: &HashSet<TabId>) {
+        #[cfg(target_os = "macos")]
+        let tabs = &tabs
+            .union(&self.pending_popups.borrow())
+            .copied()
+            .collect::<HashSet<_>>();
+        #[cfg(target_os = "macos")]
+        self.popup_delegates
+            .borrow_mut()
+            .retain(|id, _| tabs.contains(id));
         self.protection_revisions
             .borrow_mut()
             .retain(|id, _| tabs.contains(id));
@@ -943,7 +1111,9 @@ impl BrowserHost for WryHost {
 
 impl Drop for WryHost {
     fn drop(&mut self) {
-        let _ = self.hide_all();
+        if Rc::strong_count(&self.0) == 1 {
+            let _ = self.hide_all();
+        }
     }
 }
 

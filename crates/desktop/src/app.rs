@@ -136,6 +136,8 @@ pub struct BrowserApp {
     /// Last history probe per tab: (can go back, can go forward).
     pub history: HashMap<TabId, (bool, bool)>,
     pub notifications: HashMap<TabId, u32>,
+    #[cfg(target_os = "macos")]
+    pub native_popup_sources: HashMap<TabId, TabId>,
     pub favicons: HashMap<TabId, std::sync::Arc<Image>>,
 }
 
@@ -299,6 +301,8 @@ impl BrowserApp {
             poll_count: 0,
             history: HashMap::new(),
             notifications: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            native_popup_sources: HashMap::new(),
             favicons: HashMap::new(),
         }
     }
@@ -470,7 +474,7 @@ impl BrowserApp {
         }
         cx.notify();
     }
-    fn close_tab(&mut self, pane: PaneId, tab: TabId) {
+    pub(crate) fn close_tab(&mut self, pane: PaneId, tab: TabId) {
         let replaces_last =
             self.model.active_space().panes.len() == 1 && self.model.focused_pane().tabs.len() == 1;
         if self.model.close_tab(pane, tab) && replaces_last {
@@ -661,7 +665,19 @@ impl BrowserApp {
         if events.is_empty() {
             return;
         }
+        #[cfg(target_os = "macos")]
+        let mut popup_ids = HashMap::new();
         for event in events {
+            #[cfg(target_os = "macos")]
+            let event = {
+                let mut event = event;
+                event.remap(&popup_ids);
+                event
+            };
+            #[cfg(target_os = "macos")]
+            if self.handle_native_popup_event(&event, &mut popup_ids, window, cx) {
+                continue;
+            }
             if self.handle_popup_event(&event, window, cx) {
                 continue;
             }
@@ -680,6 +696,8 @@ impl BrowserApp {
                 | BrowserEvent::Shortcut(id, _)
                 | BrowserEvent::Gesture(id, _, _)
                 | BrowserEvent::History(id, _, _) => Some(*id),
+                #[cfg(target_os = "macos")]
+                BrowserEvent::NativePopup(..) | BrowserEvent::Closed(_) => None,
                 BrowserEvent::ProtectionChanged => None,
             };
             if event_tab.is_some_and(|id| self.sleep.is_sleeping(id)) {
@@ -788,6 +806,8 @@ impl BrowserApp {
                         self.status.clear();
                     }
                 }
+                #[cfg(target_os = "macos")]
+                BrowserEvent::NativePopup(..) | BrowserEvent::Closed(_) => unreachable!(),
                 BrowserEvent::PopupLink(source, url) => {
                     self.open_link_popup(source, url, window, cx)
                 }

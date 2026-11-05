@@ -90,8 +90,16 @@ shell or layout core. A replacement engine supplies the trait implementation
 and its platform integration. Destruction and all host calls stay on the UI
 thread. Workspace state remains reusable without either desktop dependency.
 
-Links requesting another native window become tabs in the source pane. Native
-popup creation is denied. Downloads use native WKDownload / WebView2 operations,
+Links requesting another native window become tabs in the source pane. On macOS,
+WebKit creates a linked child using its supplied target configuration; the shell
+adopts that same view into a tab without reloading the request. Each child has its
+own IPC/scripts controller and the existing protection rules. A forwarding UI
+delegate queues native script-close events for the shell. WebKit owns opener,
+WindowProxy, postMessage origin checks, noopener and COOP behavior. Empty popup
+URLs create about:blank contexts. Link previews that open native popups are
+promoted so their opener survives. Linked popups and their openers remain awake
+until the popup closes. Other platforms retain independent-tab popup handling.
+Downloads use native WKDownload / WebView2 operations,
 with a session-only manager shared by tabs, pins and previews. A native overlay
 above page surfaces shows progress and explicit cancel/open/reveal actions. Files
 save to the system Downloads folder through private staging files; exclusive
@@ -215,7 +223,9 @@ page; only one pinned page is visible at a time. The header remains interactive
 above the shield. Popup dimensions clamp to the viewport while keeping the saved
 preferred size. Authenticated Escape messages from the page dismiss the popup.
 
-Header circles use small PNG favicons read in the page origin; unavailable icons
+Header circles use small PNG favicons read in the page origin. Same-origin icons
+use ordinary image loading; declared cross-origin icons use the page-origin
+fallback. Canvas origin checks remain authoritative. Unavailable icons
 fall back to a generic symbol. A bounded strip reserves room for spaces, window
 dragging and Settings, with excess pins in a scrollable overflow menu. Pin entries
 in that menu also support right-click unpinning. Hidden pages remain live and can

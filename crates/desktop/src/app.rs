@@ -161,7 +161,8 @@ impl BrowserApp {
             cx.notify();
         })
         .detach();
-        let model = crate::persistence::restore();
+        let preferences = crate::preferences::Preferences::restore();
+        let model = crate::persistence::restore(&preferences.homepage_url);
         let saver = crate::persistence::SessionSaver::new(&model);
         // Cmd+Q, window close and the app menu all end in cx.quit().
         cx.on_app_quit(|this, _| {
@@ -174,7 +175,7 @@ impl BrowserApp {
             chrome_views: HashSet::new(),
             swipes: HashMap::new(),
             model,
-            preferences: crate::preferences::Preferences::restore(),
+            preferences,
             settings: None,
             settings_focus: cx.focus_handle(),
             saver,
@@ -313,13 +314,21 @@ impl BrowserApp {
                         self.model.close_space(id);
                     }
                     TabTarget::Page(pane, tab) => {
-                        self.model.close_tab(pane, tab);
+                        self.close_tab(pane, tab);
                     }
                 }
                 self.sync_address(window, cx);
             }
         }
         cx.notify();
+    }
+    fn close_tab(&mut self, pane: PaneId, tab: TabId) {
+        let replaces_last =
+            self.model.active_space().panes.len() == 1 && self.model.focused_pane().tabs.len() == 1;
+        if self.model.close_tab(pane, tab) && replaces_last {
+            let replacement = self.active_tab();
+            self.model.tab_mut(replacement).unwrap().url = self.preferences.homepage_url.clone();
+        }
     }
     pub fn focus_pane(&mut self, pane: PaneId, window: &mut Window, cx: &mut Context<Self>) {
         if pane != self.model.focused_pane().id {
@@ -352,7 +361,7 @@ impl BrowserApp {
             Command::NewTab => {
                 self.report(self.host.focus_parent(self.active_tab()));
                 self.focus.focus(window);
-                let tab = self.model.add_tab("about:blank");
+                let tab = self.model.add_tab(&self.preferences.homepage_url);
                 self.begin_edit(
                     TabTarget::Page(self.model.focused_pane().id, tab),
                     window,
@@ -363,7 +372,7 @@ impl BrowserApp {
                 self.report(self.host.focus_parent(self.active_tab()));
                 self.focus.focus(window);
                 let pane = self.model.focused_pane().id;
-                self.model.close_tab(pane, self.active_tab());
+                self.close_tab(pane, self.active_tab());
                 self.sync_address(window, cx);
             }
             Command::Reload => self.report(self.host.reload(self.active_tab())),
@@ -371,12 +380,13 @@ impl BrowserApp {
             Command::Forward => self.report(self.host.forward(self.active_tab())),
             #[cfg(feature = "smoke")]
             Command::Split(axis) => {
-                self.model.split_focused(axis, "about:blank");
+                self.model
+                    .split_focused(axis, &self.preferences.homepage_url);
                 self.sync_address(window, cx);
             }
             Command::NewSpace => {
                 let name = format!("Space {}", self.model.spaces.len() + 1);
-                self.model.add_space(&name, "about:blank");
+                self.model.add_space(&name, &self.preferences.homepage_url);
                 self.sync_address(window, cx);
             }
             Command::NextPane => {

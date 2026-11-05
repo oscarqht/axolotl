@@ -33,17 +33,17 @@ pub fn session_path() -> Option<PathBuf> {
 
 /// Restore the saved workspace, or the default start state when the file is
 /// absent, corrupt or from an unknown version. A bad file is kept aside.
-pub fn restore() -> Workspace {
+pub fn restore(homepage_url: &str) -> Workspace {
     let Some(path) = session_path() else {
-        return Workspace::new("about:blank");
+        return Workspace::new(homepage_url);
     };
     match load_workspace(&path) {
         Ok(Some(workspace)) => workspace,
-        Ok(None) => Workspace::new("about:blank"),
+        Ok(None) => Workspace::new(homepage_url),
         Err(error) => {
             eprintln!("Axolotl: ignoring saved session: {error}");
             let _ = std::fs::rename(&path, path.with_extension("json.bad"));
-            Workspace::new("about:blank")
+            Workspace::new(homepage_url)
         }
     }
 }

@@ -80,7 +80,7 @@ impl BrowserApp {
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
                 let (sender, events) = mpsc::channel();
-                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "theme": current_theme});
+                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "theme": current_theme});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -142,6 +142,34 @@ impl BrowserApp {
                             let _ = view.evaluate_script(&format!("document.querySelector('#error').textContent={text};document.querySelector('#error').hidden={text}.length===0"));
                         }
                         self.report(result.map_err(Into::into));
+                    }
+                }
+                "homepage" => {
+                    if let Some(value) = event["value"].as_str() {
+                        let result = self.preferences.set_homepage_url(value);
+                        let invalid = result.as_ref().err().and_then(|error| {
+                            error.downcast_ref::<workspace_core::NavigationError>()
+                        });
+                        let message = if let Some(error) = invalid {
+                            error.to_string()
+                        } else if result.is_err() {
+                            "Couldn't save your homepage. This choice applies until the app closes."
+                                .into()
+                        } else {
+                            String::new()
+                        };
+                        let response = serde_json::json!({
+                            "value": if invalid.is_some() { None } else { Some(&self.preferences.homepage_url) },
+                            "error": message,
+                            "invalid": invalid.is_some(),
+                        });
+                        if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
+                            self.report(
+                                view.evaluate_script(&format!("window.homepageResult({response})"))
+                                    .map_err(Into::into),
+                            );
+                        }
+                        self.report(result);
                     }
                 }
                 "dismiss" => self.close_settings(window, cx),

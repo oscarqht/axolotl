@@ -122,6 +122,13 @@ machine running the executable. See the validation report below for tested scope
   in the originating pane. Cmd+click (Ctrl+click on Windows) opens one tab
   immediately after the source tab in the same pane, without navigating the source.
 
+Open **Settings** with the header gear or Cmd/Ctrl+, to choose the search engine
+and homepage URL. The homepage is used for new tabs, new spaces, replacement tabs
+when the final tab is closed, and startup when there is no saved session. Existing
+and restored tabs are unchanged. Use an HTTP/HTTPS URL; leave the field blank or
+enter `about:blank` to use the built-in start page. Press Enter or leave the field
+to apply. Preferences are saved separately from the workspace session.
+
 | Shortcut | Action |
 | --- | --- |
 | Cmd/Ctrl+Q | Quit the app (Cmd+Q also works while native web content has focus) |

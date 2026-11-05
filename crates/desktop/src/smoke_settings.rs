@@ -72,12 +72,79 @@ pub(crate) async fn run(
         host.set_test_appearance(tab, None)?;
         pause(cx).await;
     }
+    ensure!(
+        dialog_eval(view, "homepage.value", cx).await? == "about:blank",
+        "Incorrect homepage default"
+    );
     for shift in [false, true] {
-        let focused = dialog_eval(view, &format!("document.dispatchEvent(new KeyboardEvent('keydown',{{key:'Tab',shiftKey:{shift},bubbles:true,cancelable:true}}));document.activeElement===closeButton"), cx).await?;
-        ensure!(focused == true, "Tab failed to move focus inside dialog");
-        let focused = dialog_eval(view, &format!("document.dispatchEvent(new KeyboardEvent('keydown',{{key:'Tab',shiftKey:{shift},bubbles:true,cancelable:true}}));document.activeElement===select"), cx).await?;
-        ensure!(focused == true, "Tab failed to wrap inside dialog");
+        let expected = if shift {
+            ["close", "homepage-url", "search-engine"]
+        } else {
+            ["homepage-url", "close", "search-engine"]
+        };
+        for id in expected {
+            let focused = dialog_eval(view, &format!("document.dispatchEvent(new KeyboardEvent('keydown',{{key:'Tab',shiftKey:{shift},bubbles:true,cancelable:true}}));document.activeElement.id"), cx).await?;
+            ensure!(
+                focused == id,
+                "Tab failed to cycle inside dialog: {focused}"
+            );
+        }
     }
+    dialog_eval(view, "homepage.value='https://example.com';homepage.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true", cx).await?;
+    pause(cx).await;
+    ensure!(
+        dialog_eval(view, "homepage.value", cx).await? == "https://example.com/",
+        "Homepage was not normalized"
+    );
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.preferences.homepage_url == "https://example.com/",
+            "Homepage IPC did not apply"
+        );
+        ensure!(
+            app.model.to_json() == before,
+            "Homepage changed existing tabs"
+        );
+        Ok(())
+    })??;
+    for value in [
+        serde_json::json!("javascript:alert(1)"),
+        serde_json::json!("not a URL"),
+        serde_json::json!(false),
+    ] {
+        dialog_eval(view, &format!("send('homepage',{value});true"), cx).await?;
+        pause(cx).await;
+        ensure!(
+            view.update_in(cx, |app, _, _| app.preferences.homepage_url
+                == "https://example.com/")?,
+            "Invalid homepage IPC changed preference"
+        );
+    }
+    ensure!(dialog_eval(view, "!document.querySelector('#homepage-error').hidden && homepage.getAttribute('aria-invalid')==='true'", cx).await? == true, "Homepage validation error not displayed");
+    dialog_eval(
+        view,
+        "homepage.value='';homepage.dispatchEvent(new Event('change'));true",
+        cx,
+    )
+    .await?;
+    pause(cx).await;
+    ensure!(
+        dialog_eval(
+            view,
+            "homepage.value==='about:blank' && document.querySelector('#homepage-error').hidden",
+            cx
+        )
+        .await?
+            == true,
+        "Empty homepage did not reset or clear error"
+    );
+    dialog_eval(
+        view,
+        "homepage.value='https://example.com';homepage.dispatchEvent(new Event('change'));true",
+        cx,
+    )
+    .await?;
+    pause(cx).await;
     for engine in [
         SearchEngine::Bing,
         SearchEngine::DuckDuckGo,
@@ -133,6 +200,10 @@ pub(crate) async fn run(
     })??;
     pause(cx).await;
     pause(cx).await;
+    ensure!(
+        dialog_eval(view, "homepage.value", cx).await? == "https://example.com/",
+        "Reopened dialog lost homepage"
+    );
     dialog_eval(
         view,
         "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
@@ -149,7 +220,39 @@ pub(crate) async fn run(
         eval(&host, tab, "window.settingsSmokeMarker", cx).await? == 42,
         "Existing page reloaded"
     );
+    view.update_in(cx, |app, window, cx| {
+        let original = app.model.clone();
+        app.command(Command::NewTab, window, cx);
+        ensure!(
+            app.model.focused_pane().active_tab().url == "https://example.com/",
+            "New tab ignored homepage"
+        );
+        app.command(Command::NewSpace, window, cx);
+        ensure!(
+            app.model.focused_pane().active_tab().url == "https://example.com/",
+            "New space ignored homepage"
+        );
+        app.command(Command::CloseTab, window, cx);
+        ensure!(
+            app.model.focused_pane().active_tab().url == "https://example.com/",
+            "Replacement tab ignored homepage"
+        );
+        app.tab_action(
+            crate::app::TabTarget::Page(app.model.focused_pane().id, app.active_tab()),
+            crate::app::TabAction::Close,
+            window,
+            cx,
+        );
+        ensure!(
+            app.model.focused_pane().active_tab().url == "https://example.com/",
+            "Close button replacement ignored homepage"
+        );
+        app.model = original;
+        app.preferences.set_homepage_url("about:blank")?;
+        app.sync_address(window, cx);
+        Ok(())
+    })??;
     Ok(vec![
-        "native settings: Google default, three providers, immediate changes, invalid IPC rejection, live theme updates, modal focus wrap, close/Escape dismissal, focus restoration, menu action, unchanged workspace and live page",
+        "native settings: homepage editing, validation, reset, new tabs/spaces and replacement tabs, Google default, three providers, immediate changes, invalid IPC rejection, live theme updates, modal focus wrap, close/Escape dismissal, focus restoration, menu action, unchanged workspace and live page",
     ])
 }

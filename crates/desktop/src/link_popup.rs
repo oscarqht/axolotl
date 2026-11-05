@@ -204,7 +204,7 @@ impl BrowserApp {
         }
         self.model.tab_mut(tab).unwrap().title = title;
         self.link_popup = None;
-        self.promoted_focus = Some(tab);
+        self.pending_page_focus = Some(tab);
         self.sync_address(window, cx);
         self.report(self.host.focus(tab));
         cx.notify();

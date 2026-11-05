@@ -97,7 +97,7 @@ pub struct BrowserApp {
     pub preferences: crate::preferences::Preferences,
     pub settings: Option<crate::settings::SettingsDialog>,
     pub link_popup: Option<crate::link_popup::LinkPopup>,
-    pub(crate) promoted_focus: Option<TabId>,
+    pub(crate) pending_page_focus: Option<TabId>,
     pub settings_focus: FocusHandle,
     saver: crate::persistence::SessionSaver,
     window_saver: crate::window_state::WindowSaver,
@@ -188,6 +188,7 @@ impl BrowserApp {
             cx.notify();
         })
         .detach();
+        Self::install_space_shortcuts(window, cx);
         let preferences = crate::preferences::Preferences::restore();
         let model = crate::persistence::restore(&preferences.homepage_url);
         let saver = crate::persistence::SessionSaver::new(&model);
@@ -207,7 +208,7 @@ impl BrowserApp {
             preferences,
             settings: None,
             link_popup: None,
-            promoted_focus: None,
+            pending_page_focus: None,
             settings_focus: cx.focus_handle(),
             saver,
             window_saver,

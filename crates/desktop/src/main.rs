@@ -60,8 +60,11 @@ mod smoke_space_drag;
 mod smoke_space_menu;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_video;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_space_shortcuts;
 mod space_drag;
 mod space_menu;
+mod space_shortcuts;
 mod split_preview;
 mod window_state;
 
@@ -75,6 +78,13 @@ actions!(
         Quit, Address, NewTab, NewSpace, CloseTab, Reload, NextPane, Back, Forward, Settings
     ]
 );
+
+/// Zero-based position in the current space strip.
+#[derive(Clone, Action, PartialEq, Eq, serde::Deserialize)]
+#[action(namespace = axolotl, no_json)]
+pub struct SelectSpace {
+    pub index: usize,
+}
 
 fn main() {
     eprintln!("Axolotl: initializing platform");
@@ -107,6 +117,14 @@ fn main() {
             KeyBinding::new("alt-left", Back, None),
             KeyBinding::new("alt-right", Forward, None),
         ]);
+        #[cfg(target_os = "macos")]
+        cx.bind_keys((1..=9).map(|number| {
+            KeyBinding::new(
+                &format!("cmd-{number}"),
+                SelectSpace { index: number - 1 },
+                None,
+            )
+        }));
         #[cfg(target_os = "macos")]
         cx.on_action(|_: &macos_passkeys::EnablePasskeys, cx| macos_passkeys::enable(cx));
         cx.set_menus(vec![

@@ -183,6 +183,10 @@ async fn run(
         return crate::smoke_identity::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-space-shortcuts") {
+        return crate::smoke_space_shortcuts::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-link-popup") {
         return crate::smoke_link_popup::run(view, cx).await;
     }

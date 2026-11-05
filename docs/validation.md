@@ -54,6 +54,33 @@ Run on 2026-11-05 in `bro-edit-space-emoji` on macOS.
 - Windows runtime and OS-specific emoji glyph availability were not checked on
   this Mac.
 
+# Indexed space shortcut validation
+
+Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.
+
+Cmd+1 through Cmd+9 select the corresponding space in the current strip order.
+Cmd+9 selects the ninth space, including when a tenth space exists. Unavailable
+indices preserve selection, address drafts, Settings and link previews. Valid
+selections cancel editing, dismiss overlays and focus the selected native page.
+
+- `cargo test --workspace --all-features --locked`: 54 tests passed, including
+  exact numeric indices and rejection of non-Command/extra-modifier input.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
+  formatting and whitespace checks passed.
+- `--smoke-test --smoke-space-shortcuts` passed on actual WKWebViews. AppKit
+  queued key events exercise the native shortcut monitor and app-level action
+  dispatch. Checks cover page/input/Settings/preview focus, missing indices,
+  reorder semantics, the exact ninth space among ten, retained page/form state,
+  lazy view creation and native responder ownership after selection.
+
+The smoke test checks that NSWindow's first responder belongs to the selected
+WKWebView. This verifies keyboard focus without requiring the shared desktop to
+keep the test app foreground. It does not inject physical OS keyboard events.
+Indexed selection uses a global action handler because native views can leave
+GPUI with no active window or a stale focused chrome node. The handler defers
+updates to the owning window, avoiding reentrant native action dispatch.
+The existing foreground chrome redraw limitation documented below remains.
+
 # Space shortcut and temporary link preview validation
 
 Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.

@@ -313,7 +313,7 @@ impl BrowserApp {
         self.prepare_space_menu(window, cx);
         self.prepare_settings(window, cx);
         self.prepare_link_popup(window, cx);
-        if let Some(tab) = self.promoted_focus.take() {
+        if let Some(tab) = self.pending_page_focus.take() {
             self.report(self.host.focus(tab));
         }
     }

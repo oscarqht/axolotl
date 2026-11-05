@@ -156,11 +156,15 @@ to apply. Preferences are saved separately from the workspace session.
 | Cmd/Ctrl+L | Edit the focused page URL inline |
 | Cmd/Ctrl+T | New tab in the focused pane |
 | Cmd/Ctrl+Shift+T | New space using the homepage; focus its address input |
+| Cmd+1 … Cmd+9 (macOS) | Select the corresponding space in its current strip order |
 | Option+click (macOS) | Open a link in a temporary window-centered preview |
 | Cmd/Ctrl+W | Close the focused tab |
 | Cmd/Ctrl+R | Reload the focused tab |
 | Alt+Left / Alt+Right | Back / forward (when delivered to the shell) |
 | F6 | Cycle pane focus when delivered to the GPUI shell |
+
+Cmd+number uses the current space order after dragging spaces. Cmd+9 selects
+the ninth space; numbers without a corresponding space leave the current view unchanged.
 
 Back, forward, and reload act on the focused pane. The native macOS Edit menu
 supplies standard copy/paste actions to both web content and the inline URL input.
@@ -227,6 +231,9 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-men
 
 # Title/icon persistence across separate native processes and legacy sessions
 python3 scripts/test-space-session.py target/debug/axolotl
+
+# Indexed macOS space shortcuts from page and app-control focus
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-shortcuts
 
 # Temporary link preview, promotion, split centering and resize
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-link-popup

@@ -26,6 +26,19 @@ fn is_settings(key: &str, flags: Flags) -> bool {
         && !flags.intersects(Flags::Control | Flags::Option | Flags::Shift)
 }
 
+/// Cmd+9 selects the ninth space, rather than a special last-space shortcut.
+fn space_index(key: &str, flags: Flags) -> Option<usize> {
+    if !flags.contains(Flags::Command)
+        || flags.intersects(Flags::Control | Flags::Option | Flags::Shift)
+    {
+        return None;
+    }
+    match key.as_bytes() {
+        [digit @ b'1'..=b'9'] => Some(usize::from(digit - b'1')),
+        _ => None,
+    }
+}
+
 pub fn install(cx: &mut App) {
     let app = cx.to_async();
     let executor = cx.foreground_executor().clone();
@@ -41,6 +54,17 @@ pub fn install(cx: &mut App) {
             .as_deref()
             .is_some_and(|key| crate::macos_keyboard::route_arrow(event_ref, key))
         {
+            return std::ptr::null_mut();
+        }
+
+        if let Some(index) = key.as_deref().and_then(|key| space_index(key, flags)) {
+            let app = app.clone();
+            executor
+                .spawn(async move {
+                    let _ = app.update(|cx| cx.dispatch_action(&crate::SelectSpace { index }));
+                })
+                .detach();
+            // Reserve the shortcut before any WKWebView, including native controls.
             return std::ptr::null_mut();
         }
         if key.as_deref().is_some_and(|key| is_settings(key, flags)) {
@@ -71,13 +95,37 @@ pub fn install(cx: &mut App) {
     let monitor = unsafe {
         NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler)
     }
-    .expect("register Cmd+Q event monitor");
+    .expect("register app shortcut event monitor");
     cx.set_global(QuitMonitor(monitor));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_numbers_select_exact_space_indices_only() {
+        for number in 1..=9 {
+            let key = number.to_string();
+            assert_eq!(space_index(&key, Flags::Command), Some(number - 1));
+            assert_eq!(
+                space_index(&key, Flags::Command | Flags::CapsLock),
+                Some(number - 1)
+            );
+            for flags in [
+                Flags::empty(),
+                Flags::Control,
+                Flags::Command | Flags::Control,
+                Flags::Command | Flags::Option,
+                Flags::Command | Flags::Shift,
+            ] {
+                assert_eq!(space_index(&key, flags), None);
+            }
+        }
+        for key in ["0", "10", "", "a", "!", "１"] {
+            assert_eq!(space_index(key, Flags::Command), None);
+        }
+    }
 
     #[test]
     fn only_command_comma_opens_settings() {

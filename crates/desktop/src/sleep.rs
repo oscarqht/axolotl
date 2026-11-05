@@ -392,7 +392,11 @@ impl BrowserApp {
             self.sleep.entries.entry(id).or_default().sleeping = true;
             self.saver.checkpoint(&self.model);
             self.sleep.save();
+            // Invalidate AppKit's covered GPUI layer while the native parent is
+            // still reachable, including when this is the last loaded page.
+            self.host.request_redraw();
             self.host.unload(id);
+            window.refresh();
             cx.notify();
         }
         let mut ready = Vec::new();

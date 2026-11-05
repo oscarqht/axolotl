@@ -3,13 +3,13 @@
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font:13px -apple-system,Segoe UI,sans-serif;color:var(--ink)}
 #menu{position:absolute;width:220px;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);overflow:auto;padding:5px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 4px 14px #0003}
-#menu.editing{width:320px}
-button{padding:8px 12px;text-align:left;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer}button:hover,button:focus-visible{background:var(--hover);outline:2px solid var(--border)}
-#edit-space{display:block;width:100%}form{margin:0;padding:7px}h2{font-size:14px;margin:0 0 14px}label{display:block;margin-bottom:7px}input{width:100%;min-width:0;padding:7px;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:4px;font:inherit}small{display:block;margin-top:7px;font-size:11px;opacity:.7}
+#menu.editing{width:320px}#menu:focus{outline:none}
+button{padding:8px 12px;text-align:left;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer}button:hover{background:var(--hover);outline:2px solid var(--border)}button:focus-visible{outline:2px solid var(--border)}
+#menu > button{display:block;width:100%}form{margin:0;padding:7px}h2{font-size:14px;margin:0 0 14px}label{display:block;margin-bottom:7px}input{width:100%;min-width:0;padding:7px;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:4px;font:inherit}small{display:block;margin-top:7px;font-size:11px;opacity:.7}
 .fields{display:flex;gap:8px;align-items:center}#icon{flex-shrink:0;width:38px;height:34px;padding:4px;text-align:center;border:1px solid var(--border);font-size:20px}#icon.empty{font-size:18px}.actions{display:flex;justify-content:flex-end;margin-top:12px}#save{background:var(--hover);border:1px solid var(--border)}
 #picker{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}.picker-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.picker-heading label{margin:0}#clear{padding:4px 8px}#emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(32px,1fr));max-height:180px;overflow:auto;margin-top:8px;gap:2px}#emojis button{padding:4px 0;height:34px;text-align:center;font-size:22px}#emojis button[aria-pressed=true]{background:var(--hover)}#empty{padding:10px 0;margin:0;opacity:.7}[hidden]{display:none!important}
 </style>
-<div id="menu" role="menu" aria-label="Space tab">
+<div id="menu" tabindex="-1" role="menu" aria-label="Space tab">
 <button id="sleep-space" role="menuitem">Sleep Space</button>
 <button id="edit-space" role="menuitem">Edit space</button>
 <form hidden>
@@ -45,9 +45,9 @@ search.oninput=renderEmojis;
 document.querySelector('#clear').onclick=()=>{icon=null;updateIcon();closePicker()};
 form.onsubmit=e=>{e.preventDefault();send('save',input.value)};
 document.addEventListener('pointerdown',e=>{if(!menu.contains(e.target))send('dismiss')});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(!form.hidden&&e.key==='Enter'&&!e.isComposing&&e.target.tagName!=='BUTTON'){e.preventDefault();form.requestSubmit()}else if(form.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();const items=[...menu.querySelectorAll(':scope > button')].filter(el=>!el.hidden);const i=items.indexOf(document.activeElement);items[(i+(e.key==='ArrowUp'?-1:1)+items.length)%items.length].focus()}else if(e.key==='Tab'){const items=[...menu.querySelectorAll('button,input')].filter(el=>el.getClientRects().length);const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(!form.hidden&&e.key==='Enter'&&!e.isComposing&&e.target.tagName!=='BUTTON'){e.preventDefault();form.requestSubmit()}else if(form.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();const items=[...menu.querySelectorAll(':scope > button')].filter(el=>!el.hidden);const i=items.indexOf(document.activeElement);items[i<0?(e.key==='ArrowUp'?items.length-1:0):(i+(e.key==='ArrowUp'?-1:1)+items.length)%items.length].focus()}else if(e.key==='Tab'){const items=[...menu.querySelectorAll('button,input')].filter(el=>el.getClientRects().length);const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
 document.addEventListener('contextmenu',e=>e.preventDefault());
-window.addEventListener('resize',place);place();button.focus();send('ready');
+window.addEventListener('resize',place);place();menu.focus();send('ready');
 document.addEventListener('keydown',event=>{
   if(event.isTrusted && event.shiftKey && !event.altKey && event.key.toLowerCase()==='t' &&
     (navigator.platform.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)){

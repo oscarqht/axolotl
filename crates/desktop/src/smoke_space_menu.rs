@@ -72,10 +72,12 @@ pub(crate) async fn run(
         })?;
         pause(cx).await;
         pause(cx).await;
-        let snapshot = eval(view, "(()=>{const r=menu.getBoundingClientRect();return {items:[...menu.querySelectorAll('[role=menuitem]')].map(b=>b.textContent),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight}})()", cx).await?;
+        let snapshot = eval(view, "(()=>{const r=menu.getBoundingClientRect();const rows=[...menu.querySelectorAll('[role=menuitem]')];return {fullWidth:rows.every(b=>Math.abs(b.offsetWidth-(menu.clientWidth-10))<=1),hoverOnly:rows.every(b=>b.matches(':hover')||getComputedStyle(b).backgroundColor==='rgba(0, 0, 0, 0)'),items:rows.map(b=>b.textContent),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight}})()", cx).await?;
         ensure!(
             snapshot["items"] == serde_json::json!(["Sleep Space", "Edit space"])
-                && snapshot["fits"] == true,
+                && snapshot["fits"] == true
+                && snapshot["fullWidth"] == true
+                && snapshot["hoverOnly"] == true,
             "Incorrect/clipped space menu: {snapshot}"
         );
         let editor = eval(view, "button.click();({focused:document.activeElement===input,fits:menu.getBoundingClientRect().bottom<=innerHeight,icon:icon})", cx).await?;

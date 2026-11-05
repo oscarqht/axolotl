@@ -194,6 +194,15 @@ impl BrowserApp {
         };
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let editing = self.editing == Some(target);
+        let sleeping = match target {
+            TabTarget::Space(id) => self
+                .model
+                .spaces
+                .iter()
+                .find(|s| s.id == id)
+                .is_some_and(|s| s.panes.iter().all(|p| self.sleep.is_sleeping(p.active_tab))),
+            TabTarget::Page(_, id) => self.sleep.is_sleeping(id),
+        };
         let notifications = match target {
             TabTarget::Space(space) => self.space_notifications(space),
             TabTarget::Page(_, tab) => {
@@ -316,6 +325,7 @@ impl BrowserApp {
                     .items_center()
                     .overflow_hidden()
                     .cursor_pointer()
+                    .when(sleeping, |title| title.opacity(0.5))
                     .children(
                         match target {
                             TabTarget::Space(id) => self
@@ -463,14 +473,6 @@ impl BrowserApp {
                                 self.sleep
                                     .image(tab)
                                     .map(|image| img(image).size_full().opacity(0.5)),
-                            )
-                            .child(
-                                div()
-                                    .absolute()
-                                    .top(px(12.))
-                                    .left(px(12.))
-                                    .text_size(px(12.))
-                                    .child("💤 Sleeping · Click to wake"),
                             )
                             .when(self.sleep.image(tab).is_none(), |el| {
                                 el.child(div().opacity(0.5).child(format!(

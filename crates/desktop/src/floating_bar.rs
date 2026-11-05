@@ -189,6 +189,14 @@ impl FloatingBar {
         self.view.evaluate_script("if(document.activeElement?.tagName!=='INPUT'){const input=document.querySelector('input');input?.focus();input?.select()}")?;
         Ok(())
     }
+    #[cfg(target_os = "windows")]
+    pub fn has_focus(&self) -> bool {
+        self.view.has_focus()
+    }
+    #[cfg(all(target_os = "windows", feature = "smoke"))]
+    pub fn test_frontmost(&self) -> Result<bool> {
+        self.view.test_frontmost()
+    }
     pub fn next_event(&self) -> Option<Value> {
         self.events.try_recv().ok()
     }

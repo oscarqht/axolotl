@@ -143,6 +143,14 @@ impl BrowserApp {
                     }
                 }
                 "blur" => {
+                    // WebView2 posts blur asynchronously. A focus handoff can
+                    // already have returned to this editor by the time IPC arrives.
+                    #[cfg(target_os = "windows")]
+                    if crate::native_webview::is_creating()
+                        || self.bars.get(&pane).is_some_and(|bar| bar.has_focus())
+                    {
+                        continue;
+                    }
                     if self.editing == Some(target) {
                         self.cancel_edit(window, cx);
                     }

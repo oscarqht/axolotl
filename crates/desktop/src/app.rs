@@ -486,6 +486,14 @@ impl BrowserApp {
         if matches!(target, TabTarget::Space(_)) {
             self.address.update(cx, |input, cx| input.focus(window, cx));
         }
+        // Complete the native focus handoff before processing queued blur IPC.
+        // The next render mounts/selects the input inside this same controller.
+        #[cfg(target_os = "windows")]
+        if let TabTarget::Page(pane, _) = target
+            && let Some(bar) = self.bars.get(&pane)
+        {
+            self.report(bar.focus_editor());
+        }
         // The input is mounted only while editing. Select after the next render
         // has registered its action handlers, rather than dispatching to the old tab title.
         self.select_address = matches!(target, TabTarget::Space(_));
@@ -810,6 +818,15 @@ impl BrowserApp {
                     }
                 }
                 BrowserEvent::Focused(tab) => {
+                    // Ignore focus notifications from a completed WebView2
+                    // handoff, including those pumped during sibling creation.
+                    #[cfg(target_os = "windows")]
+                    if let Some(TabTarget::Page(pane, _)) = self.editing
+                        && (crate::native_webview::is_creating()
+                            || self.bars.get(&pane).is_some_and(|bar| bar.has_focus()))
+                    {
+                        continue;
+                    }
                     self.notifications.remove(&tab);
                     // Native child focus is outside GPUI's focus tree, so it may
                     // not emit InputEvent::Blur (including clicks in the same pane).

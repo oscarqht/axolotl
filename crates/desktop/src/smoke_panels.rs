@@ -6,6 +6,80 @@ use crate::{
 use anyhow::{Result, ensure};
 use gpui::*;
 use workspace_core::{PaneId, TabId};
+
+#[cfg(target_os = "windows")]
+pub(crate) async fn check_windows_controls(
+    view: &WeakEntity<BrowserApp>,
+    cx: &mut AsyncWindowContext,
+) -> Result<Vec<&'static str>> {
+    use crate::app::{Command, TabTarget};
+    let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
+    for trigger in ["shortcut", "double-click", "new-tab"] {
+        view.update_in(cx, |app, window, cx| -> Result<()> {
+            app.cancel_edit(window, cx);
+            match trigger {
+                "shortcut" => app.command(Command::Address, window, cx),
+                "new-tab" => app.command(Command::NewTab, window, cx),
+                _ => {
+                    app.bars[&pane].evaluate(
+                        "document.querySelector('.chip').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));true",
+                        |_| {},
+                    )?;
+                }
+            }
+            Ok(())
+        })??;
+        for _ in 0..10 {
+            pause(cx).await;
+        }
+        view.update_in(cx, |app, _, _| {
+            ensure!(
+                app.bars[&pane].test_frontmost()?,
+                "{trigger}: page covers the tab chips"
+            );
+            ensure!(
+                app.editing == Some(TabTarget::Page(pane, app.active_tab())),
+                "{trigger} dismissed the URL editor"
+            );
+            Ok(())
+        })??;
+        let editor = bar_eval(view, pane,
+            "(()=>{const i=document.querySelector('input');return {focused:document.hasFocus()&&document.activeElement===i,value:i?.value,selected:i?.selectionEnd-i?.selectionStart}})()", cx).await?;
+        ensure!(
+            editor["focused"] == true
+                && editor["value"] == "about:blank"
+                && editor["selected"] == 11,
+            "{trigger} editor is not ready for typing: {editor}"
+        );
+        bar_eval(view, pane, "(()=>{const i=document.querySelector('input');i.value='draft.example/path';i.dispatchEvent(new Event('input'));return true})()", cx).await?;
+        for _ in 0..3 {
+            pause(cx).await;
+        }
+        ensure!(
+            bar_eval(view, pane, "document.querySelector('input')?.value", cx).await?
+                == "draft.example/path",
+            "{trigger}: rendering overwrote the URL draft"
+        );
+        view.update_in(cx, |app, _, _| app.host.focus(app.active_tab()))??;
+        for _ in 0..3 {
+            pause(cx).await;
+        }
+        view.update_in(cx, |app, _, _| {
+            ensure!(
+                app.editing.is_none(),
+                "{trigger}: focusing the page failed to dismiss the editor"
+            );
+            ensure!(
+                app.bars[&pane].test_frontmost()?,
+                "{trigger}: page focus covered the tab chips"
+            );
+            Ok(())
+        })??;
+    }
+    Ok(vec![
+        "Windows tab chips stay above pages; URL editing retains focus and drafts after address shortcut, chip double-click and lazy new-tab creation; page focus dismisses editing",
+    ])
+}
 pub(crate) async fn run(
     view: &WeakEntity<BrowserApp>,
     host: &Host,

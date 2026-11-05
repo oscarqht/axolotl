@@ -30,6 +30,8 @@ impl BuildNativeChild for wry::WebViewBuilder<'static> {
 
 #[cfg(target_os = "windows")]
 pub use windows_view::NativeWebView;
+#[cfg(target_os = "windows")]
+pub use windows_view::is_creating;
 
 #[cfg(target_os = "windows")]
 mod windows_view {
@@ -44,7 +46,12 @@ mod windows_view {
     type Creation = Box<dyn FnOnce()>;
     thread_local! {
         static CREATIONS: RefCell<VecDeque<Creation>> = RefCell::new(VecDeque::new());
+        static AFTER_CREATIONS: RefCell<Vec<Creation>> = RefCell::new(Vec::new());
         static CREATING: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub fn is_creating() -> bool {
+        CREATING.with(Cell::get)
     }
 
     struct Parent(RawWindowHandle);
@@ -153,10 +160,23 @@ mod windows_view {
                     .spawn(async move {
                         // A single worker preserves native sibling order even though
                         // each WebView2 constructor runs a nested Windows message loop.
-                        while let Some(create) =
-                            CREATIONS.with(|queue| queue.borrow_mut().pop_front())
-                        {
-                            create();
+                        loop {
+                            while let Some(create) =
+                                CREATIONS.with(|queue| queue.borrow_mut().pop_front())
+                            {
+                                create();
+                            }
+                            // Constructors put new HWNDs on top and can change
+                            // focus while pumping messages. Present chrome only
+                            // after every pending sibling has actually been built.
+                            let pending = AFTER_CREATIONS
+                                .with(|queue| std::mem::take(&mut *queue.borrow_mut()));
+                            if pending.is_empty() {
+                                break;
+                            }
+                            for present in pending {
+                                present();
+                            }
                         }
                         CREATING.with(|creating| creating.set(false));
                     })
@@ -178,6 +198,25 @@ mod windows_view {
                 return Ok(operation(&view)?);
             }
             state.operations.push(Box::new(operation));
+            Ok(())
+        }
+        fn after_creations(
+            &self,
+            operation: impl FnOnce(&wry::WebView) -> wry::Result<()> + 'static,
+        ) -> Result<()> {
+            if !is_creating() {
+                return self.call(operation);
+            }
+            let weak = Rc::downgrade(&self.0);
+            AFTER_CREATIONS.with(|queue| {
+                queue.borrow_mut().push(Box::new(move || {
+                    if let Some(state) = weak.upgrade()
+                        && let Err(error) = NativeWebView(state).call(operation)
+                    {
+                        eprintln!("Presenting native view: {error}");
+                    }
+                }))
+            });
             Ok(())
         }
         pub fn set_bounds(&self, bounds: wry::Rect) -> Result<()> {
@@ -246,7 +285,7 @@ mod windows_view {
                 "parent":parent.map(|p|p.0 as isize),"bounds":view.bounds().ok().map(|b|format!("{b:?}"))})
         }
         pub fn raise(&self) -> Result<()> {
-            self.call(|view| {
+            self.after_creations(|view| {
                 use windows::Win32::{
                     Foundation::HWND,
                     UI::WindowsAndMessaging::{
@@ -271,7 +310,60 @@ mod windows_view {
             })
         }
         pub fn focus(&self) -> Result<()> {
-            self.call(|view| view.focus())
+            // MoveFocus can bounce through the parent HWND and emit blur/focus
+            // events even when this controller already owns keyboard focus.
+            if !is_creating() && self.has_focus() {
+                return Ok(());
+            }
+            self.after_creations(|view| view.focus())
+        }
+        pub fn has_focus(&self) -> bool {
+            use windows::Win32::{
+                Foundation::HWND,
+                UI::{Input::KeyboardAndMouse::GetFocus, WindowsAndMessaging::IsChild},
+            };
+            use wry::WebViewExtWindows;
+            let Some(view) = self.0.borrow().view.clone() else {
+                return false;
+            };
+            unsafe {
+                let mut container = HWND::default();
+                if view.controller().ParentWindow(&mut container).is_err() {
+                    return false;
+                }
+                let focused = GetFocus();
+                focused == container || IsChild(container, focused).as_bool()
+            }
+        }
+        #[cfg(feature = "smoke")]
+        pub fn test_frontmost(&self) -> Result<bool> {
+            use windows::Win32::{
+                Foundation::{HWND, POINT, RECT},
+                Graphics::Gdi::MapWindowPoints,
+                UI::WindowsAndMessaging::{
+                    CWP_SKIPINVISIBLE, ChildWindowFromPointEx, GetClientRect, GetParent,
+                },
+            };
+            use wry::WebViewExtWindows;
+            let view = self
+                .0
+                .borrow()
+                .view
+                .clone()
+                .ok_or_else(|| anyhow!("View is not ready"))?;
+            unsafe {
+                let mut container = HWND::default();
+                view.controller().ParentWindow(&mut container)?;
+                let mut rect = RECT::default();
+                GetClientRect(container, &mut rect)?;
+                let parent = GetParent(container)?;
+                let mut center = [POINT {
+                    x: rect.right / 2,
+                    y: rect.bottom / 2,
+                }];
+                MapWindowPoints(Some(container), Some(parent), &mut center);
+                Ok(ChildWindowFromPointEx(parent, center[0], CWP_SKIPINVISIBLE) == container)
+            }
         }
         pub fn focus_parent(&self) -> Result<()> {
             // SetFocus returns the previous HWND, which can be null on success.

@@ -65,7 +65,14 @@ impl BrowserApp {
                 "close" => self.tab_action(target, TabAction::Close, window, cx),
                 "new" => {
                     self.focus_pane(pane, window, cx);
-                    self.command(Command::NewTab, window, cx);
+                    if event["edit"].as_bool() == Some(false) {
+                        // The plus button creates a tab without expanding the
+                        // compact controls. Address shortcuts still open editing.
+                        let tab = self.model.add_tab("about:blank");
+                        self.select_target(TabTarget::Page(pane, tab), window, cx);
+                    } else {
+                        self.command(Command::NewTab, window, cx);
+                    }
                 }
                 "reload" => self.report(self.host.reload(tab)),
                 "navigate" => {

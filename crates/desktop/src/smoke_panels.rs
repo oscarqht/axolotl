@@ -14,6 +14,46 @@ pub(crate) async fn run(
     cx: &mut AsyncWindowContext,
 ) -> Result<Vec<&'static str>> {
     let mut checks = Vec::new();
+    let control_pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
+    let triggers=bar_eval(view,control_pane,"(()=>{for(const id of ['bar','handle','add'])document.getElementById(id).dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));document.querySelector('#handle').focus();const handle=expanded;document.querySelector('#add').focus();const plus=expanded;document.activeElement?.blur();return {handle,plus}})()",cx).await?;
+    ensure!(
+        triggers["handle"] == false && triggers["plus"] == false,
+        "Handle/+ hover or focus expanded compact bar: {triggers}"
+    );
+    let before = view.update_in(cx, |app, _, _| app.model.focused_pane().tabs.len())?;
+    // Creating a page replaces the native control surface, so observe the
+    // resulting model instead of awaiting JS in the surface being destroyed.
+    view.update_in(cx, |app, _, _| {
+        app.bars[&control_pane].evaluate("document.querySelector('#add').click();true", |_| {})
+    })??;
+    pause(cx).await;
+    view.update_in(cx, |app, window, cx| {
+        ensure!(
+            app.model.focused_pane().tabs.len() == before + 1
+                && app.editing.is_none()
+                && !app.bars[&control_pane].expanded,
+            "Plus must create a tab without expanding/editing"
+        );
+        app.command(crate::app::Command::CloseTab, window, cx);
+        Ok(())
+    })??;
+    pause(cx).await;
+    view.update_in(cx,|app,_,_|app.bars[&control_pane].evaluate("document.querySelector('#count').dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));true",|_|{}))??;
+    pause(cx).await;
+    ensure!(
+        view.update_in(cx, |app, _, _| app.bars[&control_pane].expanded)?,
+        "Count hover did not expand chips"
+    );
+    view.update_in(cx, |app, _, _| {
+        app.bars[&control_pane].evaluate(
+            "pinned=false;document.activeElement?.blur();expand(false);true",
+            |_| {},
+        )
+    })??;
+    pause(cx).await;
+    pause(cx).await;
+    checks.push("only count/chip hover expands; handle/plus hover and focus stay compact; plus creates a tab without address editing");
+
     // Native bar states, overflow and IPC use the production surface above live pages.
     let pane = view.update_in(cx, |app, window, cx| {
         app.cancel_edit(window, cx);

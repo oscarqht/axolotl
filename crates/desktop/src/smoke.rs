@@ -89,7 +89,7 @@ pub(crate) async fn bar_eval(
         }
         pause(cx).await;
     }
-    anyhow::bail!("Bar evaluation timed out")
+    anyhow::bail!("Bar evaluation timed out: {script}")
 }
 
 async fn check_scrollbars(host: &Host, tab: TabId, cx: &mut AsyncWindowContext) -> Result<()> {

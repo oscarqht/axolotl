@@ -77,10 +77,12 @@ machine running the executable. See the validation report below for tested scope
   **+** to create a space. Closing the final space is disabled. Double-click a
   space title to edit its focused page address.
 - Each panel has a bottom-centered floating bar above its live page: a panel
-  drag handle, active index/count (for example **2/5**), and **+**. Hover, keyboard
-  focus, or tapping the count expands it into favicon/title chips. Each chip has
+  drag handle, active index/count (for example **2/5**), and **+**. Hover or focus
+  the count/chip area, or tap the count, to expand it into favicon/title chips.
+  Hovering or clicking the handle or **+** does not expand it. Each chip has
   a close button; double-click the label to edit its address. Enter navigates and
-  Escape cancels. New tabs immediately open address editing. Long stacks remain
+  Escape cancels. **+** creates a blank tab while leaving the chip row closed;
+  Cmd/Ctrl+T creates a tab with address editing. Long stacks remain
   in one horizontal row, with overflow arrows and automatic active-chip reveal.
   The bar animates between compact and expanded states, filling the panel width
   with 16px edge margins. Overflow fades indicate hidden chips on either side

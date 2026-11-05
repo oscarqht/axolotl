@@ -1,3 +1,19 @@
+# Chip-area expansion triggers
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Hover/focus expansion is limited to the count and chip region. Handle and plus
+  interactions do not initiate expansion or keep the bar open. Handle dragging
+  also suppresses count hover. Rebuilt expanded controls schedule guarded collapse
+  so plus-created native pages cannot leave the replacement bar stuck open.
+- Plus creates a blank tab without address editing. Native-bar, page and GPUI
+  Cmd/Ctrl+T still use the existing address-editing behavior.
+- All 24 unit tests and strict Clippy passed. Native WKWebView smoke passed on
+  rerun, including negative hover/focus checks for handle/plus, count hover,
+  plus creation without editing, and the prior animation/docking/history checks.
+  Earlier runs reported `Missing native drag card` in an existing preview check;
+  the cancellation cause was not isolated. OS input and Windows remain unverified.
+
 # Floating bar animation and width
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

@@ -41,8 +41,11 @@ function expand(value) {
     !value &&
     (drag ||
       state.editing ||
-      (document.hasFocus() && bar.contains(document.activeElement)) ||
-      bar.matches(":hover") ||
+      (document.hasFocus() &&
+        document.activeElement?.closest("#count,#tabs,.arrow")) ||
+      [...bar.querySelectorAll("#count,#tabs,.arrow")].some((area) =>
+        area.matches(":hover"),
+      ) ||
       pinned)
   )
     return;
@@ -114,15 +117,24 @@ function reveal() {
     .querySelector(".active")
     ?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
-bar.addEventListener("pointerenter", (e) => {
-  if (e.pointerType !== "touch") expand(true);
-});
+for (const area of bar.querySelectorAll("#count,#tabs")) {
+  area.addEventListener("pointerenter", (event) => {
+    if (event.pointerType !== "touch" && !drag?.whole) expand(true);
+  });
+  area.addEventListener("pointerleave", collapse);
+}
+for (const arrow of bar.querySelectorAll(".arrow")) {
+  arrow.addEventListener("pointerleave", collapse);
+}
 bar.addEventListener("pointerleave", () => {
   if (drag && !drag.active) drag = null;
   collapse();
 });
 bar.addEventListener("dragstart", (e) => e.preventDefault());
-bar.addEventListener("focusin", () => expand(true));
+bar.addEventListener("focusin", (event) => {
+  if (event.target.closest("#count,#tabs,.arrow")) expand(true);
+  else collapse();
+});
 bar.addEventListener("focusout", collapse);
 window.addEventListener("blur", () => {
   if (state.editing) send({ type: "blur", tab: state.editing });
@@ -133,7 +145,8 @@ document.querySelector("#count").onclick = () => {
   pinned = !pinned;
   expand(true);
 };
-document.querySelector("#add").onclick = () => send({ type: "new" });
+document.querySelector("#add").onclick = () =>
+  send({ type: "new", edit: false });
 document.querySelector("#prev").onclick = () =>
   tabs.scrollBy({ left: -190, behavior: "smooth" });
 document.querySelector("#next").onclick = () =>
@@ -145,7 +158,12 @@ window.updateBar = (s) => {
   state = s;
   if (s.expanded || s.editing)
     bar.style.setProperty("--expanded-width", `${s.surfaceWidth - 8}px`);
-  if (!old.tabs.length && s.expanded) expand(true);
+  if (!old.tabs.length && s.expanded) {
+    expand(true);
+    // A rebuilt surface has no previous hover-leave timer. Retain expansion
+    // only if its chip region is still being used, rather than for handle/+.
+    collapse();
+  }
   document.querySelector("#count").textContent =
     `${s.tabs.findIndex((t) => t.id === s.active) + 1}/${s.tabs.length}`;
   if (

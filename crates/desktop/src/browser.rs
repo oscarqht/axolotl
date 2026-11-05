@@ -1,7 +1,6 @@
 //! The desktop browser boundary. Wry owns native pages; the workspace owns tabs.
 //!
-//! All methods and native handles stay on GPUI's UI thread. Callbacks only enqueue
-//! events, avoiding reentrant GPUI entity updates from WebKit/WebView2 callbacks.
+//! Native handles stay on the UI thread; callbacks enqueue events to avoid reentrant updates.
 
 use crate::native_webview::{BuildNativeChild, NativeWebView as WebView};
 use std::{
@@ -18,7 +17,7 @@ use wry::{NewWindowResponse, PageLoadEvent, WebViewBuilder};
 
 const START_HTML: &str = include_str!("../assets/start.html");
 
-fn html_data_url(html: &str) -> String {
+pub(crate) fn html_data_url(html: &str) -> String {
     use base64::Engine as _;
     format!(
         "data:text/html;charset=utf-8;base64,{}",
@@ -26,7 +25,7 @@ fn html_data_url(html: &str) -> String {
     )
 }
 
-fn inline_navigation(url: &str, expected: &str) -> bool {
+pub(crate) fn inline_navigation(url: &str, expected: &str) -> bool {
     url == "about:blank" || (cfg!(target_os = "windows") && url == expected)
 }
 
@@ -51,6 +50,7 @@ pub enum BrowserEvent {
     Loaded(TabId),
     NewTab(TabId, String),
     Shortcut(TabId, String),
+    Gesture(TabId, f64, f64),
 }
 
 /// The operations a replacement engine must provide. Browser state is never
@@ -185,7 +185,9 @@ impl BrowserHost for WryHost {
         let popup = self.sender.clone();
         let visible = self.visible.clone();
         let nonce = uuid::Uuid::new_v4().simple().to_string();
-        let input_bridge = INPUT_BRIDGE.replace("__NONCE__", &nonce);
+        let input_bridge = INPUT_BRIDGE
+            .replace("__NONCE__", &nonce)
+            .replace("__GESTURES__", include_str!("../assets/gestures.js"));
         let start_url = html_data_url(START_HTML);
         let builder = WebViewBuilder::new()
             .with_visible(false)
@@ -202,7 +204,7 @@ impl BrowserHost for WryHost {
                 include_str!("../assets/hide-scrollbars.js"),
                 false,
             )
-            .with_initialization_script(input_bridge)
+            .with_initialization_script_for_main_only(input_bridge, false)
             .with_navigation_handler(move |url| {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
             })
@@ -210,14 +212,22 @@ impl BrowserHost for WryHost {
                 if !visible.borrow().contains(&tab) {
                     return;
                 }
+                if let Some(value) = request.body().strip_prefix(&format!("{nonce}:wheel:"))
+                    && let Some((x, y)) = value.split_once(':')
+                    && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
+                    && x.is_finite()
+                    && y.is_finite()
+                {
+                    let _ = ipc.try_send(BrowserEvent::Gesture(tab, x, y));
+                    return;
+                }
                 let Some(command) = authenticated_command(request.body(), &nonce) else {
                     return;
                 };
                 let event = match command {
                     "focus" => BrowserEvent::Focused(tab),
-                    "address" | "new-tab" | "close-tab" | "reload" => {
-                        BrowserEvent::Shortcut(tab, command.to_owned())
-                    }
+                    "address" | "new-tab" | "close-tab" | "reload" | "swipe-next"
+                    | "swipe-prev" => BrowserEvent::Shortcut(tab, command.to_owned()),
                     _ => return,
                 };
                 let _ = ipc.try_send(event);
@@ -339,7 +349,18 @@ impl BrowserHost for WryHost {
     }
 
     fn current_url(&self, tab: TabId) -> Result<String> {
-        self.get(tab)?.url().context("Reading browser URL")
+        let view = self.get(tab)?;
+        #[cfg(target_os = "macos")]
+        {
+            use wry::WebViewExtMacOS;
+            // Wry 0.55 unwraps URL(), which is nil before the first document
+            // commits (including failed initial navigations of a lazy tab).
+            unsafe { view.webview().URL().and_then(|url| url.absoluteString()) }
+                .map(|url| url.to_string())
+                .context("Browser has no committed URL yet")
+        }
+        #[cfg(not(target_os = "macos"))]
+        view.url().context("Reading browser URL")
     }
 
     fn retain(&self, tabs: &HashSet<TabId>) {
@@ -434,20 +455,22 @@ pub fn native_bounds(bounds: Bounds<Pixels>) -> wry::Rect {
     }
 }
 
-fn allowed_url(url: &str) -> bool {
+pub(crate) fn allowed_url(url: &str) -> bool {
     let normalized = url.to_ascii_lowercase();
     normalized.starts_with("https://")
         || normalized.starts_with("http://")
         || normalized == "about:blank"
 }
 
-fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option<&'a str> {
+pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option<&'a str> {
     let (token, command) = message.split_once(':')?;
     if token != nonce {
         return None;
     }
     match command {
-        "focus" | "address" | "new-tab" | "close-tab" | "reload" => Some(command),
+        "focus" | "address" | "new-tab" | "close-tab" | "reload" | "swipe-next" | "swipe-prev" => {
+            Some(command)
+        }
         _ => None,
     }
 }
@@ -471,72 +494,6 @@ const INPUT_BRIDGE: &str = r#"
         const command = {l:'address', t:'new-tab', w:'close-tab', r:'reload'}[event.key.toLowerCase()];
         if (command) { event.preventDefault(); event.stopImmediatePropagation(); send(command); }
     }, true);
+__GESTURES__
 })();
 "#;
-
-#[cfg(test)]
-mod tests {
-    use super::{allowed_url, authenticated_command};
-
-    #[test]
-    fn inline_navigation_allows_only_the_supplied_html() {
-        let expected = super::html_data_url("<h1>Trusted overlay</h1>");
-        assert!(super::inline_navigation("about:blank", &expected));
-        assert_eq!(
-            super::inline_navigation(&expected, &expected),
-            cfg!(target_os = "windows")
-        );
-        for url in [
-            super::html_data_url("<script>window.ipc.postMessage('close')</script>"),
-            "https://example.com".into(),
-            "file:///C:/Windows/win.ini".into(),
-            "javascript:alert(1)".into(),
-        ] {
-            assert!(!super::inline_navigation(&url, &expected));
-        }
-        // A permitted internal payload must not make data URLs public navigation.
-        assert!(!allowed_url(&expected));
-    }
-
-    #[test]
-    fn bridge_requires_nonce_and_fixed_command() {
-        assert_eq!(
-            authenticated_command("secret:address", "secret"),
-            Some("address")
-        );
-        assert_eq!(
-            authenticated_command("secret:focus", "secret"),
-            Some("focus")
-        );
-        for message in [
-            "address",
-            "wrong:address",
-            "secret:run-code",
-            "secret:reload:extra",
-            "secret:",
-        ] {
-            assert_eq!(authenticated_command(message, "secret"), None);
-        }
-    }
-
-    #[test]
-    fn navigation_never_allows_local_files_or_executable_schemes() {
-        for url in [
-            "file:///etc/passwd",
-            "javascript:alert(1)",
-            "data:text/html,a",
-            "httpsx://test",
-            "about:config",
-        ] {
-            assert!(!allowed_url(url), "allowed {url}");
-        }
-        for url in [
-            "https://example.com",
-            "http://localhost:3000",
-            "about:blank",
-            "HTTPS://example.com",
-        ] {
-            assert!(allowed_url(url), "denied {url}");
-        }
-    }
-}

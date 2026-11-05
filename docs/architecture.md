@@ -29,19 +29,17 @@ grid command constructs two vertically split columns. It retains existing panes
 up to four, creates missing panes, and merges excess panes' tabs into the first
 pane so conversion does not discard pages.
 
-Dragging a page title to another pane's tab strip moves that same tab ID into
-its indicated slot and activates it. Moving the last tab removes its source pane
-and collapses the parent split; it does not create a replacement blank tab. The
-native view remains keyed by the same ID, preserving the document and history.
-Cross-space drops and same-pane tab-strip drops are not docking targets.
-The drag starts after five logical pixels. Each pane's page content (excluding
-its 34-pixel tab strip) offers split targets in its outer thirds. Corner targets
-use the nearest normalized edge, preferring top/bottom on exact ties. A center
-or outside drop cancels. A sole-tab pane cannot split itself; multi-tab panes can.
-A valid edge drop replaces the target leaf with a nested 50/50 split, retaining
-the moved tab ID and native document, focusing it and collapsing an empty source.
-Escape and window deactivation abort the drag without layout changes.
-Native surfaces remain visible during the drag.
+Dragging a floating chip retains its existing tab ID. Same-panel drops reorder;
+other chip rows insert, and panel centers append. Moving the last tab collapses
+its source leaf. Whole-panel handle drops merge ordered stacks in a center or
+reposition the existing panel leaf at an edge. Native views stay keyed by tab ID,
+preserving document state and history. Cross-space and outside drops cancel.
+
+Dragging starts after five logical pixels. Page edges offer split targets in
+outer thirds; corners use the nearest normalized edge, preferring top/bottom on
+ties. A sole-tab panel cannot split itself. A valid edge creates a nested 50/50
+split. Escape and window deactivation cancel without layout changes. Page views
+remain visible during dragging.
 A tab-sized placeholder occupies the destination insertion slot, using the same
 fixed widths, gaps and scroll offset as hit testing. The latest drag-event position
 is shared by the card and placeholder, including in the native smoke test.
@@ -66,7 +64,7 @@ containing embedded credentials. Native navigation also has a scheme allowlist.
 
 `crates/desktop/src/main.rs` starts GPUI and initializes `gpui-component` for the
 address input. GPUI renders the compact space strip, navigation bar, pane tabs,
-split handles, and layout menu. `BrowserApp` translates those interactions into
+split handles, and the spaces header. `BrowserApp` translates those interactions into
 workspace operations and native browser calls. The address input follows the
 focused pane's active tab.
 
@@ -102,12 +100,20 @@ draws application chrome independently of the web page. Native views occupy real
 child surfaces over the GPUI window, so a GPUI element drawn over their bounds
 does not automatically appear above page content.
 
-Tab dropdowns use a transparent native child surface above all page views.
-Its backdrop consumes outside clicks to dismiss without activating the page
-beneath it. Fixed menu messages route to the existing targeted tab actions;
-Escape dismisses, arrow keys move focus, and Enter selects a button. Closing the
-surface returns keyboard focus to the shell without changing page documents.
-The overlay resizes with the window and keeps its menu within the viewport.
+Floating controls use one small transparent native child surface per panel,
+created above page views. `floating_bar.rs` hosts the trusted HTML/JavaScript;
+`panel_controls.rs` routes its messages into application commands. The surface
+shrinks to a count/handle/plus at rest and expands into a single scrolling chip
+row on hover, focus or touch expansion. Native address inputs retain drafts
+across title/URL changes. Controls are rebuilt above newly created page views;
+page views themselves are retained. Chip pointer capture begins only after the
+drag threshold, preserving ordinary clicks and double-clicks.
+
+`docking.rs` shares edge, center and measured chip-midpoint hit testing with
+native previews and final drops. Initialization scripts capture trusted wheel
+and touch gestures across documents/subframes. Per-panel gesture accumulation
+survives tab switches and control rebuilds, preventing repeated switching from
+trackpad momentum. Vertical page scrolling is left to the native engine.
 
 During tab dragging and divider resizing, active pages remain visible and the
 normal geometry canvas continues updating their bounds. The shell retains the
@@ -116,8 +122,8 @@ flips at window edges so it cannot cover the drop position.
 
 The split placeholder is a translucent native Wry child above page surfaces,
 covering the selected half of the target's content. Its bounds and drop action
-use the same edge hit test. It hides in the center, over tab bars or outside valid
-panes, and is disposed on cancellation/drop. The thumbnail is created after this
+use the same edge hit test. Center drops preview a full-panel merge; chip rows
+show insertion markers instead. The preview hides outside valid panels, and is disposed on cancellation/drop. The thumbnail is created after this
 surface so it remains visible above the placeholder.
 
 The drag card is a separate native Wry child created after the page surfaces,
@@ -148,7 +154,7 @@ Core tests cover tab identity, closure and focus invariants, nested splits,
 grid conversion without tab loss, exact geometry, undersized layouts, URL
 validation, and a deterministic command sequence. Native host tests check its
 navigation allowlist. Runtime rendering, navigation, text input, focus, tab
-switching, split dragging, and menu layering need an actual desktop session.
+switching, split dragging, and floating-control layering need an actual desktop session.
 The run-specific validation report belongs in `docs/validation.md` alongside platform and hardware limitations.
 
 No startup, resize frame-time, memory, idle-energy, or navigation benchmark is
@@ -182,5 +188,5 @@ The component theme initializes from OS appearance rather than forcing dark mode
 theme, and requests shell presentation. `ChromeColors` supplies matching light and
 dark colors for space/page tabs, text, focus and insertion indicators, split
 dividers, and shell backgrounds. Inline inputs use the same component theme.
-Native dropdowns and preview cards use `prefers-color-scheme` media queries.
+Native floating controls and preview cards use `prefers-color-scheme` media queries.
 Web pages retain their own appearance rules.

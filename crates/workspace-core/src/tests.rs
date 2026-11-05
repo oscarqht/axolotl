@@ -431,7 +431,6 @@ fn invalid_docking_is_atomic_and_cannot_cross_spaces() {
     let before = w.active_space().clone();
     for (src, tab, dst, index) in [
         (source, moved, destination, 2),
-        (source, moved, source, 0),
         (source, u64::MAX, destination, 0),
         (u64::MAX, moved, destination, 0),
         (source, moved, u64::MAX, 0),
@@ -529,4 +528,109 @@ fn edge_splits_retain_tabs_focus_order_and_collapse_nested_sources() {
         assert_eq!(w.split_tab(moved, tab, destination, edge), None);
         assert_eq!(format!("{w:?}"), format!("{before:?}"));
     }
+}
+
+#[test]
+fn reordering_uses_original_insertion_slots_and_retains_identity() {
+    let mut w = Workspace::default();
+    let pane = w.focused_pane().id;
+    let a = w.focused_pane().active_tab;
+    let b = w.add_tab("https://b.test");
+    let c = w.add_tab("https://c.test");
+    assert!(w.move_tab(pane, a, pane, 3));
+    assert_eq!(
+        w.focused_pane()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>(),
+        [b, c, a]
+    );
+    assert!(w.move_tab(pane, a, pane, 0));
+    assert_eq!(
+        w.focused_pane()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>(),
+        [a, b, c]
+    );
+    assert_eq!(w.focused_pane().active_tab, a);
+    let before = w.active_space().clone();
+    assert!(!w.move_tab(pane, a, pane, 4));
+    assert_eq!(w.active_space(), &before);
+    assert_invariants(&w);
+}
+
+#[test]
+fn whole_panel_merge_preserves_order_active_tab_and_other_panels() {
+    let mut w = Workspace::default();
+    let source = w.focused_pane().id;
+    let a = w.focused_pane().active_tab;
+    let b = w.add_tab("https://b.test");
+    let destination = w.split_focused(Axis::Horizontal, "https://destination.test");
+    let existing = w.focused_pane().active_tab;
+    let other = w.split_focused(Axis::Vertical, "https://other.test");
+    assert!(w.move_pane(source, destination, None));
+    assert!(w.pane(source).is_none());
+    assert_eq!(w.focused_pane().id, destination);
+    assert_eq!(
+        w.focused_pane()
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>(),
+        [existing, a, b]
+    );
+    assert_eq!(w.focused_pane().active_tab, b);
+    assert!(w.pane(other).is_some());
+    assert_invariants(&w);
+}
+
+#[test]
+fn whole_panel_can_move_to_every_edge_without_replacing_the_stack() {
+    for edge in [
+        SplitEdge::Left,
+        SplitEdge::Right,
+        SplitEdge::Top,
+        SplitEdge::Bottom,
+    ] {
+        let mut w = Workspace::default();
+        let source = w.focused_pane().id;
+        w.add_tab("https://kept.test");
+        let stack = w.focused_pane().clone();
+        let destination = w.split_focused(Axis::Horizontal, "about:blank");
+        assert!(w.move_pane(source, destination, Some(edge)));
+        assert_eq!(w.pane(source), Some(&stack));
+        assert_eq!(w.focused_pane().id, source);
+        let ids = w.active_space().layout.pane_ids();
+        assert_eq!(
+            ids,
+            if edge.is_first() {
+                vec![source, destination]
+            } else {
+                vec![destination, source]
+            }
+        );
+        let before = w.active_space().clone();
+        assert!(!w.move_pane(source, source, Some(edge)));
+        assert!(!w.move_pane(source, u64::MAX, Some(edge)));
+        assert_eq!(w.active_space(), &before);
+        assert_invariants(&w);
+    }
+}
+
+#[test]
+fn swiping_wraps_in_both_directions_and_handles_one_tab() {
+    let mut w = Workspace::default();
+    let pane = w.focused_pane().id;
+    let first = w.focused_pane().active_tab;
+    assert!(w.cycle_tab(pane, false));
+    assert_eq!(w.focused_pane().active_tab, first);
+    let last = w.add_tab("https://last.test");
+    w.cycle_tab(pane, true);
+    assert_eq!(w.focused_pane().active_tab, first);
+    w.cycle_tab(pane, false);
+    assert_eq!(w.focused_pane().active_tab, last);
+    assert_invariants(&w);
 }

@@ -73,30 +73,34 @@ machine running the executable. See the validation report below for tested scope
   maximize/restore, and close buttons sit at the right of the spaces header.
   Drag the empty area to the right of the space tabs to move the window;
   double-click it to maximize/restore on Windows. Resize from the window edges.
-- Tab bars, split borders, inline URL fields, dropdowns and drag cards follow the
-  OS light/dark appearance and update while the app is running.
-- Space tabs show the title of their focused page; each pane has its own page
-  tabs. Double-click either title to edit that page's URL in place. Enter visits,
-  Escape cancels, and switching tabs, spaces, panes, or leaving the input cancels
-  an unfinished edit. URL redirects and title updates do not replace a draft.
-- Each tab's **•** menu creates a sibling, splits horizontally (side by side) or
-  vertically (stacked), or closes the tab. Space menus act on that space and its
-  focused pane; page menus act on that page and its pane, even when inactive.
-- New siblings and split panes open the start page. Closing the last page tab
-  removes its pane and collapses the split when other panes remain. The final
-  pane is retained with a fresh start page; the final space remains.
-- Drag the thin divider between panes to resize; page content stays visible and
-  follows the divider. Drag a page title to another pane's tab strip to dock it.
-  A captured thumbnail card follows the cursor above page content, and a tab-shaped
-  placeholder marks the insertion slot. Drag into the outer third of a pane's
-  page content to preview a half-pane split on that edge; release to move the tab
-  there. Corners choose the nearest normalized edge (ties prefer top/bottom).
-  Splitting within the source pane requires multiple tabs. Empty source panes
-  collapse; the moved page keeps its form state and history. Escape, window
-  deactivation, a center drop, or an outside drop cancels the move.
-- Tab dropdowns appear above live page content without hiding any pane.
-  Dismiss menus by clicking outside, pressing Escape, or selecting an action.
-  Arrow keys move between menu items; Enter selects the focused item.
+- Space tabs show the focused page title, with an in-tab **×** and one trailing
+  **+** to create a space. Closing the final space is disabled. Double-click a
+  space title to edit its focused page address.
+- Each panel has a bottom-centered floating bar above its live page: a panel
+  drag handle, active index/count (for example **2/5**), and **+**. Hover or focus
+  the count/chip area, or tap the count, to expand it into favicon/title chips.
+  Hovering or clicking the handle or **+** does not expand it. Each chip has
+  a close button; double-click the label to edit its address. Enter navigates and
+  Escape cancels. **+** creates a blank tab while leaving the chip row closed;
+  Cmd/Ctrl+T creates a tab with address editing. Long stacks remain
+  in one horizontal row, with overflow arrows and automatic active-chip reveal.
+  The bar animates between compact and expanded states, fitting the handle,
+  chips and add button. Its maximum is the panel width with 16px edge margins. Overflow fades indicate hidden chips on either side
+  and clear at the corresponding scroll end. Reduced-motion settings are respected.
+- Drag a chip to reorder within a panel, dock into another panel's chip row or
+  center, or create a split at any edge. Drag the handle to move the complete
+  stack: center drops merge panels and edge drops reposition the whole panel.
+  Destination previews appear above live pages. Escape, loss of window activation,
+  or releasing outside the workspace cancels. Moving retains native page state
+  and back/forward history. Splits are created exclusively by dragging.
+- Deliberate horizontal trackpad/touch swipes across page content select the next
+  tab on a left swipe and the previous tab on a right swipe, wrapping at both ends.
+  Horizontal tab switching takes priority over page horizontal scrolling; vertical
+  scrolling remains normal. Trackpad momentum switches once per gesture. On the
+  floating bar, dragging a chip/handle takes priority over touch swiping.
+- Closing the final tab in a panel removes that panel when other panels remain;
+  the final panel instead receives a fresh start tab. Drag the thin dividers to
+  resize panels while their content stays visible.
 - Enter a URL, hostname, localhost address, or search phrase. `about:blank`
   opens the built-in start page. Page links requesting a new window become tabs
   in the originating pane.
@@ -127,6 +131,9 @@ exits. It requires a GUI session and HTTPS access to example.com:
 
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
+
+# Focused native check for content width, panel cap, and overflow fades
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
 ```
 
 For visual inspection of a held drag state, append `--smoke-hold-preview` after
@@ -152,7 +159,7 @@ default store; this is not a private-browsing mode or an isolated profile per
 space. Hidden pages stay loaded and can keep running; page suspension and memory
 budgets remain future work.
 
-Native child views cover GPUI overlays. Tab dropdowns and drag previews use
+Native child views cover GPUI overlays. Floating panel bars and drag previews use
 transparent native child surfaces above live pages. Browser permission controls, downloads (currently denied), profiles,
 passwords, browser extensions, mobile shells, and layout persistence are outside
 this milestone. Chrome extensions are not supported by this Wry backend.

@@ -13,7 +13,7 @@ use std::{
 };
 use workspace_core::{Axis, TabId};
 
-type Host = Rc<dyn BrowserHost>;
+pub(crate) type Host = Rc<dyn BrowserHost>;
 
 pub fn start(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
     let view = app.downgrade();
@@ -30,7 +30,7 @@ pub fn start(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
     }).detach();
 }
 
-async fn pause(cx: &mut AsyncWindowContext) {
+pub(crate) async fn pause(cx: &mut AsyncWindowContext) {
     cx.background_executor()
         .timer(Duration::from_millis(200))
         .await;
@@ -41,7 +41,12 @@ async fn pause(cx: &mut AsyncWindowContext) {
     });
 }
 
-async fn eval(host: &Host, tab: TabId, script: &str, cx: &mut AsyncWindowContext) -> Result<Value> {
+pub(crate) async fn eval(
+    host: &Host,
+    tab: TabId,
+    script: &str,
+    cx: &mut AsyncWindowContext,
+) -> Result<Value> {
     let response = Arc::new(Mutex::new(None));
     let target = response.clone();
     host.evaluate(
@@ -61,6 +66,30 @@ async fn eval(host: &Host, tab: TabId, script: &str, cx: &mut AsyncWindowContext
             .await;
     }
     anyhow::bail!("Native web engine evaluation timed out")
+}
+
+pub(crate) async fn bar_eval(
+    view: &WeakEntity<BrowserApp>,
+    pane: workspace_core::PaneId,
+    script: &str,
+    cx: &mut AsyncWindowContext,
+) -> Result<Value> {
+    let response = Arc::new(Mutex::new(None));
+    let target = response.clone();
+    view.update_in(cx, |app, _, _| {
+        app.bars
+            .get(&pane)
+            .context("Missing native bar")?
+            .evaluate(script, move |v| *target.lock().unwrap() = Some(v))
+    })??;
+    for _ in 0..50 {
+        if let Some(value) = response.lock().unwrap().take() {
+            return serde_json::from_str(&value)
+                .with_context(|| format!("Bar evaluation returned {value:?} for {script}"));
+        }
+        pause(cx).await;
+    }
+    anyhow::bail!("Bar evaluation timed out: {script}")
 }
 
 async fn check_scrollbars(host: &Host, tab: TabId, cx: &mut AsyncWindowContext) -> Result<()> {
@@ -140,6 +169,10 @@ async fn run(
         (app.host.clone(), app.active_tab())
     })?;
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    if std::env::args().any(|arg| arg == "--smoke-bar-sizing") {
+        return crate::smoke_panels::check_sizing(view, cx).await;
+    }
+
     view.update_in(cx, |_, window, cx| {
         use gpui_component::ActiveTheme;
         ensure!(
@@ -343,40 +376,15 @@ async fn run(
         );
     }
     checks.push("four nonempty native browser surfaces in grid");
-    view.update_in(cx, |app, window, cx| {
-        app.open_menu(
-            TabTarget::Space(app.model.active_space),
-            point(px(160.), px(30.)),
-            window,
-            cx,
-        )
-    })?;
-    pause(cx).await;
     ensure!(
         tabs.iter().all(|tab| host.is_visible(*tab)),
-        "Menu hid native page surfaces"
+        "Floating bars hid pages"
     );
-    view.update_in(cx, |app, _, _| {
-        ensure!(
-            app.menu_surface.is_some(),
-            "Native menu surface was not created"
-        );
-        Ok(())
-    })??;
-    view.update_in(cx, |app, window, cx| {
-        app.open_menu(
-            TabTarget::Space(app.model.active_space),
-            point(px(160.), px(30.)),
-            window,
-            cx,
-        )
-    })?;
-    pause(cx).await;
     ensure!(
-        tabs.iter().all(|tab| host.is_visible(*tab)),
-        "Menu dismissal failed to restore surfaces"
+        view.update_in(cx, |app, _, _| app.bars.len())? == 4,
+        "Missing floating bars"
     );
-    checks.push("native dropdown keeps all page surfaces visible while open and after dismissal");
+    checks.push("native floating bars coexist with all four live page surfaces");
     let before_resize = eval(&host, tabs[0], "[innerWidth, innerHeight]", cx).await?;
     view.update_in(cx, |app, _, cx| {
         let geometry = app.model.active_space().layout.geometry(
@@ -429,25 +437,13 @@ async fn run(
     pause(cx).await;
     let new_tab = view.update_in(cx, |app, _, _| app.active_tab())?;
     wait_title(&host, new_tab, "New tab · Axolotl", cx).await?;
-    view.update_in(cx, |app, window, cx| {
-        ensure!(
-            app.editing == Some(TabTarget::Page(app.model.focused_pane().id, new_tab)),
-            "New tab did not enter URL editing"
-        );
-        app.address.update(cx, |input, cx| {
-            ensure!(
-                input.focus_handle(cx).is_focused(window),
-                "New tab URL lost focus"
-            );
-            input.replace("example.com", window, cx);
-            ensure!(
-                input.value() == "example.com",
-                "Typing did not replace the blank URL"
-            );
-            cx.emit(gpui_component::input::InputEvent::PressEnter { secondary: false });
-            Ok(())
-        })
-    })??;
+    let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
+    let editor = bar_eval(view,pane,"({focused:document.activeElement?.tagName==='INPUT',value:document.querySelector('input')?.value,active:document.activeElement?.tagName,hasFocus:document.hasFocus(),bar:bar.className,expanded,hostExpanded:state.expanded,viewport:innerWidth,expected:state.surfaceWidth,visibility:getComputedStyle(tabs).visibility})",cx).await?;
+    ensure!(
+        editor["focused"] == true && editor["value"] == "about:blank",
+        "New tab editor not focused: {editor}"
+    );
+    bar_eval(view,pane,"document.querySelector('input').value='example.com'; document.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); true",cx).await?;
     pause(cx).await;
     wait_title(&host, new_tab, "Example Domain", cx).await?;
     view.update_in(cx, |app, _, _| {
@@ -789,7 +785,8 @@ async fn run(
 
     view.update_in(cx, |app, window, cx| {
         let origin = point(px(60.), px(crate::render::TOP + 16.));
-        let destination_point = point(window.viewport_size().width / 2. + px(20.), origin.y);
+        let bar = &app.bars[&destination];
+        let destination_point = point(px(bar.bounds.x + 4.), px(bar.bounds.y + 20.));
         app.arm_tab_drag(source, moved, origin);
         app.update_tab_drag(
             &MouseMoveEvent {
@@ -815,7 +812,7 @@ async fn run(
         );
         ensure!(app.tab_drag_active(), "Drag threshold did not start drag");
         ensure!(
-            app.tab_drop_target(destination_point, window) == Some((destination, 0)),
+            app.tab_drop_target(destination_point, window) == Some((destination, 1)),
             "Wrong insertion target"
         );
         app.finish_tab_drag(None, window, cx);
@@ -872,7 +869,7 @@ async fn run(
             "Dock did not activate destination"
         );
         ensure!(
-            app.model.focused_pane().tabs[0].id == moved,
+            app.model.focused_pane().tabs[1].id == moved,
             "Dock insertion wrong"
         );
         Ok(())
@@ -950,12 +947,12 @@ async fn run(
                 .find(|p| p.id == destination)
                 .unwrap()
                 .bounds;
-            let content = workspace_core::Rect::new(r.x, r.y + 34., r.width, r.height - 34.);
+            let content = r;
             let (x, y) = match edge {
                 workspace_core::SplitEdge::Left => (0.1, 0.5),
                 workspace_core::SplitEdge::Right => (0.9, 0.5),
                 workspace_core::SplitEdge::Top => (0.5, 0.1),
-                workspace_core::SplitEdge::Bottom => (0.5, 0.9),
+                workspace_core::SplitEdge::Bottom => (0.5, 0.75),
             };
             let position = point(
                 px(content.x + content.width * x),
@@ -1067,5 +1064,7 @@ async fn run(
         );
     }
     checks.push("all four native edge splits, same-pane and nested cross-pane moves, empty-source collapse, cancellation and retained DOM/form/history");
+
+    checks.extend(crate::smoke_panels::run(view, &host, moved, destination, cx).await?);
     Ok(checks)
 }

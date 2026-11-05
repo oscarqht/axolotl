@@ -1,3 +1,114 @@
+# Circular floating controls
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Handle and plus are equal 28px circular buttons with zero padding and centered
+  inline SVG icons, eliminating font-baseline offsets. Compact count insets are
+  symmetric. Native content sizing accounts for the handle's extra 4px.
+- Focused native sizing/transition/overflow checks, formatting, whitespace checks,
+  and strict Clippy passed. The macOS app bundle was rebuilt. Foreground OS input
+  and Windows validation remain unverified.
+
+# Continuous chip hover expansion
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Reproduced a transient overflow state in the native CSS timeline: a single
+  fitting chip gained arrows/fades while the pill was still narrow. Removing
+  those arrows near the end started a second 180ms layout transition.
+- Overflow now uses the final expanded viewport capacity, measured fixed
+  controls/padding/gaps, and chip flex bases. Editing chips respect their final
+  maximum width. Fitting content never gains temporary arrows or fades; true
+  overflow still uses the existing scrolling controls and edge masks.
+- A native regression samples 0/40/80/120/180/240ms without finishing child-arrow
+  animations with the parent. It failed before the fix and passes afterward.
+  Focused native sizing/overflow checks and the full native smoke pass, along
+  with all 24 unit tests and strict Clippy. The macOS bundle was rebuilt. These
+  deterministic engine checks do not synthesize OS hover input; foreground and
+  Windows validation remain open.
+
+# Content-fitting expanded bar
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Expanded bars now fit the handle, chips and plus button. Panel width with 16px
+  visible edge margins is the maximum; it is no longer the default expanded size.
+  A single chip uses a 250px pill, two use 426px, and additional chips grow the
+  bar until it reaches the panel limit and shows overflow controls/fades.
+- The native surface holds the previous width until shrink animations finish,
+  including chip removal and exiting address editing. The CSS endpoint is
+  separate from that temporarily held surface width.
+- All 24 unit tests and strict Clippy passed. The focused native sizing check
+  (`--smoke-test --smoke-bar-sizing`) passed for one/two chips, removal, and many
+  chips capped to the panel with fades. The full native suite also passed on
+  the final run. The focused check runs independently of the existing
+  drag-preview check, which has intermittently failed with
+  `Missing native drag card` in the full suite. Foreground OS input and Windows
+  runtime behavior remain unverified. The local macOS bundle was rebuilt.
+
+# Chip-area expansion triggers
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Hover/focus expansion is limited to the count and chip region. Handle and plus
+  interactions do not initiate expansion or keep the bar open. Handle dragging
+  also suppresses count hover. Rebuilt expanded controls schedule guarded collapse
+  so plus-created native pages cannot leave the replacement bar stuck open.
+- Plus creates a blank tab without address editing. Native-bar, page and GPUI
+  Cmd/Ctrl+T still use the existing address-editing behavior.
+- All 24 unit tests and strict Clippy passed. Native WKWebView smoke passed on
+  rerun, including negative hover/focus checks for handle/plus, count hover,
+  plus creation without editing, and the prior animation/docking/history checks.
+  Earlier runs reported `Missing native drag card` in an existing preview check;
+  the cancellation cause was not isolated. OS input and Windows remain unverified.
+
+# Floating bar animation and width
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Added a 240ms eased width transition with count/chip crossfades. Expanded bars
+  fill their panel with 16px visible edge margins, without the previous 960px cap.
+  Overflow uses native CSS masks at both scroll edges; each fade clears when its
+  corresponding first/last chip is fully reachable. Existing arrows remain.
+- Expansion starts after the host acknowledges wide native bounds, using a pixel
+  endpoint to avoid changing the interpolation basis during native resizing.
+  Collapse keeps the native surface wide until completion. An epoch-guarded
+  fallback finishes paused CSS timelines before shrinking an occluded view.
+  Reduced-motion preferences disable transitions. Editor focus and active-chip
+  reveal do not depend on frame callbacks that WebKit may pause when occluded.
+- All 24 unit tests, native WKWebView smoke, strict Clippy, formatting, JavaScript
+  syntax and whitespace checks passed. The local macOS app bundle was rebuilt.
+  Native smoke checks full-panel bounds and CSS interpolation, collapse without
+  native clipping, masks at the start/middle/end, editor focus and tab selection.
+  Because this test window is occluded, interpolation assertions explicitly seek
+  the native CSS width timeline to 70ms; these are not OS-frame or pointer tests.
+- Foreground hover animation and Windows runtime behavior remain unverified.
+
+# Floating panel tab chips
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Space tabs now have close buttons and a trailing create button; the final space
+  is protected. Panel controls use small transparent native child surfaces above
+  live pages, with compact counts, expandable chips, address inputs and overflow.
+  Split menus were removed; chip and whole-panel dragging create splits.
+- All 24 unit tests passed, including same-panel insertion slots, whole-stack
+  merging/repositioning on every edge, invalid-operation atomicity, wraparound,
+  and one-switch-per-trackpad-gesture thresholds. Strict Clippy, formatting and
+  whitespace checks passed.
+- The programmatic WKWebView smoke run passed. It checks live pages alongside
+  floating bars; focused new-tab address editing and Enter/Escape; compact count,
+  expansion and single-row overflow; tab docking, all four edge splits and
+  cancellation; whole-panel edge moves and center merging; retained tab order,
+  native DOM identity, form values and back/forward history.
+- OS pointer/keyboard/trackpad/touch acceptance remains unverified. Computer use
+  could launch the local app bundle but could not acquire its window, returning
+  `cgWindowNotFound`; the native smoke also reported OS activation unavailable.
+  The smoke invokes production handlers and native DOM/IPC, and does not
+  synthesize OS input. Windows compilation/runtime and physical touch gestures
+  were not available on this Mac. Existing Windows native-view creation support
+  is retained; cross-platform CI and hands-on interaction checks remain needed.
+
 # Hidden native tab scrollbars
 
 Run on 2026-11-05 in `bro-hide-tab-scrollbars` on macOS arm64 with Rust

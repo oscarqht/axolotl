@@ -1,13 +1,21 @@
 mod app;
 mod browser;
+#[cfg(test)]
+mod browser_tests;
 mod chrome_theme;
+mod docking;
 mod drag_preview;
+mod floating_bar;
+#[cfg(test)]
+mod gesture_tests;
 mod native_webview;
+mod panel_controls;
 mod render;
 #[cfg(feature = "smoke")]
 mod smoke;
+#[cfg(feature = "smoke")]
+mod smoke_panels;
 mod split_preview;
-mod tab_menu;
 
 use app::BrowserApp;
 use gpui::{prelude::*, *};

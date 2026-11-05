@@ -18,6 +18,7 @@ pub(crate) async fn run(
             app.model.focused_pane().id,
         )
     })?;
+    let space = view.update_in(cx, |app, _, _| app.model.active_space)?;
     let foreground = view.update_in(cx, |_, window, _| window.is_window_active())?;
     eval(&host, first, "new Notification('viewed'); true", cx).await?;
     pause(cx).await;
@@ -63,6 +64,10 @@ pub(crate) async fn run(
     ensure!(
         view.update_in(cx, |app, _, _| app.notifications.get(&first).copied())? == Some(2),
         "Hidden notification IPC lost"
+    );
+    ensure!(
+        view.update_in(cx, |app, _, _| app.space_notifications(space))? == 3,
+        "Space total did not sum unread tabs"
     );
     let compact = bar_eval(view, pane, "(()=>{const b=document.querySelector('#count .notification-badge');const c=getComputedStyle(b);return {count:b.textContent,red:c.backgroundColor,white:c.color,round:c.borderRadius,visible:b.getBoundingClientRect().width>0,indicator:document.querySelector('#count').textContent}})()", cx).await?;
     ensure!(
@@ -148,6 +153,10 @@ pub(crate) async fn run(
             == "1",
         "Destination total lost moved count"
     );
+    ensure!(
+        view.update_in(cx, |app, _, _| app.space_notifications(space))? == 1,
+        "Space total lost notification when moving between panels"
+    );
     // OS foreground focus cannot be delivered while macOS loginwindow owns
     // the session. Keep that check explicit rather than simulating an OS event.
     if foreground {
@@ -197,7 +206,37 @@ pub(crate) async fn run(
             == 0,
         "Closed tab retained panel total"
     );
+    ensure!(
+        view.update_in(cx, |app, _, _| app.space_notifications(space))? == 0,
+        "Space total retained closed/read tab counts"
+    );
+    view.update_in(cx, |app, window, cx| {
+        app.command(Command::NewSpace, window, cx)
+    })?;
+    pause(cx).await;
+    eval(&host, second, "new Notification('hidden space'); true", cx).await?;
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.space_notifications(space) == 1,
+            "Hidden space notification missing"
+        );
+        ensure!(
+            app.space_notifications(app.model.active_space) == 0,
+            "Notification leaked into another space"
+        );
+        Ok(())
+    })??;
+    view.update_in(cx, |app, window, cx| {
+        app.select_target(TabTarget::Space(space), window, cx)
+    })?;
+    pause(cx).await;
+    ensure!(
+        view.update_in(cx, |app, _, _| app.space_notifications(space))? == 0,
+        "Space selection did not clear its selected tab notification"
+    );
     Ok(vec![
+        "space badges sum all panels; totals follow moves, reads and closes; hidden spaces accumulate independently",
         "page Notification API: hidden counted; native red/white rounded badges in compact and expanded bars; selection clears; moved/closed tabs update panel totals",
         if foreground {
             "foreground notifications ignored; native page focus clears unread"

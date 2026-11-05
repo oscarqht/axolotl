@@ -67,6 +67,12 @@ impl BrowserApp {
         };
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let editing = self.editing == Some(target);
+        let notifications = match target {
+            TabTarget::Space(space) => self.space_notifications(space),
+            TabTarget::Page(_, tab) => {
+                u64::from(self.notifications.get(&tab).copied().unwrap_or_default())
+            }
+        };
         div()
             .id((kind, id))
             .h(px(30.))
@@ -153,6 +159,39 @@ impl BrowserApp {
                         }
                     }))
                     .into_any_element()
+            })
+            .when(notifications > 0, |tab| {
+                tab.child(
+                    div()
+                        .id(("notification-badge", id))
+                        .flex_shrink_0()
+                        .min_w(px(18.))
+                        .h(px(18.))
+                        .px(px(4.))
+                        .rounded_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(rgb(0xd71932))
+                        .text_color(rgb(0xffffff))
+                        .text_size(px(10.))
+                        .font_weight(FontWeight::BOLD)
+                        .cursor_pointer()
+                        .child(if notifications > 99 {
+                            "99+".to_owned()
+                        } else {
+                            notifications.to_string()
+                        })
+                        .tooltip(move |window, cx| {
+                            gpui_component::tooltip::Tooltip::new(format!(
+                                "{notifications} unread notifications"
+                            ))
+                            .build(window, cx)
+                        })
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            this.select_target(target, window, cx);
+                        })),
+                )
             })
             .child(
                 div()

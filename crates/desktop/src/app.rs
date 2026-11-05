@@ -197,6 +197,20 @@ impl BrowserApp {
             eprintln!("Browser: {error:#}");
         }
     }
+    pub(crate) fn space_notifications(&self, space: SpaceId) -> u64 {
+        self.model
+            .spaces
+            .iter()
+            .find(|s| s.id == space)
+            .map_or(0, |s| {
+                s.panes
+                    .iter()
+                    .flat_map(|p| &p.tabs)
+                    .map(|t| u64::from(self.notifications.get(&t.id).copied().unwrap_or_default()))
+                    .sum()
+            })
+    }
+
     pub fn active_tab(&self) -> TabId {
         self.model.focused_pane().active_tab
     }

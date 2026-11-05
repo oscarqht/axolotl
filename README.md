@@ -95,7 +95,8 @@ machine running the executable. See the validation report below for tested scope
 - Page JavaScript `new Notification(...)` adds an unread count while its tab
   is unfocused, including hidden tabs and spaces. Red badges with white numbers
   appear on tab chips; the collapsed bar shows the panel sum beside its tab
-  index/count. Selecting or focusing a tab clears its count. Counts are in memory
+  index/count. Each space tab also shows the sum across all its panels, including
+  hidden tabs. Selecting or focusing a tab clears its count. Counts are in memory
   and disappear on restart. Badges display `99+` above 99, with the exact count
   in the tooltip and accessible label.
   The page API supports badges without a system notification prompt; its

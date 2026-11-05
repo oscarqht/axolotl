@@ -32,7 +32,9 @@ Run on 2026-11-05 in `bro-tab-notification-badges` on macOS.
   Selecting a chip, focusing its pane/native page, or reactivating the window
   clears the selected tab. Closed tabs are removed from unread state.
 - Chips show red rounded badges with white numbers; the compact bar sums the
-  current panel's tabs alongside its active index/count. Values above 99 display
+  current panel's tabs alongside its active index/count. Space tabs sum unread
+  counts across all panels in that space, independently of the selected space.
+  Values above 99 display
   `99+`, with the exact count in a tooltip and accessible label.
 - The page shim supports badge-only notifications without OS permissions and
   forwards to a native constructor only when native permission is already
@@ -43,7 +45,8 @@ Run on 2026-11-05 in `bro-tab-notification-badges` on macOS.
 - `cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications`
   passed in the native WKWebView host. It checks the page API, foreground
   suppression, native focus and chip-selection clearing, combined panel totals,
-  expanded/compact badge text and computed colors/geometry, moves and closes.
+  expanded/compact badge text and computed colors/geometry, moves and closes,
+  space totals across panels, and notification isolation in hidden spaces.
   It uses programmatic native evaluation and chip clicks, without physical OS
   mouse/keyboard input. Startup attempts while the login window owned the
   session could not exercise foreground behavior; the final run did exercise it.

@@ -90,11 +90,9 @@ impl BrowserApp {
             }
             let viewport = window.viewport_size();
             let geometry = self.model.active_space().layout.geometry(
-                Rect::new(
-                    0.,
-                    crate::render::TOP,
+                crate::render::panel_content_rect(
                     f32::from(viewport.width),
-                    (f32::from(viewport.height) - crate::render::TOP).max(0.),
+                    f32::from(viewport.height),
                 ),
                 6.,
                 100.,
@@ -174,11 +172,9 @@ impl BrowserApp {
         let drag = self.tab_drag.filter(|drag| drag.active)?;
         let viewport = window.viewport_size();
         let geometry = self.model.active_space().layout.geometry(
-            Rect::new(
-                0.,
-                crate::render::TOP,
+            crate::render::panel_content_rect(
                 f32::from(viewport.width),
-                (f32::from(viewport.height) - crate::render::TOP).max(0.),
+                f32::from(viewport.height),
             ),
             6.,
             100.,
@@ -204,11 +200,9 @@ impl BrowserApp {
         let drag = self.tab_drag.filter(|d| d.active)?;
         let viewport = window.viewport_size();
         let geometry = self.model.active_space().layout.geometry(
-            Rect::new(
-                0.,
-                crate::render::TOP,
+            crate::render::panel_content_rect(
                 f32::from(viewport.width),
-                f32::from(viewport.height) - crate::render::TOP,
+                f32::from(viewport.height),
             ),
             6.,
             100.,

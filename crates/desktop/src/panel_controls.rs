@@ -2,7 +2,6 @@
 use crate::app::{BrowserApp, Command, DragInput, TabAction, TabTarget};
 use gpui::*;
 use std::{collections::HashSet, time::Instant};
-use workspace_core::Rect;
 impl BrowserApp {
     pub(crate) fn poll_bars(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut events = Vec::new();
@@ -239,11 +238,9 @@ impl BrowserApp {
             self.notifications.remove(&self.active_tab());
         }
         let viewport = window.viewport_size();
-        let content = Rect::new(
-            0.,
-            crate::render::TOP,
+        let content = crate::render::panel_content_rect(
             f32::from(viewport.width),
-            (f32::from(viewport.height) - crate::render::TOP).max(0.),
+            f32::from(viewport.height),
         );
         let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
         let mut visible: Vec<_> = self

@@ -1022,11 +1022,9 @@ async fn run(
             };
             let viewport = window.viewport_size();
             let geometry = app.model.active_space().layout.geometry(
-                workspace_core::Rect::new(
-                    0.,
-                    crate::render::TOP,
+                crate::render::panel_content_rect(
                     f32::from(viewport.width),
-                    f32::from(viewport.height) - crate::render::TOP,
+                    f32::from(viewport.height),
                 ),
                 6.,
                 100.,

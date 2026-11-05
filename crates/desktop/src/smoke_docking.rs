@@ -6,7 +6,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use gpui::*;
 use objc2_app_kit::NSEventType as Mouse;
-use workspace_core::{Axis, PaneId, Rect, SplitEdge};
+use workspace_core::{Axis, PaneId, SplitEdge};
 
 async fn mouse(
     view: &WeakEntity<BrowserApp>,
@@ -79,11 +79,9 @@ pub async fn run(
                     );
                     let viewport = window.viewport_size();
                     let geometry = app.model.active_space().layout.geometry(
-                        Rect::new(
-                            0.,
-                            crate::render::TOP,
+                        crate::render::panel_content_rect(
                             f32::from(viewport.width),
-                            f32::from(viewport.height) - crate::render::TOP,
+                            f32::from(viewport.height),
                         ),
                         6.,
                         100.,

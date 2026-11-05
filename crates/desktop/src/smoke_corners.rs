@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use gpui::*;
-use workspace_core::{Axis, Rect, SplitEdge};
+use workspace_core::{Axis, SplitEdge};
 
 async fn check(
     view: &WeakEntity<BrowserApp>,
@@ -16,14 +16,39 @@ async fn check(
     view.update_in(cx, |app, window, _| -> Result<()> {
         let viewport = window.viewport_size();
         let geometry = app.model.active_space().layout.geometry(
-            Rect::new(
-                0.,
-                crate::render::TOP,
+            crate::render::panel_content_rect(
                 f32::from(viewport.width),
-                f32::from(viewport.height) - crate::render::TOP,
+                f32::from(viewport.height),
             ),
             6.,
             100.,
+        );
+        let left = geometry
+            .panes
+            .iter()
+            .map(|pane| pane.bounds.x)
+            .fold(f32::INFINITY, f32::min);
+        let top = geometry
+            .panes
+            .iter()
+            .map(|pane| pane.bounds.y)
+            .fold(f32::INFINITY, f32::min);
+        let right = geometry
+            .panes
+            .iter()
+            .map(|pane| pane.bounds.x + pane.bounds.width)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let bottom = geometry
+            .panes
+            .iter()
+            .map(|pane| pane.bounds.y + pane.bounds.height)
+            .fold(f32::NEG_INFINITY, f32::max);
+        ensure!(
+            (left - 6.).abs() < 1.
+                && (top - crate::render::TOP - 6.).abs() < 1.
+                && (f32::from(viewport.width) - right - 6.).abs() < 1.
+                && (f32::from(viewport.height) - bottom - 6.).abs() < 1.,
+            "{stage}: panel layout lost its six-point outer gutter"
         );
         for pane in geometry.panes {
             let tab = app.model.pane(pane.id).unwrap().active_tab;
@@ -99,11 +124,9 @@ pub async fn run(
     view.update_in(cx, |app, window, cx| {
         let viewport = window.viewport_size();
         let geometry = app.model.active_space().layout.geometry(
-            Rect::new(
-                0.,
-                crate::render::TOP,
+            crate::render::panel_content_rect(
                 f32::from(viewport.width),
-                f32::from(viewport.height) - crate::render::TOP,
+                f32::from(viewport.height),
             ),
             6.,
             100.,
@@ -141,6 +164,6 @@ pub async fn run(
         );
     }
     Ok(vec![
-        "four native clipped corners in single and nested split panels; divider/window resize and panel rearrangement preserve bounds, live documents and floating controls",
+        "four native clipped corners and six-point outer gutter in single and nested split panels; divider/window resize and panel rearrangement preserve bounds, live documents and floating controls",
     ])
 }

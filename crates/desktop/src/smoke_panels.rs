@@ -100,12 +100,7 @@ pub(crate) async fn run(
     let expected = view.update_in(cx, |app, window, _| {
         let v = window.viewport_size();
         let geometry = app.model.active_space().layout.geometry(
-            workspace_core::Rect::new(
-                0.,
-                crate::render::TOP,
-                f32::from(v.width),
-                f32::from(v.height) - crate::render::TOP,
-            ),
+            crate::render::panel_content_rect(f32::from(v.width), f32::from(v.height)),
             6.,
             100.,
         );
@@ -224,11 +219,9 @@ pub(crate) async fn run(
         view.update_in(cx, |app, window, cx| {
             let viewport = window.viewport_size();
             let geometry = app.model.active_space().layout.geometry(
-                workspace_core::Rect::new(
-                    0.,
-                    crate::render::TOP,
+                crate::render::panel_content_rect(
                     f32::from(viewport.width),
-                    f32::from(viewport.height) - crate::render::TOP,
+                    f32::from(viewport.height),
                 ),
                 6.,
                 100.,
@@ -295,11 +288,9 @@ pub(crate) async fn run(
     view.update_in(cx, |app, window, cx| {
         let viewport = window.viewport_size();
         let geometry = app.model.active_space().layout.geometry(
-            workspace_core::Rect::new(
-                0.,
-                crate::render::TOP,
+            crate::render::panel_content_rect(
                 f32::from(viewport.width),
-                f32::from(viewport.height) - crate::render::TOP,
+                f32::from(viewport.height),
             ),
             6.,
             100.,
@@ -460,12 +451,7 @@ pub(crate) async fn check_sizing(
     let expected = view.update_in(cx, |app, window, _| {
         let v = window.viewport_size();
         let geometry = app.model.active_space().layout.geometry(
-            workspace_core::Rect::new(
-                0.,
-                crate::render::TOP,
-                f32::from(v.width),
-                f32::from(v.height) - crate::render::TOP,
-            ),
+            crate::render::panel_content_rect(f32::from(v.width), f32::from(v.height)),
             6.,
             100.,
         );

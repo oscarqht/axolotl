@@ -6,6 +6,17 @@ use workspace_core::{Axis, PaneId, Rect};
 pub const TOP: f32 = 38.;
 pub const TAB_WIDTH: f32 = 204.;
 pub const PANEL_CORNER_RADIUS: f32 = 10.;
+pub const PANEL_OUTER_GAP: f32 = 6.;
+
+/// Shared by panel painting, native view placement, and docking hit targets.
+pub(crate) fn panel_content_rect(width: f32, height: f32) -> Rect {
+    Rect::new(
+        PANEL_OUTER_GAP,
+        TOP + PANEL_OUTER_GAP,
+        (width - 2. * PANEL_OUTER_GAP).max(0.),
+        (height - TOP - 2. * PANEL_OUTER_GAP).max(0.),
+    )
+}
 
 #[cfg(target_os = "windows")]
 fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
@@ -532,12 +543,7 @@ impl Render for BrowserApp {
         }
         let viewport = window.viewport_size();
         let downloading = self.host.downloads().borrow().downloading_count();
-        let content = Rect::new(
-            0.,
-            TOP,
-            f32::from(viewport.width),
-            (f32::from(viewport.height) - TOP).max(0.),
-        );
+        let content = panel_content_rect(f32::from(viewport.width), f32::from(viewport.height));
         let (_, pin_width) = crate::pinned_tabs::header_layout(
             f32::from(viewport.width),
             self.model.pinned_tabs.len(),

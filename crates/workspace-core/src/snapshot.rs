@@ -68,6 +68,8 @@ struct TabDto {
     url: String,
     #[serde(default)]
     title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    custom_title: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -179,6 +181,7 @@ impl Workspace {
                                     id: t.id,
                                     url: t.url.clone(),
                                     title: t.title.clone(),
+                                    custom_title: t.custom_title.clone(),
                                 })
                                 .collect(),
                         })
@@ -226,6 +229,7 @@ impl Workspace {
                         id: t.id,
                         url: t.url,
                         title: t.title,
+                        custom_title: t.custom_title.filter(|c| !c.trim().is_empty()),
                     });
                 }
                 if !tabs.iter().any(|t| t.id == p.active_tab) {
@@ -313,6 +317,7 @@ mod tests {
         w.focus_pane(right);
         let tab = w.add_tab("https://docs.rs/");
         w.tab_mut(tab).unwrap().title = "Docs — rs".into();
+        w.set_custom_title(tab, "My docs");
         let split = match &w.active_space().layout {
             Layout::Split { id, .. } => *id,
             _ => unreachable!(),
@@ -388,6 +393,22 @@ mod tests {
     }
 
     #[test]
+    fn custom_title_round_trips_and_is_optional() {
+        let w = sample();
+        let back = Workspace::from_json(&w.to_json()).unwrap();
+        let titled = back
+            .spaces
+            .iter()
+            .flat_map(|s| &s.panes)
+            .flat_map(|p| &p.tabs)
+            .filter(|t| t.custom_title.as_deref() == Some("My docs"))
+            .count();
+        assert_eq!(titled, 1);
+        // Files written before custom titles existed omit the field entirely.
+        assert!(!Workspace::default().to_json().contains("custom_title"));
+    }
+
+    #[test]
     fn missing_title_defaults_to_empty() {
         let w = mutated(|v| {
             v["spaces"][0]["panes"][0]["tabs"][0]
@@ -400,10 +421,7 @@ mod tests {
     }
 
     fn temp_path(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "axolotl-test-{}-{name}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("axolotl-test-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir.join("nested").join("session.json")
     }

@@ -130,7 +130,10 @@ mod tests {
         assert_eq!(saved.spaces, workspace.spaces);
         workspace.add_tab("https://gpui.rs/");
         saver.flush(&workspace);
-        assert_eq!(load_workspace(&path).unwrap().unwrap().spaces, workspace.spaces);
+        assert_eq!(
+            load_workspace(&path).unwrap().unwrap().spaces,
+            workspace.spaces
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

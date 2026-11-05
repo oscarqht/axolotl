@@ -13,9 +13,9 @@ Run on 2026-11-05 in `bro-tab-chip-context-menu` on macOS.
 - Set title… edits inline on the chip. The result is `Tab::custom_title`, which
   overrides the page title in chips, drag previews and the compact space strip
   while the page title keeps updating underneath. Saving an empty value clears
-  it and restores the live page title. There is no session persistence in this
-  app yet, so the custom title lives in the workspace model only.
-- Added core tests for override/clear and for surviving tab moves, a host test
+  it and restores the live page title. The custom title is stored in the session
+  snapshot as an optional `custom_title` per tab (older files load unchanged).
+- Added core tests for override/clear, tab moves and snapshot round-trip, a host test
   for history-probe parsing, and a native smoke check covering structure,
   targeting an inactive tab, disabled items, set/clear title, dismissal and close.
 - Passed: `cargo check`/`cargo test --workspace --all-features --locked` and the

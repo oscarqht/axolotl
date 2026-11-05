@@ -86,6 +86,32 @@ pub(crate) async fn run(
         native["native"]["visible"] == true && native["native"]["topmost"] == true,
         "Native PiP window isn't visible and on top: {native}"
     );
+    let geometry = &native["native"]["geometry"];
+    let bounds = &geometry["bounds"];
+    let area = &geometry["area"];
+    let number = |value: &serde_json::Value, key: &str| value[key].as_f64().unwrap();
+    let padding = geometry["padding"].as_f64().unwrap();
+    let right =
+        number(area, "x") + number(area, "width") - number(bounds, "x") - number(bounds, "width");
+    let bottom = if cfg!(target_os = "macos") {
+        number(bounds, "y") - number(area, "y")
+    } else {
+        number(area, "y") + number(area, "height") - number(bounds, "y") - number(bounds, "height")
+    };
+    ensure!(
+        (right - padding).abs() <= 2. && (bottom - padding).abs() <= 2.,
+        "Default PiP is not padded bottom-right: {geometry}"
+    );
+    view.update_in(cx, |app, _, cx| app.host.test_adjust_picture_in_picture(cx))??;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    let adjusted = state(view, Some(first), cx).await?["native"]["geometry"]["bounds"].clone();
+    ensure!(
+        (number(&adjusted, "width") - 440.).abs() <= 2.
+            && (number(&adjusted, "height") - 290.).abs() <= 2.,
+        "Native move/resize was not applied: {adjusted}"
+    );
     ensure!(
         eval(
             &host,
@@ -136,6 +162,11 @@ pub(crate) async fn run(
     ensure!(eval(&host,first,"document.querySelectorAll('[data-axolotl-pip]').length===0 && !document.querySelector('#large').controls",cx).await? == true, "Return did not restore page/controls");
     select(view, pane, second, cx).await?;
     state(view, Some(first), cx).await?;
+    let reopened = state(view, Some(first), cx).await?;
+    ensure!(
+        reopened["native"]["geometry"]["bounds"] == adjusted,
+        "PiP did not remember adjusted bounds: {reopened}, expected {adjusted}"
+    );
     // Exercise the operating system's close action, not the automatic return path.
     view.update_in(cx, |app, _, cx| app.host.test_close_picture_in_picture(cx))??;
     state(view, None, cx).await?;
@@ -218,6 +249,7 @@ pub(crate) async fn run(
     host.unload(first);
     state(view, None, cx).await?;
     let mut checks = vec![
+        "padded bottom-right default and remembered native move/resize on reopen",
         "visible native always-on-top PiP with advancing audible playback",
         "largest audible video; muted larger video excluded",
         "automatic return restores source DOM and controls",

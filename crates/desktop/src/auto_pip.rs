@@ -140,6 +140,13 @@ impl AutoPip {
             .unwrap_or(serde_json::Value::Null)
     }
     #[cfg(feature = "smoke")]
+    pub fn test_adjust_geometry(&self, cx: &gpui::App) -> Result<()> {
+        if let Some(active) = &self.active {
+            active.window.test_adjust_geometry(cx)?;
+        }
+        Ok(())
+    }
+    #[cfg(feature = "smoke")]
     pub fn test_close(&self, cx: &mut gpui::App) -> Result<()> {
         if let Some(active) = &self.active {
             active.window.test_close(cx)?;

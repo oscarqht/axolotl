@@ -99,6 +99,14 @@ when its source tab becomes hidden. Returning to the source tab returns the vide
 to the page. Focusing another visible split pane, switching apps, and minimizing
 alone do not start it.
 
+New PiP windows open at the bottom-right of the source window's screen, with
+24 logical pixels of padding inside the usable area (clear of the Dock/taskbar).
+Moving or resizing PiP saves its native outer position and size atomically in
+`pip-window-state.json`, separate from the browsing session. Future PiP windows
+restore those adjusted bounds, including after restarting the app. Saved bounds
+are kept inside an available screen when displays change; the saved size takes
+precedence over a later video's aspect ratio.
+
 Only one video is shown at a time: the largest eligible video in the tab being
 hidden is selected, and an existing picture-in-picture session is preserved.
 Closing automatic picture-in-picture keeps it closed until you revisit the source
@@ -127,7 +135,8 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-auto-pip
 
 Add `--pip-inspect` to hold the first floating video for visual inspection.
 The check inspects the actual native window's visibility, stacking and live child
-attachment, video selection and playback progress, native Close, automatic return,
+attachment, padded default placement, adjusted bounds on reopen, video selection
+and playback progress, native Close, automatic return,
 Settings disable, visible splits, app hiding/minimizing, tab/space navigation,
 cross-origin frames, and source unload/navigation/end/close cleanup. On macOS it
 also saves a native webview snapshot to `/tmp/axolotl-auto-pip.png`. The fixture was

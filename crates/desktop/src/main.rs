@@ -38,6 +38,7 @@ mod panel_controls;
 mod persistence;
 mod persistence_worker;
 mod pinned_tabs;
+mod pip_geometry;
 mod pip_window;
 mod popup_transition;
 mod preferences;

@@ -1,6 +1,6 @@
 //! A native, always-on-top home for the original page surface. Reparenting keeps
 //! media streams, DRM sessions and playback position in the source web engine.
-use crate::native_webview::NativeWebView;
+use crate::{native_webview::NativeWebView, pip_geometry::Geometry};
 use anyhow::Result;
 use gpui::{prelude::*, *};
 use std::{cell::RefCell, rc::Rc};
@@ -57,8 +57,8 @@ impl Attachment {
                 Foundation::HWND,
                 UI::WindowsAndMessaging::{
                     GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, HWND_TOPMOST, SWP_FRAMECHANGED,
-                    SWP_NOACTIVATE, SWP_SHOWWINDOW, SetWindowLongPtrW, SetWindowPos, WS_CAPTION,
-                    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_SYSMENU, WS_THICKFRAME,
+                    SWP_NOACTIVATE, SetWindowLongPtrW, SetWindowPos, WS_CAPTION, WS_EX_APPWINDOW,
+                    WS_EX_TOOLWINDOW, WS_SYSMENU, WS_THICKFRAME,
                 },
             };
             use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -90,7 +90,7 @@ impl Attachment {
                     (f32::from(bounds.origin.y) * scale) as i32,
                     (f32::from(bounds.size.width) * scale) as i32,
                     (f32::from(bounds.size.height) * scale) as i32,
-                    SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                    SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 )?;
             }
             let parent = source.reparent_for_picture_in_picture(window)?;
@@ -106,6 +106,16 @@ impl Attachment {
             let _ = (source, window, bounds);
             anyhow::bail!("PiP requires macOS or Windows")
         }
+    }
+
+    fn geometry(&self, window: &Window) -> Result<Geometry> {
+        #[cfg(target_os = "macos")]
+        let anchor = objc2::rc::Retained::as_ptr(&self._window) as isize;
+        #[cfg(target_os = "windows")]
+        let anchor = self.parent;
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let anchor = 0;
+        Geometry::open(window, anchor)
     }
 
     fn restore(&self) -> Result<()> {
@@ -127,10 +137,14 @@ impl Attachment {
 struct State {
     attachment: Option<Attachment>,
     closed: bool,
+    geometry: Option<Geometry>,
 }
 
 impl State {
     fn restore(&mut self) -> Result<()> {
+        if let Some(geometry) = &mut self.geometry {
+            geometry.remember();
+        }
         if let Some(attachment) = &self.attachment {
             attachment.restore()?;
         }
@@ -197,9 +211,9 @@ impl PipWindow {
                     ..Default::default()
                 }),
                 focus: false,
-                // GPUI's Windows initial placement ignores `focus`; show with
-                // SWP_NOACTIVATE in Attachment::new instead.
-                show: !cfg!(target_os = "windows"),
+                // Position before showing, so initial placement never flashes
+                // at the temporary construction bounds or activates the window.
+                show: false,
                 kind: if cfg!(target_os = "macos") {
                     WindowKind::PopUp
                 } else {
@@ -214,7 +228,13 @@ impl PipWindow {
                 #[cfg(feature = "smoke")]
                 eprintln!("PiP native: attaching source");
                 match Attachment::new(source, window, bounds) {
-                    Ok(attachment) => surface_state.borrow_mut().attachment = Some(attachment),
+                    Ok(attachment) => {
+                        match attachment.geometry(window) {
+                            Ok(geometry) => surface_state.borrow_mut().geometry = Some(geometry),
+                            Err(error) => *setup_error.borrow_mut() = Some(error),
+                        }
+                        surface_state.borrow_mut().attachment = Some(attachment);
+                    }
                     Err(error) => *setup_error.borrow_mut() = Some(error),
                 }
                 let closing = surface_state.clone();
@@ -229,7 +249,15 @@ impl PipWindow {
                 });
                 #[cfg(feature = "smoke")]
                 eprintln!("PiP native: creating surface root");
-                cx.new(|_| Surface(surface_state))
+                cx.new(|cx| {
+                    cx.observe_window_bounds(window, |this: &mut Surface, _, _| {
+                        if let Some(geometry) = &mut this.0.borrow_mut().geometry {
+                            geometry.remember();
+                        }
+                    })
+                    .detach();
+                    Surface(surface_state)
+                })
             },
         )?;
         #[cfg(feature = "smoke")]
@@ -266,6 +294,25 @@ impl PipWindow {
         if self.handle.read(cx).is_ok() {
             self.handle
                 .update(cx, |_, window, _| window.remove_window())?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "smoke")]
+    pub fn test_adjust_geometry(&self, cx: &App) -> Result<()> {
+        let adjust = self
+            .state
+            .borrow()
+            .geometry
+            .as_ref()
+            .map(Geometry::test_adjust)
+            .transpose()?;
+        if let Some(adjust) = adjust {
+            cx.foreground_executor()
+                .spawn(async move {
+                    adjust();
+                })
+                .detach();
         }
         Ok(())
     }
@@ -320,6 +367,7 @@ impl PipWindow {
             let native = attachment.source.ns_window();
             let frame = view.frame();
             serde_json::json!({
+                "geometry":state.geometry.as_ref().map(Geometry::test_state),
                 "closed":self.is_closed(cx), "visible":native.isVisible(),
                 "topmost":native.level() > 0, "title":native.title().to_string(),
                 "sourceAttached":view.window().as_ref() == Some(&native),
@@ -347,7 +395,7 @@ impl PipWindow {
                 )
             };
             let source = attachment.source.test_picture_in_picture_state();
-            serde_json::json!({"closed":self.is_closed(cx), "visible":visible, "topmost":topmost,
+            serde_json::json!({"geometry":state.geometry.as_ref().map(Geometry::test_state),"closed":self.is_closed(cx), "visible":visible, "topmost":topmost,
                 "title":String::from_utf16_lossy(&title[..title_len]), "width":bounds.right-bounds.left,"height":bounds.bottom-bounds.top,
                 "sourceAttached":source["parent"].as_i64() == Some(attachment.target as i64),
                 "source":source})

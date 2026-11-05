@@ -108,6 +108,8 @@ pub trait BrowserHost {
     fn picture_in_picture_state(&self, cx: &gpui::App) -> serde_json::Value;
     #[cfg(feature = "smoke")]
     fn test_close_picture_in_picture(&self, cx: &mut gpui::App) -> Result<()>;
+    #[cfg(feature = "smoke")]
+    fn test_adjust_picture_in_picture(&self, cx: &gpui::App) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_key(
         &self,
@@ -647,6 +649,10 @@ impl BrowserHost for WryHost {
     #[cfg(feature = "smoke")]
     fn picture_in_picture_state(&self, cx: &gpui::App) -> serde_json::Value {
         self.auto_pip.borrow().test_state(cx)
+    }
+    #[cfg(feature = "smoke")]
+    fn test_adjust_picture_in_picture(&self, cx: &gpui::App) -> Result<()> {
+        self.auto_pip.borrow().test_adjust_geometry(cx)
     }
     #[cfg(feature = "smoke")]
     fn test_close_picture_in_picture(&self, cx: &mut gpui::App) -> Result<()> {

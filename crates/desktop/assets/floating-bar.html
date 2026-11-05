@@ -50,7 +50,7 @@
     width: 128px;
     max-width: 100%;
     flex-shrink: 0;
-    opacity: 0.2;
+    opacity: 0.5;
     transition:
       width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
       opacity 160ms ease;
@@ -62,7 +62,8 @@
     user-select: none;
     touch-action: pan-y;
   }
-  #bar:hover {
+  #bar:hover,
+  #bar.editing {
     opacity: 1;
   }
   button {

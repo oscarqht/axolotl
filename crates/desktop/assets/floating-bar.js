@@ -189,6 +189,7 @@ new ResizeObserver(metrics).observe(tabs);
 window.updateBar = (s) => {
   const old = state;
   state = s;
+  bar.classList.toggle("editing", s.editing != null || renaming !== null);
   if (s.expanded || s.editing) {
     const width = s.expandedWidth ?? s.surfaceWidth;
     bar.style.setProperty("--expanded-width", `${width - 8}px`);

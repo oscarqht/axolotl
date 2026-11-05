@@ -281,8 +281,8 @@ async fn run(
                     "Shell palette did not switch"
                 );
                 ensure!(
-                    colors.divider == if dark { 0x11161e } else { 0xd7dfe7 },
-                    "Split border did not switch"
+                    colors.divider == colors.shell,
+                    "Split separator did not match the shell background"
                 );
                 Ok(())
             })??;

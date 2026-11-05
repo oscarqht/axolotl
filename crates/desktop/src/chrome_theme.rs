@@ -41,7 +41,7 @@ impl ChromeColors {
                 border: 0xc9d2dc,
                 hover: 0xdae2e9,
                 shell: 0xe9edf1,
-                divider: 0xd7dfe7,
+                divider: 0xe9edf1,
                 page: 0xf5f6f8,
             }
         }

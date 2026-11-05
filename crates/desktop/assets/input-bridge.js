@@ -10,7 +10,8 @@
     });
     window.addEventListener('keydown', event => {
         if (!event.isTrusted || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
-        const command = {l:'address', t:'new-tab', w:'close-tab', r:'reload'}[event.key.toLowerCase()];
+        if (event.key === ',' && !(__LINK_MODIFIER__)) return;
+        const command = {l:'address', t:'new-tab', w:'close-tab', r:'reload', ',':'settings'}[event.key.toLowerCase()];
         if (command) { event.preventDefault(); event.stopImmediatePropagation(); send(command); }
     }, true);
     window.addEventListener('click', event => {

@@ -331,6 +331,9 @@ impl Render for BrowserApp {
             .when(self.tab_drag_active(), |root| {
                 root.cursor(CursorStyle::ClosedHand)
             })
+            .on_action(cx.listener(|this, _: &crate::Settings, window, cx| {
+                this.open_settings(true, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &crate::Address, window, cx| {
                 this.command(Command::Address, window, cx)
             }))
@@ -354,6 +357,7 @@ impl Render for BrowserApp {
             }))
             .on_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
+                    this.close_settings(window, cx);
                     this.cancel_tab_drag(cx);
                     this.close_space_menu(cx);
                     this.cancel_edit(window, cx);
@@ -430,10 +434,10 @@ impl Render for BrowserApp {
                             .track_scroll(&self.space_scroll)
                             .when(cfg!(target_os = "windows"), |spaces| {
                                 // Reserve caption buttons, gaps, and an empty drag target.
-                                spaces.max_w(px((f32::from(viewport.width) - 194.).max(0.)))
+                                spaces.max_w(px((f32::from(viewport.width) - 228.).max(0.)))
                             })
                             .when(!cfg!(target_os = "windows"), |spaces| {
-                                spaces.max_w(relative(0.85))
+                                spaces.max_w(px((f32::from(viewport.width) - 212.).max(0.)))
                             })
                             .min_w_0()
                             .flex()
@@ -473,6 +477,36 @@ impl Render for BrowserApp {
                             .when(!cfg!(target_os = "windows"), |drag| {
                                 drag.on_double_click(|_, window, _| window.titlebar_double_click())
                             }),
+                    )
+                    .child(
+                        div()
+                            .id("settings-button")
+                            .track_focus(&self.settings_focus)
+                            .w(px(30.))
+                            .h(px(30.))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_md()
+                            .cursor_pointer()
+                            .text_size(px(20.))
+                            .hover(|s| s.bg(rgb(colors.hover)))
+                            .tooltip(|window, cx| {
+                                gpui_component::tooltip::Tooltip::new("Settings")
+                                    .action(&crate::Settings, None)
+                                    .build(window, cx)
+                            })
+                            .child("⚙")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.settings_focus.focus(window);
+                                this.open_settings(false, window, cx)
+                            }))
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    this.open_settings(false, window, cx);
+                                }
+                            })),
                     )
                     .when(cfg!(target_os = "windows"), |header| {
                         #[cfg(target_os = "windows")]

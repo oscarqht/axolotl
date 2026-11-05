@@ -8,7 +8,7 @@ use workspace_core::{Workspace, load_workspace, write_atomic};
 const DEBOUNCE: Duration = Duration::from_millis(500);
 
 /// `AXOLOTL_DATA_DIR` overrides the OS app-data directory (used for testing).
-pub fn session_path() -> Option<PathBuf> {
+pub(crate) fn data_dir() -> Option<PathBuf> {
     // Smoke runs must neither read nor clobber the user's real session.
     if std::env::args().any(|arg| arg == "--smoke-test") {
         return None;
@@ -24,7 +24,11 @@ pub fn session_path() -> Option<PathBuf> {
     } else {
         PathBuf::from(std::env::var_os("HOME")?).join(".local/share/axolotl")
     };
-    Some(dir.join("session.json"))
+    Some(dir)
+}
+
+pub fn session_path() -> Option<PathBuf> {
+    Some(data_dir()?.join("session.json"))
 }
 
 /// Restore the saved workspace, or the default start state when the file is

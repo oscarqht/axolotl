@@ -1,4 +1,4 @@
-//! Reserve Cmd+Q before WKWebView's child-view key-equivalent handling.
+//! Reserve app-level shortcuts before WKWebView key-equivalent handling.
 use block2::RcBlock;
 use gpui::{App, Global};
 use objc2::{rc::Retained, runtime::AnyObject};
@@ -20,6 +20,12 @@ fn is_quit(key: &str, flags: Flags) -> bool {
         && !flags.intersects(Flags::Control | Flags::Option | Flags::Shift)
 }
 
+fn is_settings(key: &str, flags: Flags) -> bool {
+    key == ","
+        && flags.contains(Flags::Command)
+        && !flags.intersects(Flags::Control | Flags::Option | Flags::Shift)
+}
+
 pub fn install(cx: &mut App) {
     let app = cx.to_async();
     let executor = cx.foreground_executor().clone();
@@ -30,7 +36,17 @@ pub fn install(cx: &mut App) {
         let key = event_ref
             .charactersIgnoringModifiers()
             .map(|s| s.to_string());
-        if key.is_some_and(|key| is_quit(&key, event_ref.modifierFlags())) {
+        let flags = event_ref.modifierFlags();
+        if key.as_deref().is_some_and(|key| is_settings(key, flags)) {
+            let app = app.clone();
+            executor
+                .spawn(async move {
+                    let _ = app.update(|cx| cx.dispatch_action(&crate::Settings));
+                })
+                .detach();
+            return std::ptr::null_mut();
+        }
+        if key.is_some_and(|key| is_quit(&key, flags)) {
             if !requested.replace(true) {
                 let app = app.clone();
                 // Do not borrow GPUI reentrantly from native event dispatch.
@@ -56,6 +72,22 @@ pub fn install(cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_command_comma_opens_settings() {
+        assert!(is_settings(",", Flags::Command));
+        assert!(is_settings(",", Flags::Command | Flags::CapsLock));
+        assert!(!is_settings("q", Flags::Command));
+        for flags in [
+            Flags::empty(),
+            Flags::Control,
+            Flags::Command | Flags::Control,
+            Flags::Command | Flags::Option,
+            Flags::Command | Flags::Shift,
+        ] {
+            assert!(!is_settings(",", flags));
+        }
+    }
 
     #[test]
     fn only_unmodified_command_q_requests_quit() {

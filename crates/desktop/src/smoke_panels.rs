@@ -62,6 +62,7 @@ pub(crate) async fn run(
     checks.push("only count/chip hover expands; handle/plus hover stay compact; plus click creates a tab with focused address editing");
     checks.push(crate::smoke_menu::run(view, control_pane, cx).await?);
     checks.push(crate::smoke_space_menu::run(view, cx).await?);
+    checks.extend(crate::smoke_settings::run(view, cx).await?);
 
     let pane = view.update_in(cx, |app, window, cx| {
         app.cancel_edit(window, cx);

@@ -596,7 +596,8 @@ document.addEventListener("keydown", (e) => {
     expand(false);
   }
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-    let type = { l: "edit", t: "new", w: "close", r: "reload" }[
+    if (e.key === "," && !(navigator.platform.includes("Mac") ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return;
+    let type = { l: "edit", t: "new", w: "close", r: "reload", ",": "settings" }[
       e.key.toLowerCase()
     ];
     if (type) {

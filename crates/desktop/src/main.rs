@@ -15,7 +15,9 @@ mod macos_quit;
 mod native_webview;
 mod panel_controls;
 mod persistence;
+mod preferences;
 mod render;
+mod settings;
 #[cfg(feature = "smoke")]
 mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -26,6 +28,8 @@ mod smoke_menu;
 mod smoke_notifications;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
+#[cfg(feature = "smoke")]
+mod smoke_settings;
 #[cfg(feature = "smoke")]
 mod smoke_space_menu;
 mod space_menu;
@@ -38,7 +42,7 @@ use gpui_component::Root;
 actions!(
     axolotl,
     [
-        Quit, Address, NewTab, CloseTab, Reload, NextPane, Back, Forward
+        Quit, Address, NewTab, CloseTab, Reload, NextPane, Back, Forward, Settings
     ]
 );
 
@@ -67,6 +71,7 @@ fn main() {
             KeyBinding::new(&format!("{modifier}-w"), CloseTab, None),
             KeyBinding::new(&format!("{modifier}-r"), Reload, None),
             KeyBinding::new("f6", NextPane, None),
+            KeyBinding::new(&format!("{modifier}-,"), Settings, None),
             KeyBinding::new("escape", gpui_component::input::Escape, None),
             KeyBinding::new("alt-left", Back, None),
             KeyBinding::new("alt-right", Forward, None),
@@ -77,6 +82,7 @@ fn main() {
             Menu {
                 name: "Axolotl".into(),
                 items: vec![
+                    MenuItem::action("Settings…", Settings),
                     #[cfg(target_os = "macos")]
                     MenuItem::action("Enable Passkeys…", macos_passkeys::EnablePasskeys),
                     MenuItem::action("Quit Axolotl", Quit),

@@ -15,6 +15,9 @@ impl BrowserApp {
             if self.model.active_space().pane(pane).is_none() {
                 continue;
             }
+            if self.settings.is_some() {
+                continue;
+            }
             let kind = event["type"].as_str().unwrap_or("");
             let tab = event["tab"]
                 .as_u64()
@@ -60,6 +63,7 @@ impl BrowserApp {
                             .unwrap_or_default();
                     }
                 }
+                "settings" => self.open_settings(false, window, cx),
                 "select" => self.select_target(target, window, cx),
                 "edit" => self.begin_edit(target, window, cx),
                 "close" => self.tab_action(target, TabAction::Close, window, cx),
@@ -219,6 +223,9 @@ impl BrowserApp {
             .collect();
         if native_views != self.chrome_views && !self.tab_drag_active() {
             self.space_menu = None;
+            if let Some(dialog) = &mut self.settings {
+                dialog.view = None;
+            }
             self.bars.clear();
             self.chrome_views = native_views;
         }
@@ -277,5 +284,6 @@ impl BrowserApp {
         }
         // Create last, above every page and floating panel control.
         self.prepare_space_menu(window, cx);
+        self.prepare_settings(window, cx);
     }
 }

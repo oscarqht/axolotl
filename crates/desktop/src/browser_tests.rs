@@ -30,6 +30,11 @@ fn bridge_requires_nonce_and_fixed_command() {
         authenticated_command("secret:focus", "secret"),
         Some("focus")
     );
+    assert_eq!(
+        authenticated_command("secret:settings", "secret"),
+        Some("settings")
+    );
+    assert_eq!(authenticated_command("wrong:settings", "secret"), None);
     for message in [
         "address",
         "wrong:address",

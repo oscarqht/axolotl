@@ -19,7 +19,7 @@ function bridge(mac = true) {
     addEventListener: (type, listener) => { listeners[type] = listener; },
   };
   vm.runInNewContext(source.replace('__NONCE__', 'secret')
-    .replace('__LINK_MODIFIER__', mac ? 'event.metaKey && !event.ctrlKey' : 'event.ctrlKey && !event.metaKey')
+    .replaceAll('__LINK_MODIFIER__', mac ? 'event.metaKey && !event.ctrlKey' : 'event.ctrlKey && !event.metaKey')
     .replace('__GESTURES__', ''), { window, Element, URL });
   function click(options = {}, href = '../next?q=1#part', download = false) {
     const link = new Element(href, download);
@@ -84,4 +84,18 @@ test('existing trusted shortcuts remain authenticated and ordinary keys stay unt
   assert.deepEqual(b.messages, ['secret:address']);
   b.listeners.keydown({ ...event, isTrusted: false });
   assert.equal(b.messages.length, 1);
+});
+
+test('settings shortcut uses the platform modifier and rejects untrusted or modified input', () => {
+  for (const mac of [true, false]) {
+    for (const overrides of [null, { isTrusted: false }, { altKey: true }, { shiftKey: true },
+      { metaKey: !mac, ctrlKey: mac }, { metaKey: true, ctrlKey: true }]) {
+      const b = bridge(mac);
+      const event = { isTrusted: true, key: ',', metaKey: mac, ctrlKey: !mac, altKey: false, shiftKey: false,
+        preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...overrides };
+      b.listeners.keydown(event);
+      assert.deepEqual(b.messages, overrides === null ? ['secret:settings'] : []);
+      assert.equal(Boolean(event.prevented), overrides === null);
+    }
+  }
 });

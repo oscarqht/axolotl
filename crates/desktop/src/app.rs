@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use workspace_core::{Divider, PaneId, SpaceId, TabId, Workspace, normalize_url};
+use workspace_core::{Divider, PaneId, SpaceId, TabId, Workspace, normalize_url_with_engine};
 
 #[cfg(feature = "smoke")]
 use workspace_core::Axis;
@@ -30,6 +30,7 @@ pub enum TabAction {
 #[derive(Clone, Copy)]
 pub enum Command {
     Address,
+    Settings,
     NewTab,
     CloseTab,
     Reload,
@@ -84,6 +85,9 @@ pub struct BrowserApp {
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
     pub model: Workspace,
+    pub preferences: crate::preferences::Preferences,
+    pub settings: Option<crate::settings::SettingsDialog>,
+    pub settings_focus: FocusHandle,
     saver: crate::persistence::SessionSaver,
     pub host: Rc<dyn BrowserHost>,
     pub address: Entity<InputState>,
@@ -170,6 +174,9 @@ impl BrowserApp {
             chrome_views: HashSet::new(),
             swipes: HashMap::new(),
             model,
+            preferences: crate::preferences::Preferences::restore(),
+            settings: None,
+            settings_focus: cx.focus_handle(),
             saver,
             host: Rc::new(WryHost::new()),
             address,
@@ -324,6 +331,9 @@ impl BrowserApp {
         cx.notify();
     }
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings.is_some() {
+            return;
+        }
         if !matches!(command, Command::Address) {
             if self.editing.is_some() {
                 self.focus.focus(window);
@@ -331,6 +341,7 @@ impl BrowserApp {
             self.cancel_edit(window, cx);
         }
         match command {
+            Command::Settings => self.open_settings(true, window, cx),
             Command::Address => {
                 let target = self.editing.unwrap_or(TabTarget::Page(
                     self.model.focused_pane().id,
@@ -384,7 +395,7 @@ impl BrowserApp {
         cx.notify();
     }
     pub(crate) fn navigate(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
-        match normalize_url(value) {
+        match normalize_url_with_engine(value, self.preferences.search_engine) {
             Ok(url) => {
                 self.status.clear();
                 if self.editing.is_none() {
@@ -404,6 +415,7 @@ impl BrowserApp {
     }
     fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.saver.tick(&self.model, Instant::now());
+        self.poll_settings(window, cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
         if let Some(preview) = &self.drag_preview {
@@ -499,6 +511,9 @@ impl BrowserApp {
                     }
                 }
                 BrowserEvent::Gesture(tab, x, y) => {
+                    if self.settings.is_some() {
+                        continue;
+                    }
                     if self.tab_drag_active() {
                         continue;
                     }
@@ -524,6 +539,9 @@ impl BrowserApp {
                     }
                 }
                 BrowserEvent::Shortcut(tab, key) => {
+                    if self.settings.is_some() {
+                        continue;
+                    }
                     let pane = self
                         .model
                         .active_space()
@@ -546,6 +564,7 @@ impl BrowserApp {
                         continue;
                     }
                     let command = match key.as_str() {
+                        "settings" => Some(Command::Settings),
                         "address" => Some(Command::Address),
                         "new-tab" => Some(Command::NewTab),
                         "close-tab" => Some(Command::CloseTab),

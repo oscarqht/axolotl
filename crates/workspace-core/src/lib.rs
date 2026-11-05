@@ -6,7 +6,7 @@ mod snapshot;
 
 pub use layout::{Axis, Divider, Geometry, Layout, PaneRect, Rect, SplitEdge};
 pub use model::{Pane, PaneId, Space, SpaceId, SplitId, Tab, TabId, Workspace};
-pub use navigation::{normalize_url, NavigationError};
+pub use navigation::{normalize_url, normalize_url_with_engine, NavigationError, SearchEngine};
 pub use snapshot::{load_workspace, save_workspace, write_atomic, SnapshotError, SNAPSHOT_VERSION};
 
 #[cfg(test)]

@@ -11,8 +11,52 @@ impl fmt::Display for NavigationError {
 }
 impl std::error::Error for NavigationError {}
 
-/// Accept web URLs, localhost addresses, and search terms. Privileged schemes never reach a host.
+/// Built-in providers only; persisted identifiers are stable across releases.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SearchEngine {
+    #[default]
+    Google,
+    DuckDuckGo,
+    Bing,
+}
+
+impl SearchEngine {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Google => "google",
+            Self::DuckDuckGo => "duckduckgo",
+            Self::Bing => "bing",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "google" => Some(Self::Google),
+            "duckduckgo" => Some(Self::DuckDuckGo),
+            "bing" => Some(Self::Bing),
+            _ => None,
+        }
+    }
+
+    fn endpoint(self) -> &'static str {
+        match self {
+            Self::Google => "https://www.google.com/search",
+            Self::DuckDuckGo => "https://duckduckgo.com/",
+            Self::Bing => "https://www.bing.com/search",
+        }
+    }
+}
+
+/// Normalize using the default provider (Google).
 pub fn normalize_url(input: &str) -> Result<String, NavigationError> {
+    normalize_url_with_engine(input, SearchEngine::default())
+}
+
+/// Accept web URLs, localhost addresses, and search terms. Privileged schemes never reach a host.
+pub fn normalize_url_with_engine(
+    input: &str,
+    engine: SearchEngine,
+) -> Result<String, NavigationError> {
     let input = input.trim();
     if input == "about:blank" {
         return Ok(input.to_owned());
@@ -46,7 +90,7 @@ pub fn normalize_url(input: &str) -> Result<String, NavigationError> {
     if !input.chars().any(char::is_whitespace) && (first.contains('.') || hostname_port) {
         return web_url(&format!("https://{input}"));
     }
-    let mut search = Url::parse("https://duckduckgo.com/").expect("static search URL");
+    let mut search = Url::parse(engine.endpoint()).expect("static search URL");
     search.query_pairs_mut().append_pair("q", input);
     Ok(search.into())
 }

@@ -56,7 +56,9 @@ Dividers include their parent bounds for converting pointer position to a split
 ratio. Stored ratios clamp to 0.1–0.9, and nonfinite ratios are rejected.
 
 `normalize_url` accepts HTTP, HTTPS, and `about:blank`; it supplies a scheme for
-hostnames and localhost addresses and encodes search terms for DuckDuckGo. It
+hostnames and localhost addresses and defaults search terms to Google. The desktop
+uses `normalize_url_with_engine` with the app-wide Google/DuckDuckGo/Bing preference
+(see [Settings](settings.md)). It
 rejects privileged schemes, malformed URLs, control characters, and addresses
 containing embedded credentials. Native navigation also has a scheme allowlist.
 

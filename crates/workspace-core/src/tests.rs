@@ -746,3 +746,48 @@ fn space_title_is_independent_of_pages_focus_and_selection_and_round_trips() {
         .is_none());
     assert!(!workspace.set_space_title(u64::MAX, "Missing"));
 }
+
+#[test]
+fn search_providers_encode_queries_without_changing_url_navigation() {
+    use crate::{normalize_url_with_engine, SearchEngine};
+    assert_eq!(
+        normalize_url("hello world").unwrap(),
+        "https://www.google.com/search?q=hello+world"
+    );
+    for (engine, endpoint) in [
+        (SearchEngine::Google, "https://www.google.com/search"),
+        (SearchEngine::DuckDuckGo, "https://duckduckgo.com/"),
+        (SearchEngine::Bing, "https://www.bing.com/search"),
+    ] {
+        assert_eq!(SearchEngine::from_id(engine.id()), Some(engine));
+        let query = "café & rust + #中文?";
+        let url = url::Url::parse(&normalize_url_with_engine(query, engine).unwrap()).unwrap();
+        assert_eq!(url.as_str().split('?').next().unwrap(), endpoint);
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            vec![("q".into(), query.into())]
+        );
+        for address in [
+            "https://example.org/a?q=hello#part",
+            "example.com",
+            "localhost:3300/path",
+            "//example.org/a",
+            "about:blank",
+        ] {
+            assert_eq!(
+                normalize_url_with_engine(address, engine),
+                normalize_url(address)
+            );
+        }
+        for address in [
+            "",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "https://user:pass@example.org",
+            "hello\nworld",
+        ] {
+            assert!(normalize_url_with_engine(address, engine).is_err());
+        }
+    }
+    assert_eq!(SearchEngine::from_id("custom"), None);
+}

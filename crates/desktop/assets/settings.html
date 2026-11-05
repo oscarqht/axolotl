@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+body{display:grid;place-items:center;background:#0005;color:var(--ink);font:13px system-ui,sans-serif;padding:20px}
+#settings{width:380px;max-width:100%;max-height:100%;overflow:auto;padding:22px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 44px #0004}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}h1{font-size:18px;margin:0;font-weight:600}
+button,select{font:inherit;color:inherit;border:1px solid var(--border);border-radius:6px;background:var(--surface)}
+button{width:28px;height:28px;cursor:pointer;font-size:20px}button:hover{background:var(--hover)}
+label{display:block;font-weight:550;margin-bottom:8px}select{width:100%;padding:8px;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}p{color:var(--muted);line-height:1.5;margin:12px 0 0;font-size:12px}#error{color:var(--ink)}
+</style>
+<section id="settings" role="dialog" aria-modal="true" aria-labelledby="heading" aria-describedby="hint">
+<header><h1 id="heading">Settings</h1><button id="close" aria-label="Close settings" title="Close settings (Esc)">×</button></header>
+<label for="search-engine">Search engine</label>
+<select id="search-engine" aria-describedby="hint"><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option></select>
+<p id="hint">Used for new searches from the address bar. Changes apply immediately.</p>
+<p id="error" role="alert" hidden></p>
+</section>
+<script>
+const select=document.querySelector('select'), closeButton=document.querySelector('#close');
+const send=(type,value)=>window.ipc.postMessage(JSON.stringify({type,value}));
+window.applyTheme=theme=>{for(const [key,value] of Object.entries(theme))document.documentElement.style.setProperty('--'+key,value);document.documentElement.style.colorScheme=theme.scheme};
+applyTheme(window.settingsState.theme);
+select.value=window.settingsState.engine;
+select.onchange=()=>send('engine',select.value);
+closeButton.onclick=()=>send('dismiss');
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'){event.preventDefault();send('dismiss')}
+  if(event.key==='Tab'){
+    event.preventDefault();
+    (document.activeElement===select?closeButton:select).focus();
+  }
+  if((event.metaKey||event.ctrlKey)&&[',','l','t','w','r'].includes(event.key.toLowerCase()))event.preventDefault();
+});
+document.addEventListener('focusin',event=>{if(!document.querySelector('#settings').contains(event.target))select.focus()});
+select.focus();send('ready');
+</script>
+</html>

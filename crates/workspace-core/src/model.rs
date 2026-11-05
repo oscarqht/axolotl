@@ -9,7 +9,17 @@ pub type SplitId = u64;
 pub struct Tab {
     pub id: TabId,
     pub url: String,
+    /// The page's own title. Always tracks the document, even while overridden.
     pub title: String,
+    /// A user-chosen fixed title that supersedes `title` until cleared.
+    pub custom_title: Option<String>,
+}
+
+impl Tab {
+    /// The title shown in chrome: the custom title if set, else the page title.
+    pub fn display_title(&self) -> &str {
+        self.custom_title.as_deref().unwrap_or(&self.title)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,6 +119,16 @@ impl Workspace {
             .find(|t| t.id == id)
     }
 
+    /// Set (or, for blank input, clear) a fixed tab title. Returns false for unknown tabs.
+    pub fn set_custom_title(&mut self, id: TabId, title: &str) -> bool {
+        let title = title.trim();
+        let Some(tab) = self.tab_mut(id) else {
+            return false;
+        };
+        tab.custom_title = (!title.is_empty()).then(|| title.to_owned());
+        true
+    }
+
     pub fn add_space(&mut self, name: impl Into<String>, url: &str) -> SpaceId {
         let id = self.allocate();
         let pane = self.new_pane(url);
@@ -169,6 +189,7 @@ impl Workspace {
             id,
             url: url.to_owned(),
             title: String::new(),
+            custom_title: None,
         });
         pane.active_tab = id;
         id
@@ -197,6 +218,7 @@ impl Workspace {
                 id,
                 url: url.to_owned(),
                 title: String::new(),
+                custom_title: None,
             },
         );
         pane.active_tab = id;
@@ -392,6 +414,7 @@ impl Workspace {
                 id,
                 url: "about:blank".into(),
                 title: String::new(),
+                custom_title: None,
             });
         }
         if pane.active_tab == tab {
@@ -497,6 +520,7 @@ impl Workspace {
                 id: tab_id,
                 url: url.to_owned(),
                 title: String::new(),
+                custom_title: None,
             }],
         }
     }

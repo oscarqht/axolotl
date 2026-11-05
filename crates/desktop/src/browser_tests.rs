@@ -1,4 +1,4 @@
-use crate::browser::{allowed_url, authenticated_command};
+use crate::browser::{allowed_url, authenticated_command, parse_history};
 
 #[test]
 fn inline_navigation_allows_only_the_supplied_html() {
@@ -86,5 +86,14 @@ fn link_bridge_requires_nonce_command_and_safe_destination() {
         "secret:open-link:",
     ] {
         assert_eq!(authenticated_link(message, "secret"), None, "{message}");
+    }
+}
+
+#[test]
+fn history_probe_results_fail_closed() {
+    assert_eq!(parse_history("[true,false]"), (true, false));
+    assert_eq!(parse_history(" [false, true] "), (false, true));
+    for bad in ["", "null", "[true]", "[1,0]", "true", "[true,false,true]"] {
+        assert_eq!(parse_history(bad), (false, false), "{bad}");
     }
 }

@@ -10,6 +10,10 @@ use std::{
 use workspace_core::Rect;
 use wry::{NewWindowResponse, WebViewBuilder};
 
+/// Room above the bar for the tab context menu (5 items, 2 dividers, padding, gap).
+pub const MENU_HEIGHT: f32 = 184.;
+pub const MENU_WIDTH: f32 = 200.;
+
 pub struct FloatingBar {
     view: NativeWebView,
     events: Receiver<Value>,
@@ -17,6 +21,8 @@ pub struct FloatingBar {
     pub bounds: Rect,
     pub expanded: bool,
     pub transitioning: bool,
+    /// A tab context menu is open; the native surface grows upward to hold it.
+    pub menu_open: bool,
     expanded_width: f32,
     pub midpoints: Vec<f32>,
 }
@@ -47,6 +53,7 @@ impl FloatingBar {
             bounds: Rect::new(0., 0., 1., 1.),
             expanded: false,
             transitioning: false,
+            menu_open: false,
             expanded_width: 144.,
             midpoints: vec![],
         })
@@ -70,22 +77,25 @@ impl FloatingBar {
         };
         // Retain room for the old pill while collapsing/removing chips or
         // leaving address editing; shrink the child only after CSS settles.
-        let width = if self.transitioning {
+        let mut width = if self.transitioning {
             self.bounds.width.max(target).min(available)
         } else {
             target
         };
-        self.bounds = Rect::new(
-            pane.x + (pane.width - width) / 2.,
-            pane.y + (pane.height - 60.).max(0.),
-            width,
-            48_f32.min(pane.height),
-        );
+        let bar_height = 48_f32.min(pane.height);
+        let bottom = pane.y + (pane.height - 60.).max(0.) + bar_height;
+        let mut top = bottom - bar_height;
+        if self.menu_open {
+            width = width.max(MENU_WIDTH).min(pane.width);
+            top = (bottom - bar_height - MENU_HEIGHT).max(pane.y);
+        }
+        self.bounds = Rect::new(pane.x + (pane.width - width) / 2., top, width, bottom - top);
         let r = self.bounds;
         self.view.set_bounds(crate::browser::native_bounds(Bounds {
             origin: point(px(r.x), px(r.y)),
             size: size(px(r.width), px(r.height)),
         }))?;
+        state["menu"] = serde_json::json!(self.menu_open);
         state["surfaceWidth"] = serde_json::json!(width);
         state["expandedWidth"] = serde_json::json!(expanded_width);
         let serialized = state.to_string();

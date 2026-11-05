@@ -263,7 +263,7 @@ impl Render for BrowserApp {
             .map(|space| {
                 self.compact_tab(
                     TabTarget::Space(space.id),
-                    &space.focused_pane().active_tab().title,
+                    space.focused_pane().active_tab().display_title(),
                     space.id == self.model.active_space,
                     cx,
                 )

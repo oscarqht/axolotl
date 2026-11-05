@@ -52,6 +52,8 @@ pub enum BrowserEvent {
     OpenLink(TabId, String),
     Shortcut(TabId, String),
     Gesture(TabId, f64, f64),
+    /// Whether the page can navigate back/forward, from a context-menu probe.
+    History(TabId, bool, bool),
 }
 
 /// The operations a replacement engine must provide. Browser state is never
@@ -82,6 +84,8 @@ pub trait BrowserHost {
     fn back(&self, tab: TabId) -> Result<()>;
     fn forward(&self, tab: TabId) -> Result<()>;
     fn reload(&self, tab: TabId) -> Result<()>;
+    /// Ask the page whether history exists in each direction; answered by `BrowserEvent::History`.
+    fn probe_history(&self, tab: TabId) -> Result<()>;
     fn current_url(&self, tab: TabId) -> Result<String>;
     fn retain(&self, tabs: &HashSet<TabId>);
     fn drag_preview(
@@ -95,6 +99,18 @@ pub trait BrowserHost {
     fn request_redraw(&self);
     fn hide_all(&self) -> Result<()>;
     fn drain_events(&self) -> Vec<BrowserEvent>;
+}
+
+/// `navigation.canGoBack` is exact where available. Otherwise assume Back is
+/// possible only when the session has more than one entry, and Forward never.
+const HISTORY_PROBE: &str = "(()=>{const n=window.navigation;return n&&typeof n.canGoBack==='boolean'?[n.canGoBack,n.canGoForward]:[history.length>1,false]})()";
+
+/// Parse the probe's JSON result; anything unexpected disables both directions.
+pub(crate) fn parse_history(value: &str) -> (bool, bool) {
+    match serde_json::from_str::<Vec<bool>>(value.trim()) {
+        Ok(v) if v.len() == 2 => (v[0], v[1]),
+        _ => (false, false),
+    }
 }
 
 pub struct WryHost {
@@ -393,6 +409,16 @@ impl BrowserHost for WryHost {
 
     fn reload(&self, tab: TabId) -> Result<()> {
         self.get(tab)?.reload().context("Reloading browser view")
+    }
+
+    fn probe_history(&self, tab: TabId) -> Result<()> {
+        let sender = self.sender.clone();
+        self.get(tab)?
+            .evaluate_script_with_callback(HISTORY_PROBE, move |value| {
+                let (back, forward) = parse_history(&value);
+                let _ = sender.try_send(BrowserEvent::History(tab, back, forward));
+            })
+            .context("Reading navigation history")
     }
 
     fn current_url(&self, tab: TabId) -> Result<String> {

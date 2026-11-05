@@ -1,3 +1,27 @@
+# Tab chip context menu
+
+Run on 2026-11-05 in `bro-tab-chip-context-menu` on macOS.
+
+- Right-clicking a floating-bar chip opens a menu with three groups separated
+  by lines (no titles): Back / Forward / Refresh, Set title…, and Close. It acts
+  on the right-clicked tab even when that tab is inactive, and does not select it.
+  The 48px native surface grows upward while the menu is open, so it is not
+  clipped; outside click, Escape, window blur or any action dismisses it.
+- Back/Forward are enabled from a page probe (`navigation.canGoBack/canGoForward`,
+  falling back to `history.length`); unreadable results, or tabs with no native
+  view yet, disable them. Refresh is disabled without a native view.
+- Set title… edits inline on the chip. The result is `Tab::custom_title`, which
+  overrides the page title in chips, drag previews and the compact space strip
+  while the page title keeps updating underneath. Saving an empty value clears
+  it and restores the live page title. There is no session persistence in this
+  app yet, so the custom title lives in the workspace model only.
+- Added core tests for override/clear and for surviving tab moves, a host test
+  for history-probe parsing, and a native smoke check covering structure,
+  targeting an inactive tab, disabled items, set/clear title, dismissal and close.
+- Passed: `cargo check`/`cargo test --workspace --all-features --locked` and the
+  full native smoke run. Native OS right-click delivery and Windows were not
+  exercised; the menu is opened by dispatching a `contextmenu` event.
+
 # macOS website passkey integration
 
 Run on 2026-11-05 in `bro-macos-passkey-support` on macOS 27.0.1.

@@ -75,7 +75,7 @@ impl BrowserApp {
             let title = self
                 .model
                 .tab(drag.tab)
-                .map_or("New tab", |tab| tab.title.as_str())
+                .map_or("New tab", |tab| tab.display_title())
                 .to_owned();
             // Create the half-pane overlay first so the thumbnail remains above it.
             match crate::split_preview::SplitPreview::new(window, cx) {

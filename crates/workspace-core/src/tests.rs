@@ -680,3 +680,35 @@ fn linked_tab_events_ignore_closed_sources_and_inactive_spaces() {
     assert_eq!(w.focused_pane(), &before);
     assert_invariants(&w);
 }
+
+#[test]
+fn custom_title_overrides_page_title_until_cleared() {
+    let mut w = Workspace::default();
+    let tab = w.focused_pane().active_tab;
+    w.tab_mut(tab).unwrap().title = "Page".into();
+    assert_eq!(w.tab(tab).unwrap().display_title(), "Page");
+
+    assert!(w.set_custom_title(tab, "  Pinned  "));
+    assert_eq!(w.tab(tab).unwrap().display_title(), "Pinned");
+
+    // Page title changes keep updating underneath but are not displayed.
+    w.tab_mut(tab).unwrap().title = "Changed".into();
+    assert_eq!(w.tab(tab).unwrap().display_title(), "Pinned");
+
+    // Blank input clears the override and reveals the latest page title.
+    assert!(w.set_custom_title(tab, "   "));
+    assert_eq!(w.tab(tab).unwrap().custom_title, None);
+    assert_eq!(w.tab(tab).unwrap().display_title(), "Changed");
+    assert!(!w.set_custom_title(9999, "Nope"));
+}
+
+#[test]
+fn custom_title_survives_moves_between_panes() {
+    let mut w = Workspace::default();
+    let source = w.focused_pane().id;
+    let tab = w.add_tab("about:blank");
+    assert!(w.set_custom_title(tab, "Keep"));
+    let destination = w.split_focused(Axis::Horizontal, "about:blank");
+    assert!(w.move_tab(source, tab, destination, 0));
+    assert_eq!(w.tab(tab).unwrap().display_title(), "Keep");
+}

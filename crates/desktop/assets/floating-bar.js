@@ -11,7 +11,10 @@ let state = { tabs: [] },
   scrollTimer = null,
   settleTimer = null,
   transitionEpoch = 0,
-  pendingStart = null;
+  pendingStart = null,
+  renaming = null,
+  menu = null,
+  forceRebuild = false;
 function metrics() {
   send({
     type: "metrics",
@@ -78,6 +81,8 @@ function expand(value) {
     !value &&
     (drag ||
       state.editing ||
+      renaming ||
+      menu ||
       (document.hasFocus() &&
         document.activeElement?.closest("#count,#tabs,.arrow")) ||
       [...bar.querySelectorAll("#count,#tabs,.arrow")].some((area) =>
@@ -165,6 +170,7 @@ bar.addEventListener("focusin", (event) => {
 });
 bar.addEventListener("focusout", collapse);
 window.addEventListener("blur", () => {
+  closeMenu();
   if (state.editing) send({ type: "blur", tab: state.editing });
   pinned = false;
   collapse();
@@ -204,8 +210,10 @@ window.updateBar = (s) => {
     `${s.tabs.findIndex((t) => t.id === s.active) + 1}/${s.tabs.length}`;
   if (
     old.tabs.map((t) => t.id).join(",") !== s.tabs.map((t) => t.id).join(",") ||
-    old.editing !== s.editing
+    old.editing !== s.editing ||
+    forceRebuild
   ) {
+    forceRebuild = false;
     const focused =
         old.editing === s.editing &&
         document.activeElement?.tagName === "INPUT",
@@ -242,6 +250,30 @@ window.updateBar = (s) => {
             if (draft === null) input.select();
           }
         });
+      } else if (renaming === t.id) {
+        chip.classList.add("renaming");
+        const input = document.createElement("input");
+        input.setAttribute("aria-label", "Tab title");
+        input.placeholder = "Page title (empty to reset)";
+        input.value = t.customTitle ?? t.title ?? "";
+        input.onkeydown = (e) => {
+          if (e.key === "Enter") {
+            send({ type: "set-title", tab: t.id, value: input.value });
+            stopRenaming();
+            e.preventDefault();
+          }
+          if (e.key === "Escape") {
+            stopRenaming();
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        };
+        input.onblur = () => stopRenaming();
+        chip.append(input);
+        requestAnimationFrame(() => {
+          input.focus();
+          input.select();
+        });
       } else {
         const img = document.createElement("img");
         img.alt = "";
@@ -270,6 +302,14 @@ window.updateBar = (s) => {
         send({ type: "close", tab: t.id });
       };
       chip.append(close);
+      chip.oncontextmenu = (e) => {
+        e.preventDefault();
+        if (e.target.closest("input")) return;
+        stopRenaming();
+        menu = { tab: t.id, x: e.clientX };
+        send({ type: "menu-open", tab: t.id });
+        renderMenu();
+      };
       chip.onclick = (e) => {
         if (!suppress && !e.target.closest("input,button"))
           send({ type: "select", tab: t.id });
@@ -318,6 +358,7 @@ window.updateBar = (s) => {
     reveal();
     metrics();
   }
+  renderMenu();
   if (s.editing) expand(true);
   else if (old.editing) {
     document.activeElement?.blur();
@@ -326,6 +367,73 @@ window.updateBar = (s) => {
   }
   pendingStart?.();
 };
+function stopRenaming() {
+  if (renaming === null) return;
+  renaming = null;
+  forceRebuild = true;
+  window.updateBar(state);
+  collapse();
+}
+function closeMenu() {
+  if (!menu) return;
+  menu = null;
+  send({ type: "menu-close" });
+  renderMenu();
+  collapse();
+}
+// The host grows the native surface upward once it acknowledges `state.menu`;
+// only then is there room to draw the menu without clipping.
+function renderMenu() {
+  const el = document.querySelector("#menu"),
+    t = menu && state.tabs.find((tab) => tab.id === menu.tab);
+  if (menu && !t) menu = null;
+  document.body.classList.toggle("menu", !!menu && !!state.menu);
+  el.hidden = !(menu && state.menu);
+  if (el.hidden) {
+    el.replaceChildren();
+    return;
+  }
+  const act = (fn) => () => {
+    const id = menu.tab;
+    closeMenu();
+    fn(id);
+  };
+  const groups = [
+    [
+      ["Back", !t.canBack, (id) => send({ type: "back", tab: id })],
+      ["Forward", !t.canForward, (id) => send({ type: "forward", tab: id })],
+      ["Refresh", !t.canReload, (id) => send({ type: "reload", tab: id })],
+    ],
+    [
+      [
+        "Set title…",
+        false,
+        (id) => {
+          renaming = id;
+          forceRebuild = true;
+          window.updateBar(state);
+        },
+      ],
+    ],
+    [["Close", false, (id) => send({ type: "close", tab: id })]],
+  ];
+  el.replaceChildren(
+    ...groups.flatMap((items, index) => [
+      ...(index ? [document.createElement("hr")] : []),
+      ...items.map(([label, disabled, fn]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("role", "menuitem");
+        b.textContent = label;
+        b.disabled = disabled;
+        b.onclick = act(fn);
+        return b;
+      }),
+    ]),
+  );
+  el.style.left =
+    Math.max(4, Math.min(menu.x, innerWidth - el.offsetWidth - 4)) + "px";
+}
 window.previewSlot = (index) => {
   preview = index;
   [...tabs.children].forEach((c, i) => c.classList.toggle("slot", i === index));
@@ -333,6 +441,13 @@ window.previewSlot = (index) => {
     .querySelector("#add")
     .classList.toggle("slot", index === state.tabs.length);
 };
+document.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (menu && !e.target.closest("#menu")) closeMenu();
+  },
+  true,
+);
 bar.addEventListener("pointerdown", (e) => {
   if (
     !e.isTrusted ||
@@ -454,6 +569,7 @@ document.addEventListener(
 document.addEventListener("keydown", (e) => {
   if (!e.isTrusted) return;
   if (e.key === "Escape") {
+    closeMenu();
     end(e, true);
     pinned = false;
     send({ type: "cancel" });

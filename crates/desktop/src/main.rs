@@ -21,6 +21,8 @@ mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_input;
 #[cfg(feature = "smoke")]
+mod smoke_menu;
+#[cfg(feature = "smoke")]
 mod smoke_panels;
 mod split_preview;
 

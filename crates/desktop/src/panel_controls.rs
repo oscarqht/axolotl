@@ -68,6 +68,32 @@ impl BrowserApp {
                     self.command(Command::NewTab, window, cx);
                 }
                 "reload" => self.report(self.host.reload(tab)),
+                "back" => self.report(self.host.back(tab)),
+                "forward" => self.report(self.host.forward(tab)),
+                "menu-open" => {
+                    // The probe answers asynchronously; until then both directions stay disabled.
+                    self.history.insert(tab, (false, false));
+                    if let Some(bar) = self.bars.get_mut(&pane) {
+                        bar.menu_open = true;
+                    }
+                    if self.model.tab(tab).is_some() {
+                        // Tabs without a native view yet simply keep Back/Forward disabled.
+                        let _ = self.host.probe_history(tab);
+                    }
+                    cx.notify();
+                }
+                "menu-close" => {
+                    if let Some(bar) = self.bars.get_mut(&pane) {
+                        bar.menu_open = false;
+                    }
+                    cx.notify();
+                }
+                "set-title" => {
+                    if let Some(value) = event["value"].as_str() {
+                        self.model.set_custom_title(tab, value);
+                    }
+                    cx.notify();
+                }
                 "navigate" => {
                     if self.editing == Some(target) {
                         self.navigate(event["value"].as_str().unwrap_or(""), window, cx);
@@ -211,7 +237,23 @@ impl BrowserApp {
                 Some(TabTarget::Page(id, tab)) if id == p.id => Some(tab),
                 _ => None,
             };
-            let state = serde_json::json!({"active":p.active_tab,"editing":editing,"expanded":self.bars[&pane.id].expanded,"tabs":p.tabs.iter().map(|t| serde_json::json!({"id":t.id,"title":t.title,"url":t.url})).collect::<Vec<_>>()});
+            let tabs: Vec<_> = p
+                .tabs
+                .iter()
+                .map(|t| {
+                    let (back, forward) = self.history.get(&t.id).copied().unwrap_or_default();
+                    serde_json::json!({
+                        "id": t.id,
+                        "title": t.display_title(),
+                        "customTitle": t.custom_title,
+                        "url": t.url,
+                        "canBack": back,
+                        "canForward": forward,
+                        "canReload": self.host.has_view(t.id),
+                    })
+                })
+                .collect();
+            let state = serde_json::json!({"active":p.active_tab,"editing":editing,"expanded":self.bars[&pane.id].expanded,"tabs":tabs});
             let result = self
                 .bars
                 .get_mut(&pane.id)

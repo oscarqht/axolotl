@@ -99,6 +99,8 @@ pub struct BrowserApp {
     pub split_preview: Option<crate::split_preview::SplitPreview>,
     pub status: String,
     pub poll_count: u8,
+    /// Last history probe per tab: (can go back, can go forward).
+    pub history: HashMap<TabId, (bool, bool)>,
 }
 
 impl BrowserApp {
@@ -176,6 +178,7 @@ impl BrowserApp {
             split_preview: None,
             status: String::new(),
             poll_count: 0,
+            history: HashMap::new(),
         }
     }
 
@@ -424,6 +427,9 @@ impl BrowserApp {
                     if let Some(page) = self.model.tab_mut(tab) {
                         page.title = title;
                     }
+                }
+                BrowserEvent::History(tab, back, forward) => {
+                    self.history.insert(tab, (back, forward));
                 }
                 BrowserEvent::Loaded(tab) => {
                     if tab == self.active_tab() {

@@ -231,6 +231,17 @@ cargo build -p axolotl --locked --features smoke
 python3 scripts/test-window-state.py target/debug/axolotl
 ```
 
+The macOS quit regression checks Cmd+Q through AppKit's event queue and the
+actual **Quit Axolotl** menu target, both with and without audible video PiP.
+Each isolated process must exit successfully, save its complete session, and
+restore the same tabs on relaunch. It needs a GUI session but no Accessibility
+permission:
+
+```sh
+cargo build -p axolotl --locked --features smoke
+python3 scripts/test-macos-quit.py target/debug/axolotl
+```
+
 
 An optional native integration run opens a real desktop window, exercises the
 normal app commands and browser host, prints one `AXOLOTL_SMOKE` JSON result, and

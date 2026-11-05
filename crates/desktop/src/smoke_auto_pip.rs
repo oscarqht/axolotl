@@ -8,7 +8,7 @@ use base64::Engine as _;
 use gpui::*;
 use workspace_core::{Axis, TabId};
 
-async fn state(
+pub(crate) async fn state(
     view: &WeakEntity<BrowserApp>,
     tab: Option<TabId>,
     cx: &mut AsyncWindowContext,
@@ -41,7 +41,7 @@ async fn select(
     pause(cx).await;
     Ok(())
 }
-async fn videos(host: &Host, tab: TabId, cx: &mut AsyncWindowContext) -> Result<()> {
+pub(crate) async fn videos(host: &Host, tab: TabId, cx: &mut AsyncWindowContext) -> Result<()> {
     let api = eval(host, tab, "({api:typeof window.__axolotlAutoPip,crypto:typeof crypto.randomUUID,ipc:typeof window.ipc?.postMessage})", cx).await?;
     ensure!(
         api["api"] == "function",

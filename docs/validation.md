@@ -1,3 +1,22 @@
+# Content-fitting expanded bar
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Expanded bars now fit the handle, chips and plus button. Panel width with 16px
+  visible edge margins is the maximum; it is no longer the default expanded size.
+  A single chip uses a 250px pill, two use 426px, and additional chips grow the
+  bar until it reaches the panel limit and shows overflow controls/fades.
+- The native surface holds the previous width until shrink animations finish,
+  including chip removal and exiting address editing. The CSS endpoint is
+  separate from that temporarily held surface width.
+- All 24 unit tests and strict Clippy passed. The focused native sizing check
+  (`--smoke-test --smoke-bar-sizing`) passed for one/two chips, removal, and many
+  chips capped to the panel with fades. The full native suite also passed on
+  the final run. The focused check runs independently of the existing
+  drag-preview check, which has intermittently failed with
+  `Missing native drag card` in the full suite. Foreground OS input and Windows
+  runtime behavior remain unverified. The local macOS bundle was rebuilt.
+
 # Chip-area expansion triggers
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

@@ -44,6 +44,7 @@ pub(crate) async fn run(
         view.update_in(cx, |app, _, _| app.bars[&control_pane].expanded)?,
         "Count hover did not expand chips"
     );
+    checks.extend(check_sizing(view, cx).await?);
     view.update_in(cx, |app, _, _| {
         app.bars[&control_pane].evaluate(
             "pinned=false;document.activeElement?.blur();expand(false);true",
@@ -355,4 +356,131 @@ pub(crate) async fn run(
     );
     checks.push("whole-panel handle moves at every edge and center merge retain stack order, active tab, native DOM/form state and history");
     Ok(checks)
+}
+
+/// Focused native geometry checks, independent of network/history/drag fixtures.
+pub(crate) async fn check_sizing(
+    view: &WeakEntity<BrowserApp>,
+    cx: &mut AsyncWindowContext,
+) -> Result<Vec<&'static str>> {
+    let (control_pane, moved, before) = view.update_in(cx, |app, _, _| {
+        (
+            app.model.focused_pane().id,
+            app.active_tab(),
+            app.model.focused_pane().tabs.len(),
+        )
+    })?;
+    view.update_in(cx, |app, _, _| {
+        app.bars[&control_pane].evaluate("pinned=true;expand(true);true", |_| {})
+    })??;
+    pause(cx).await;
+    pause(cx).await;
+    pause(cx).await;
+    let single=bar_eval(view,control_pane,"pinned=true;({width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),gap:document.querySelector('#add').getBoundingClientRect().left-tabs.lastElementChild.getBoundingClientRect().right})",cx).await?;
+    ensure!(
+        before == 1
+            && single["width"]
+                .as_f64()
+                .is_some_and(|w| (w - 250.).abs() < 1.)
+            && single["overflow"] == false
+            && single["gap"].as_f64().is_some_and(|g| g <= 12.),
+        "Single-chip bar did not fit contents: {single}"
+    );
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            (app.bars[&control_pane].bounds.width - 258.).abs() < 1.,
+            "Single-chip native surface is oversized"
+        );
+        Ok(())
+    })??;
+    let added = view.update_in(cx, |app, _, cx| {
+        let tab = app.model.add_tab("about:blank");
+        app.model.switch_tab(control_pane, moved);
+        cx.notify();
+        tab
+    })?;
+    pause(cx).await;
+    pause(cx).await;
+    // The first forced frame starts the CSS transition in an occluded window.
+    pause(cx).await;
+    let two = bar_eval(
+        view,
+        control_pane,
+        "({width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),expanded,target:state.expandedWidth,surface:innerWidth})",
+        cx,
+    )
+    .await?;
+    ensure!(
+        two["width"].as_f64().is_some_and(|w| (w - 426.).abs() < 1.) && two["overflow"] == false,
+        "Two-chip bar did not fit contents: {two}"
+    );
+    view.update_in(cx, |app, _, cx| {
+        app.model.close_tab(control_pane, added);
+        cx.notify()
+    })?;
+    pause(cx).await;
+    pause(cx).await;
+    pause(cx).await;
+    ensure!(
+        bar_eval(view, control_pane, "bar.getBoundingClientRect().width", cx)
+            .await?
+            .as_f64()
+            .is_some_and(|w| (w - 250.).abs() < 1.),
+        "Removing chip did not restore natural width"
+    );
+
+    let extras = view.update_in(cx, |app, _, cx| {
+        let tabs = (0..12)
+            .map(|_| app.model.add_tab("about:blank"))
+            .collect::<Vec<_>>();
+        app.model.switch_tab(control_pane, moved);
+        cx.notify();
+        tabs
+    })?;
+    pause(cx).await;
+    pause(cx).await;
+    pause(cx).await;
+    let capped=bar_eval(view,control_pane,"(()=>{tabs.scrollLeft=(tabs.scrollWidth-tabs.clientWidth)/2;metrics();return {width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),left:bar.classList.contains('fade-left'),right:bar.classList.contains('fade-right')}})()",cx).await?;
+    let expected = view.update_in(cx, |app, window, _| {
+        let v = window.viewport_size();
+        let geometry = app.model.active_space().layout.geometry(
+            workspace_core::Rect::new(
+                0.,
+                crate::render::TOP,
+                f32::from(v.width),
+                f32::from(v.height) - crate::render::TOP,
+            ),
+            6.,
+            100.,
+        );
+        geometry
+            .panes
+            .iter()
+            .find(|p| p.id == control_pane)
+            .unwrap()
+            .bounds
+            .width
+            - 32.
+    })?;
+    ensure!(
+        capped["width"]
+            .as_f64()
+            .is_some_and(|w| (w - f64::from(expected)).abs() < 1.)
+            && capped["overflow"] == true
+            && capped["left"] == true
+            && capped["right"] == true,
+        "Many chips did not cap/fade at panel edges: {capped}"
+    );
+    view.update_in(cx, |app, _, cx| {
+        for tab in extras {
+            app.model.close_tab(control_pane, tab);
+        }
+        cx.notify()
+    })?;
+    pause(cx).await;
+    pause(cx).await;
+    pause(cx).await;
+    Ok(vec![
+        "one/two chips fit their contents; removal shrinks the bar; many chips cap at panel width with edge fades",
+    ])
 }

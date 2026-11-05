@@ -84,8 +84,8 @@ machine running the executable. See the validation report below for tested scope
   Escape cancels. **+** creates a blank tab while leaving the chip row closed;
   Cmd/Ctrl+T creates a tab with address editing. Long stacks remain
   in one horizontal row, with overflow arrows and automatic active-chip reveal.
-  The bar animates between compact and expanded states, filling the panel width
-  with 16px edge margins. Overflow fades indicate hidden chips on either side
+  The bar animates between compact and expanded states, fitting the handle,
+  chips and add button. Its maximum is the panel width with 16px edge margins. Overflow fades indicate hidden chips on either side
   and clear at the corresponding scroll end. Reduced-motion settings are respected.
 - Drag a chip to reorder within a panel, dock into another panel's chip row or
   center, or create a split at any edge. Drag the handle to move the complete
@@ -131,6 +131,9 @@ exits. It requires a GUI session and HTTPS access to example.com:
 
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
+
+# Focused native check for content width, panel cap, and overflow fades
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing
 ```
 
 For visual inspection of a held drag state, append `--smoke-hold-preview` after

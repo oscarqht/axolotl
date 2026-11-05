@@ -17,6 +17,7 @@ pub struct FloatingBar {
     pub bounds: Rect,
     pub expanded: bool,
     pub transitioning: bool,
+    expanded_width: f32,
     pub midpoints: Vec<f32>,
 }
 impl FloatingBar {
@@ -46,17 +47,33 @@ impl FloatingBar {
             bounds: Rect::new(0., 0., 1., 1.),
             expanded: false,
             transitioning: false,
+            expanded_width: 144.,
             midpoints: vec![],
         })
     }
     pub fn place(&mut self, pane: Rect, mut state: Value) -> Result<()> {
         let editing = !state["editing"].is_null();
-        // Keep the native surface wide until the CSS collapse completes, so
-        // neither side of the animated pill gets clipped by its child view.
-        let width = if self.expanded || editing || self.transitioning {
-            (pane.width - 24.).max(1.)
+        let available = (pane.width - 24.).max(1.);
+        // Chip width 172 + gap 4, fixed controls/padding 74, native inset 8.
+        let count = state["tabs"].as_array().map_or(0, Vec::len);
+        let expanded_width =
+            (82. + 176. * count as f32 + if editing { 148. } else { 0. }).min(available);
+        let open = self.expanded || editing;
+        if open && (expanded_width - self.expanded_width).abs() > 0.1 {
+            self.transitioning = true;
+        }
+        self.expanded_width = expanded_width;
+        let target = if open {
+            expanded_width
         } else {
             144_f32.min(pane.width)
+        };
+        // Retain room for the old pill while collapsing/removing chips or
+        // leaving address editing; shrink the child only after CSS settles.
+        let width = if self.transitioning {
+            self.bounds.width.max(target).min(available)
+        } else {
+            target
         };
         self.bounds = Rect::new(
             pane.x + (pane.width - width) / 2.,
@@ -70,6 +87,7 @@ impl FloatingBar {
             size: size(px(r.width), px(r.height)),
         }))?;
         state["surfaceWidth"] = serde_json::json!(width);
+        state["expandedWidth"] = serde_json::json!(expanded_width);
         let serialized = state.to_string();
         if *self.state.borrow() != serialized {
             self.view

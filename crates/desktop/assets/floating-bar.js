@@ -35,6 +35,25 @@ function metrics() {
     tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth - 1,
   );
 }
+function scheduleSettle(value, epoch) {
+  clearTimeout(settleTimer);
+  const settle = () => {
+    if (epoch === transitionEpoch && expanded === value) {
+      // Occluded WKWebViews may freeze CSS timelines. Commit their endpoint
+      // before allowing the native surface to shrink, including reduced motion.
+      bar
+        .getAnimations({ subtree: true })
+        .forEach((animation) => animation.finish());
+      reveal();
+      metrics();
+      send({ type: "settled", value });
+    }
+  };
+  settleTimer = setTimeout(
+    settle,
+    matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 320,
+  );
+}
 function expand(value) {
   clearTimeout(collapseTimer);
   if (
@@ -66,22 +85,7 @@ function expand(value) {
     bar.classList.toggle("expanded", value);
     document.querySelector("#count").tabIndex = value ? -1 : 0;
     document.querySelector("#count").setAttribute("aria-hidden", String(value));
-    const settle = () => {
-      if (epoch === transitionEpoch && expanded === value) {
-        // Occluded WKWebViews may freeze CSS timelines. Commit their endpoint
-        // before allowing the native surface to shrink, including reduced motion.
-        bar
-          .getAnimations({ subtree: true })
-          .forEach((animation) => animation.finish());
-        reveal();
-        metrics();
-        send({ type: "settled", value });
-      }
-    };
-    settleTimer = setTimeout(
-      settle,
-      matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 320,
-    );
+    scheduleSettle(value, epoch);
     // Focus immediately after making the row visible. WebKit can pause frame
     // callbacks in occluded windows, including while native siblings are built.
     const input = tabs.querySelector("input");
@@ -100,7 +104,13 @@ bar.addEventListener("transitionend", (event) => {
   if (
     event.target === bar &&
     event.propertyName === "width" &&
-    bar.classList.contains("expanded") === expanded
+    bar.classList.contains("expanded") === expanded &&
+    Math.abs(
+      bar.getBoundingClientRect().width -
+        (expanded
+          ? parseFloat(bar.style.getPropertyValue("--expanded-width"))
+          : 128),
+    ) < 1
   ) {
     clearTimeout(settleTimer);
     reveal();
@@ -156,8 +166,17 @@ new ResizeObserver(metrics).observe(tabs);
 window.updateBar = (s) => {
   const old = state;
   state = s;
-  if (s.expanded || s.editing)
-    bar.style.setProperty("--expanded-width", `${s.surfaceWidth - 8}px`);
+  if (s.expanded || s.editing) {
+    const width = s.expandedWidth ?? s.surfaceWidth;
+    bar.style.setProperty("--expanded-width", `${width - 8}px`);
+    if (
+      width !== (old.expandedWidth ?? old.surfaceWidth) &&
+      expanded &&
+      bar.classList.contains("expanded")
+    ) {
+      scheduleSettle(true, ++transitionEpoch);
+    }
+  }
   if (!old.tabs.length && s.expanded) {
     expand(true);
     // A rebuilt surface has no previous hover-leave timer. Retain expansion

@@ -169,6 +169,10 @@ async fn run(
         (app.host.clone(), app.active_tab())
     })?;
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    if std::env::args().any(|arg| arg == "--smoke-bar-sizing") {
+        return crate::smoke_panels::check_sizing(view, cx).await;
+    }
+
     view.update_in(cx, |_, window, cx| {
         use gpui_component::ActiveTheme;
         ensure!(

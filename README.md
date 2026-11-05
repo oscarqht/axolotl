@@ -25,6 +25,18 @@ scripts/package-macos.sh
 open target/debug/Axolotl.app
 ```
 
+For a single build-and-launch command, use:
+
+```sh
+scripts/package-macos.sh && open target/debug/Axolotl.app
+```
+
+Use `cargo run` on its own for a terminal development run. In
+`cargo run -p axolotl --locked && open target/debug/Axolotl.app`, the `open`
+command runs after you quit the Cargo-launched app successfully, launching the
+app again. Cargo also does not refresh the executable inside an existing `.app`;
+the packaging script rebuilds and copies that executable before signing it.
+
 Use `scripts/package-macos.sh release` for an optimized build. This is a local
 development bundle, without distribution signing, notarization, or an installer.
 

@@ -81,10 +81,6 @@ pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
-    fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()>;
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
-    fn present_video_test_window(&self, tab: TabId) -> Result<()>;
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click_at(&self, tab: TabId, x: f64, y: f64, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_option_click(&self, tab: TabId) -> Result<()>;
@@ -92,6 +88,8 @@ pub trait BrowserHost {
     fn test_option_click_at(&self, tab: TabId, x: f64, y: f64) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn has_native_focus(&self, tab: TabId) -> Result<bool>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
     #[cfg(feature = "smoke")]
@@ -228,6 +226,34 @@ impl WryHost {
 }
 
 impl BrowserHost for WryHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()> {
+        use block2::RcBlock;
+        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+        use objc2_foundation::{NSDictionary, NSError};
+        use wry::WebViewExtMacOS;
+        let path = path.to_owned();
+        let callback = RcBlock::new(move |snapshot: *mut NSImage, _error: *mut NSError| unsafe {
+            if let Some(snapshot) = snapshot.as_ref()
+                && let Some(tiff) = snapshot.TIFFRepresentation()
+                && let Some(bitmap) = NSBitmapImageRep::imageRepWithData(&tiff)
+                && let Some(png) = bitmap.representationUsingType_properties(
+                    NSBitmapImageFileType::PNG,
+                    &NSDictionary::new(),
+                )
+            {
+                let _ = std::fs::write(&path, png.to_vec());
+            }
+        });
+        unsafe {
+            self.get(tab)?
+                .webview()
+                .takeSnapshotWithConfiguration_completionHandler(None, &callback);
+        }
+        Ok(())
+    }
+
+
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>> {
         self.protection.clone()
     }
@@ -259,46 +285,6 @@ impl BrowserHost for WryHost {
         }
         Ok(())
     }
-
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
-    fn present_video_test_window(&self, tab: TabId) -> Result<()> {
-        use wry::WebViewExtMacOS;
-        let view = self.get(tab)?;
-        // Keep this short-lived regression above other development windows;
-        // WebKit otherwise legitimately pauses invisible autoplay videos.
-        view.ns_window()
-            .setLevel(objc2_app_kit::NSFloatingWindowLevel);
-        view.ns_window().orderFrontRegardless();
-        Ok(())
-    }
-
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
-    fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()> {
-        use block2::RcBlock;
-        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
-        use objc2_foundation::{NSDictionary, NSError};
-        use wry::WebViewExtMacOS;
-        let path = path.to_owned();
-        let callback = RcBlock::new(move |snapshot: *mut NSImage, _error: *mut NSError| unsafe {
-            if let Some(snapshot) = snapshot.as_ref()
-                && let Some(tiff) = snapshot.TIFFRepresentation()
-                && let Some(bitmap) = NSBitmapImageRep::imageRepWithData(&tiff)
-                && let Some(png) = bitmap.representationUsingType_properties(
-                    NSBitmapImageFileType::PNG,
-                    &NSDictionary::new(),
-                )
-            {
-                let _ = std::fs::write(&path, png.to_vec());
-            }
-        });
-        unsafe {
-            self.get(tab)?
-                .webview()
-                .takeSnapshotWithConfiguration_completionHandler(None, &callback);
-        }
-        Ok(())
-    }
-
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()> {
         self.test_click_at(tab, 60., 50., modified)
@@ -423,16 +409,6 @@ impl BrowserHost for WryHost {
             .replace("__GESTURES__", include_str!("../assets/gestures.js"));
         let notifications = include_str!("../assets/notifications.js").replace("__NONCE__", &nonce);
         let start_url = html_data_url(START_HTML);
-        #[cfg(target_os = "macos")]
-        let webm_alpha = crate::webm_alpha::script();
-        #[cfg(not(target_os = "macos"))]
-        let webm_alpha = String::new();
-        #[cfg(feature = "smoke")]
-        let webm_alpha = if std::env::args().any(|arg| arg == "--smoke-video-baseline") {
-            String::new()
-        } else {
-            webm_alpha
-        };
         let builder = WebViewBuilder::new()
             .with_visible(false)
             .with_focused(false)
@@ -454,7 +430,6 @@ impl BrowserHost for WryHost {
                 false,
             )
             .with_initialization_script_for_main_only(notifications, false)
-            .with_initialization_script_for_main_only(webm_alpha, false)
             .with_navigation_handler(move |url| {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
             })

@@ -207,10 +207,6 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-pins") {
         return crate::smoke_pins::run(view, cx).await;
     }
-    #[cfg(target_os = "macos")]
-    if std::env::args().any(|arg| arg == "--smoke-video") {
-        return crate::smoke_video::run(view, cx).await;
-    }
     if std::env::args().any(|arg| arg == "--smoke-protection") {
         return crate::smoke_protection::run(view, cx).await;
     }

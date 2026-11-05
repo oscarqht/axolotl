@@ -28,10 +28,7 @@ case "$profile" in
   *) echo 'Usage: scripts/package-macos.sh [debug|release]' >&2; exit 2 ;;
 esac
 bundle="target/$profile/Axolotl.app"
-mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources/licenses/ogv"
-cp crates/desktop/assets/vendor/ogv/COPYING crates/desktop/assets/vendor/ogv/LICENSE-vpx.txt \
-  crates/desktop/assets/vendor/ogv/PATENTS-vpx.txt crates/desktop/assets/vendor/ogv/README.md \
-  "$bundle/Contents/Resources/licenses/ogv/"
+mkdir -p "$bundle/Contents/MacOS"
 rm -f "$bundle/Contents/MacOS/axolotl"
 cp "target/$profile/axolotl" "$bundle/Contents/MacOS/Axolotl"
 cat > "$bundle/Contents/Info.plist" <<'PLIST'

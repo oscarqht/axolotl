@@ -12,6 +12,8 @@ mod gesture_tests;
 mod macos_passkeys;
 #[cfg(target_os = "macos")]
 mod macos_quit;
+#[cfg(target_os = "macos")]
+mod macos_titlebar;
 mod native_webview;
 mod panel_controls;
 mod persistence;
@@ -120,6 +122,8 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
+                #[cfg(target_os = "macos")]
+                macos_titlebar::install(window).expect("configure native titlebar input");
                 let app = cx.new(|cx| BrowserApp::new(window, cx));
                 app.read(cx).focus.focus(window);
                 #[cfg(feature = "smoke")]

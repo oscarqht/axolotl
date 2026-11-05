@@ -7,6 +7,8 @@ pub async fn run(
     view: &WeakEntity<BrowserApp>,
     cx: &mut AsyncWindowContext,
 ) -> Result<Vec<&'static str>> {
+    #[cfg(target_os = "macos")]
+    cx.update(|window, _| crate::macos_titlebar::check_drag_policy(window))??;
     view.update_in(cx, |app, _, cx| {
         for i in 0..12 {
             app.model.add_space(format!("Drag {i}"), "about:blank");
@@ -22,7 +24,12 @@ pub async fn run(
         let bounds = app.space_scroll.bounds();
         let start = bounds.origin + point(px(25.), px(15.));
         let end = point(bounds.right() - px(2.), start.y);
+        app.moving_window = true;
         app.arm_space_drag(original[0].id, start);
+        ensure!(
+            !app.moving_window,
+            "space drag retained a pending window drag"
+        );
         app.update_space_drag(
             &MouseMoveEvent {
                 position: end,
@@ -131,6 +138,6 @@ pub async fn run(
         Ok(())
     })??;
     Ok(vec![
-        "space drag: indicator, stationary edge scrolling, Escape, outside cancellation, scrolled end/start drops and stable selection",
+        "space drag: native window-drag isolation, indicator, stationary edge scrolling, Escape, outside cancellation, scrolled end/start drops and stable selection",
     ])
 }

@@ -488,7 +488,17 @@ impl Render for BrowserApp {
                             .window_control_area(WindowControlArea::Drag)
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(|this, _, _, _| this.moving_window = true),
+                                cx.listener(|this, _, window, cx| {
+                                    #[cfg(target_os = "macos")]
+                                    this.report(crate::macos_titlebar::start_window_move(
+                                        window, cx,
+                                    ));
+                                    #[cfg(not(target_os = "macos"))]
+                                    {
+                                        let _ = (window, cx);
+                                        this.moving_window = true;
+                                    }
+                                }),
                             )
                             .when(!cfg!(target_os = "windows"), |drag| {
                                 drag.on_double_click(|_, window, _| window.titlebar_double_click())

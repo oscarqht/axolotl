@@ -13,6 +13,7 @@ pub struct SpaceDrag {
 
 impl BrowserApp {
     pub fn arm_space_drag(&mut self, id: SpaceId, origin: Point<Pixels>) {
+        self.moving_window = false;
         self.suppress_space_click = false;
         self.space_drag = Some(SpaceDrag {
             id,

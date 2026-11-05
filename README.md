@@ -270,3 +270,18 @@ this milestone. Chrome extensions are not supported by this Wry backend.
 The GUI-independent workspace core can be reused by future mobile shells. See
 [architecture and integration findings](docs/architecture.md) for the engine
 boundary, platform tradeoffs, and follow-up work.
+
+### Pinned tab popups
+
+Right-click a page chip and choose **Pin to header**, or drag a page chip into the
+main header. Pinned pages move into circular favicon buttons immediately left of
+Settings and stay available across spaces. Click a button to open its page; click
+it again, click outside the popup, or press Escape to dismiss it. Opening another
+pin switches the popup. The existing page stays alive, retaining forms, scrolling
+and navigation history.
+
+Drag header icons to reorder them. Right-click an icon and choose **Unpin to
+focused pane** to return the page to the active space. Extra pins appear under
+**•••**; right-click an overflow entry to unpin it. Drag the popup's bottom-left
+corner to resize it. Pins, their order and preferred sizes restore on restart;
+popups start at 480 × 640 and fit within the window.

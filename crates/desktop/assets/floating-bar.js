@@ -434,6 +434,7 @@ function renderMenu() {
         },
       ],
     ],
+    [["Pin to header", false, (id) => send({ type: "pin", tab: id })]],
     [["Close", false, (id) => send({ type: "close", tab: id })]],
   ];
   el.replaceChildren(

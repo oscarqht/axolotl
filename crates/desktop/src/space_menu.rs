@@ -27,6 +27,7 @@ impl BrowserApp {
         if !self.model.spaces.iter().any(|s| s.id == space) {
             return;
         }
+        self.dismiss_pin(window, cx);
         self.cancel_edit(window, cx);
         self.cancel_tab_drag(cx);
         self.space_menu = Some(SpaceMenu {

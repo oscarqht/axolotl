@@ -64,9 +64,18 @@ impl Space {
     }
 }
 
+/// A window-wide tab. Its ID continues to own the same native page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PinnedTab {
+    pub tab: Tab,
+    pub width: f32,
+    pub height: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Workspace {
     pub spaces: Vec<Space>,
+    pub pinned_tabs: Vec<PinnedTab>,
     pub active_space: SpaceId,
     pub(crate) next_id: u64,
 }
@@ -81,6 +90,7 @@ impl Workspace {
     pub fn new(initial_url: &str) -> Self {
         let mut workspace = Self {
             spaces: Vec::new(),
+            pinned_tabs: Vec::new(),
             active_space: 0,
             next_id: 1,
         };
@@ -115,6 +125,7 @@ impl Workspace {
             .iter()
             .flat_map(|s| &s.panes)
             .flat_map(|p| &p.tabs)
+            .chain(self.pinned_tabs.iter().map(|p| &p.tab))
             .find(|t| t.id == id)
     }
 
@@ -123,7 +134,88 @@ impl Workspace {
             .iter_mut()
             .flat_map(|s| &mut s.panes)
             .flat_map(|p| &mut p.tabs)
+            .chain(self.pinned_tabs.iter_mut().map(|p| &mut p.tab))
             .find(|t| t.id == id)
+    }
+
+    /// Remove a tab from its pane without closing its page. Keep the final pane valid.
+    pub fn pin_tab(&mut self, pane: PaneId, tab: TabId) -> bool {
+        let Some(index) = self.active_space().panes.iter().position(|p| p.id == pane) else {
+            return false;
+        };
+        let Some(slot) = self.active_space().panes[index]
+            .tabs
+            .iter()
+            .position(|t| t.id == tab)
+        else {
+            return false;
+        };
+        let moved = self.active_space_mut().panes[index].tabs.remove(slot);
+        if self.active_space().panes[index].tabs.is_empty() {
+            if self.active_space().panes.len() > 1 {
+                let space = self.active_space_mut();
+                space.layout.remove_pane(pane);
+                space.panes.remove(index);
+                if space.focused_pane == pane {
+                    space.focused_pane = space.panes[0].id;
+                }
+            } else {
+                self.add_tab("about:blank");
+            }
+        } else if self.active_space().panes[index].active_tab == tab {
+            let p = &mut self.active_space_mut().panes[index];
+            p.active_tab = p.tabs[slot.min(p.tabs.len() - 1)].id;
+        }
+        self.pinned_tabs.push(PinnedTab {
+            tab: moved,
+            width: 480.,
+            height: 640.,
+        });
+        true
+    }
+
+    pub fn unpin_tab(&mut self, tab: TabId) -> bool {
+        let Some(index) = self.pinned_tabs.iter().position(|p| p.tab.id == tab) else {
+            return false;
+        };
+        let moved = self.pinned_tabs.remove(index).tab;
+        let pane = self.active_space().focused_pane;
+        let p = self
+            .active_space_mut()
+            .panes
+            .iter_mut()
+            .find(|p| p.id == pane)
+            .unwrap();
+        p.active_tab = tab;
+        p.tabs.push(moved);
+        true
+    }
+
+    /// Insertion slot is measured before removal, matching the tab strip convention.
+    pub fn move_pin(&mut self, tab: TabId, slot: usize) -> bool {
+        let Some(from) = self.pinned_tabs.iter().position(|p| p.tab.id == tab) else {
+            return false;
+        };
+        let to = slot.min(self.pinned_tabs.len());
+        let to = to - usize::from(to > from);
+        if from == to {
+            return false;
+        }
+        let pin = self.pinned_tabs.remove(from);
+        self.pinned_tabs.insert(to, pin);
+        true
+    }
+
+    pub fn resize_pin(&mut self, tab: TabId, width: f32, height: f32) -> bool {
+        if !width.is_finite() || !height.is_finite() {
+            return false;
+        }
+        let Some(pin) = self.pinned_tabs.iter_mut().find(|p| p.tab.id == tab) else {
+            return false;
+        };
+        pin.width = width.clamp(240., 4096.);
+        pin.height = height.clamp(160., 4096.);
+        true
     }
 
     /// Set (or, for blank input, clear) a fixed tab title. Returns false for unknown tabs.

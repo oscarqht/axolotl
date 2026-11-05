@@ -192,3 +192,28 @@ dark colors for space/page tabs, text, focus and insertion indicators, split
 dividers, and shell backgrounds. Inline inputs use the same component theme.
 Native floating controls and preview cards use `prefers-color-scheme` media queries.
 Web pages retain their own appearance rules.
+
+## Pinned tabs
+
+`Workspace::pinned_tabs` is a window-wide ordered collection of tabs and preferred
+popup sizes. Pin/unpin operations move the original `Tab`; they never reassign
+its ID. Pinning the final tab leaves a blank tab in the final pane, or collapses
+an emptied split pane. Unpinning appends to the focused pane of the active space.
+Snapshots retain pins and sizes, accept older version-1 files without pins, and
+validate IDs across both pane tabs and pins.
+
+`pinned_tabs.rs` owns the transient open-popup/menu/drag state. `prepare_views`
+retains pinned native views even while hidden. A transparent native child below
+the raised existing page catches outside clicks and draws the popup frame and
+bottom-left resize grip. Raising changes sibling order without recreating the
+page; only one pinned page is visible at a time. The header remains interactive
+above the shield. Popup dimensions clamp to the viewport while keeping the saved
+preferred size. Authenticated Escape messages from the page dismiss the popup.
+
+Header circles use small PNG favicons read in the page origin; unavailable icons
+fall back to a generic symbol. A bounded strip reserves room for spaces, window
+dragging and Settings, with excess pins in a scrollable overflow menu. Pin entries
+in that menu also support right-click unpinning. Hidden pages remain live and can
+consume resources, as with ordinary inactive tabs. Restart restores URLs, order
+and sizes; in-memory DOM and navigation history survive pin/open/close/unpin during
+the same app session, rather than being serialized across process restarts.

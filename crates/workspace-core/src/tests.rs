@@ -814,3 +814,73 @@ fn space_reordering_preserves_selection_contents_and_snapshot_order() {
     assert_eq!(restored.spaces, workspace.spaces);
     assert_eq!(restored.active_space, c);
 }
+
+#[test]
+fn pins_keep_identity_and_unpin_into_the_current_space_and_focused_pane() {
+    let mut w = Workspace::new("https://example.com/");
+    let home = w.active_space;
+    let source = w.focused_pane().id;
+    let id = w.focused_pane().active_tab;
+    w.set_custom_title(id, "Mail");
+    assert!(w.pin_tab(source, id));
+    assert_eq!(w.pinned_tabs[0].tab.id, id);
+    assert_eq!(w.tab(id).unwrap().display_title(), "Mail");
+    assert_ne!(w.focused_pane().active_tab, id);
+    assert_eq!(w.focused_pane().tabs.len(), 1);
+    assert!(!w.pin_tab(source, id));
+    let second = w.add_space("Work", "about:blank");
+    let target = w.split_focused(Axis::Horizontal, "about:blank");
+    assert!(w.unpin_tab(id));
+    assert_eq!(w.active_space, second);
+    assert_eq!(w.focused_pane().id, target);
+    assert_eq!(w.focused_pane().active_tab, id);
+    assert_eq!(w.tab(id).unwrap().custom_title.as_deref(), Some("Mail"));
+    assert!(w.pinned_tabs.is_empty());
+    w.switch_space(home);
+    assert!(!w.focused_pane().tabs.iter().any(|t| t.id == id));
+}
+
+#[test]
+fn pinning_last_tab_collapses_a_split_and_preserves_other_tabs() {
+    let mut w = Workspace::default();
+    let first = w.focused_pane().id;
+    let second = w.split_focused(Axis::Horizontal, "https://example.com/");
+    let tab = w.focused_pane().active_tab;
+    assert!(w.pin_tab(second, tab));
+    assert_eq!(w.focused_pane().id, first);
+    assert_eq!(w.active_space().layout.pane_ids(), vec![first]);
+    assert_eq!(w.pinned_tabs[0].tab.id, tab);
+    let tab2 = w.add_tab("https://docs.rs/");
+    assert!(w.pin_tab(first, tab2));
+    assert_eq!(w.focused_pane().tabs.len(), 1);
+    assert_eq!(w.pinned_tabs.len(), 2);
+}
+
+#[test]
+fn pin_order_and_sizes_round_trip_and_old_sessions_remain_compatible() {
+    let mut w = Workspace::default();
+    let pane = w.focused_pane().id;
+    let first = w.focused_pane().active_tab;
+    w.pin_tab(pane, first);
+    let second = w.focused_pane().active_tab;
+    w.pin_tab(pane, second);
+    assert!(w.move_pin(first, 2));
+    assert!(w.resize_pin(first, 720., 410.));
+    assert!(!w.resize_pin(first, f32::NAN, 410.));
+    let restored = Workspace::from_json(&w.to_json()).unwrap();
+    assert_eq!(restored.pinned_tabs, w.pinned_tabs);
+    assert_eq!(restored.pinned_tabs[0].tab.id, second);
+    let mut legacy: serde_json::Value =
+        serde_json::from_str(&Workspace::default().to_json()).unwrap();
+    legacy.as_object_mut().unwrap().remove("pinned_tabs");
+    assert!(Workspace::from_json(&legacy.to_string())
+        .unwrap()
+        .pinned_tabs
+        .is_empty());
+    let mut invalid: serde_json::Value = serde_json::from_str(&w.to_json()).unwrap();
+    invalid["pinned_tabs"][0]["tab"]["id"] = invalid["spaces"][0]["id"].clone();
+    assert!(Workspace::from_json(&invalid.to_string()).is_err());
+    invalid = serde_json::from_str(&w.to_json()).unwrap();
+    invalid["pinned_tabs"][0]["width"] = serde_json::json!(-1);
+    assert!(Workspace::from_json(&invalid.to_string()).is_err());
+}

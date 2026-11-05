@@ -93,6 +93,7 @@ pub struct BrowserApp {
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
     pub model: Workspace,
+    pub pins: crate::pinned_tabs::PinnedUi,
     pub preferences: crate::preferences::Preferences,
     pub settings: Option<crate::settings::SettingsDialog>,
     pub settings_focus: FocusHandle,
@@ -119,6 +120,7 @@ pub struct BrowserApp {
     /// Last history probe per tab: (can go back, can go forward).
     pub history: HashMap<TabId, (bool, bool)>,
     pub notifications: HashMap<TabId, u32>,
+    pub favicons: HashMap<TabId, std::sync::Arc<Image>>,
 }
 
 impl BrowserApp {
@@ -163,6 +165,7 @@ impl BrowserApp {
         cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
                 this.space_menu = None;
+                this.dismiss_pin(window, cx);
                 this.cancel_tab_drag(cx);
                 this.cancel_space_drag(cx);
             } else {
@@ -217,10 +220,12 @@ impl BrowserApp {
             drag_preview: None,
             split_preview: None,
             space_menu: None,
+            pins: Default::default(),
             status: String::new(),
             poll_count: 0,
             history: HashMap::new(),
             notifications: HashMap::new(),
+            favicons: HashMap::new(),
         }
     }
 
@@ -277,6 +282,7 @@ impl BrowserApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.dismiss_pin(window, cx);
         self.report(self.host.focus_parent(self.active_tab()));
         if self.editing != Some(target) {
             self.cancel_edit(window, cx);
@@ -452,6 +458,7 @@ impl BrowserApp {
         self.saver.tick(&self.model, Instant::now());
         self.window_saver.tick(window, cx);
         self.poll_settings(window, cx);
+        self.poll_pins(window, cx);
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
@@ -466,12 +473,15 @@ impl BrowserApp {
         let mut events = self.host.drain_events();
         self.poll_count = (self.poll_count + 1) % 12;
         if self.poll_count == 0 {
-            let tab = self.active_tab();
-            if let Ok(url) = self.host.current_url(tab)
-                && self.model.tab(tab).is_some_and(|page| page.url != url)
-                && !url.is_empty()
+            for tab in std::iter::once(self.active_tab())
+                .chain(self.model.pinned_tabs.iter().map(|p| p.tab.id))
             {
-                events.push(BrowserEvent::Navigated(tab, url));
+                if let Ok(url) = self.host.current_url(tab)
+                    && self.model.tab(tab).is_some_and(|page| page.url != url)
+                    && !url.is_empty()
+                {
+                    events.push(BrowserEvent::Navigated(tab, url));
+                }
             }
         }
         if events.is_empty() {
@@ -479,6 +489,17 @@ impl BrowserApp {
         }
         for event in events {
             match event {
+                BrowserEvent::Favicon(tab, encoded) => {
+                    use base64::Engine;
+                    if self.model.tab(tab).is_some()
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded)
+                    {
+                        self.favicons.insert(
+                            tab,
+                            std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, bytes)),
+                        );
+                    }
+                }
                 BrowserEvent::Notification(tab) => {
                     if self.model.tab(tab).is_some()
                         && !(window.is_window_active() && tab == self.active_tab())
@@ -527,12 +548,24 @@ impl BrowserApp {
                     }
                 }
                 BrowserEvent::OpenLink(source, url) => {
+                    if self.model.pinned_tabs.iter().any(|p| p.tab.id == source) {
+                        self.model.add_tab(&url);
+                        self.dismiss_pin(window, cx);
+                        self.sync_address(window, cx);
+                        continue;
+                    }
                     if self.model.add_tab_after(source, &url).is_some() {
                         self.cancel_edit(window, cx);
                         self.sync_address(window, cx);
                     }
                 }
                 BrowserEvent::NewTab(source, url) => {
+                    if self.model.pinned_tabs.iter().any(|p| p.tab.id == source) {
+                        self.model.add_tab(&url);
+                        self.dismiss_pin(window, cx);
+                        self.sync_address(window, cx);
+                        continue;
+                    }
                     let pane = self
                         .model
                         .active_space()
@@ -576,6 +609,23 @@ impl BrowserApp {
                     }
                 }
                 BrowserEvent::Shortcut(tab, key) => {
+                    if key == "escape" {
+                        self.dismiss_pin(window, cx);
+                        continue;
+                    }
+                    if self.pins.open == Some(tab) {
+                        match key.as_str() {
+                            "settings" => self.open_settings(true, window, cx),
+                            "reload" => self.report(self.host.reload(tab)),
+                            "close-tab" => self.dismiss_pin(window, cx),
+                            "new-tab" => {
+                                self.model.add_tab("about:blank");
+                                self.dismiss_pin(window, cx);
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
                     if self.settings.is_some() {
                         continue;
                     }

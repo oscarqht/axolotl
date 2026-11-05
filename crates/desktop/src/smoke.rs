@@ -186,6 +186,9 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-input") {
         return crate::smoke_input::run(view, cx).await;
     }
+    if std::env::args().any(|arg| arg == "--smoke-pins") {
+        return crate::smoke_pins::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-settings") {
         return crate::smoke_settings::run(view, cx).await;
     }

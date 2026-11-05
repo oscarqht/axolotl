@@ -64,6 +64,7 @@ impl BrowserApp {
                     }
                 }
                 "settings" => self.open_settings(false, window, cx),
+                "pin" => self.pin_page(pane, tab, window, cx),
                 "select" => self.select_target(target, window, cx),
                 "edit" => self.begin_edit(target, window, cx),
                 "close" => self.tab_action(target, TabAction::Close, window, cx),
@@ -168,9 +169,14 @@ impl BrowserApp {
             .flat_map(|s| &s.panes)
             .flat_map(|p| &p.tabs)
             .map(|t| t.id)
+            .chain(self.model.pinned_tabs.iter().map(|p| p.tab.id))
             .collect();
         self.host.retain(&ids);
         self.notifications.retain(|id, _| ids.contains(id));
+        self.favicons.retain(|id, _| ids.contains(id));
+        for pin in self.model.pinned_tabs.clone() {
+            self.report(self.host.ensure(pin.tab.id, &pin.tab.url, window, cx));
+        }
         if window.is_window_active() {
             self.notifications.remove(&self.active_tab());
         }
@@ -182,7 +188,7 @@ impl BrowserApp {
             (f32::from(viewport.height) - crate::render::TOP).max(0.),
         );
         let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
-        let visible: Vec<_> = self
+        let mut visible: Vec<_> = self
             .model
             .active_space()
             .panes
@@ -195,6 +201,11 @@ impl BrowserApp {
             })
             .map(|p| (p.active_tab, p.active_tab().url.clone()))
             .collect();
+        if let Some(id) = self.pins.open
+            && let Some(tab) = self.model.tab(id)
+        {
+            visible.push((id, tab.url.clone()));
+        }
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {
             if !visible.iter().any(|(tab, _)| tab == id) {
@@ -281,6 +292,7 @@ impl BrowserApp {
             self.report(result);
         }
         // Create last, above every page and floating panel control.
+        self.prepare_pins(window, cx);
         self.prepare_space_menu(window, cx);
         self.prepare_settings(window, cx);
     }

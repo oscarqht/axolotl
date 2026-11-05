@@ -41,6 +41,7 @@ impl BrowserApp {
         if self.settings.is_some() {
             return;
         }
+        self.dismiss_pin(window, cx);
         let previous_focus = window.focused(cx);
         self.cancel_edit(window, cx);
         self.cancel_tab_drag(cx);

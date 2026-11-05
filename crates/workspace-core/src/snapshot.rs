@@ -2,7 +2,7 @@
 //!
 //! Wire types are separate from the model so the file format is explicit and
 //! decoding can never produce a workspace that violates model invariants.
-use crate::{Axis, Layout, Pane, Space, Tab, Workspace};
+use crate::{Axis, Layout, Pane, PinnedTab, Space, Tab, Workspace};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -44,6 +44,15 @@ struct WorkspaceDto {
     next_id: u64,
     active_space: u64,
     spaces: Vec<SpaceDto>,
+    #[serde(default)]
+    pinned_tabs: Vec<PinnedDto>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PinnedDto {
+    tab: TabDto,
+    width: f32,
+    height: f32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -162,6 +171,20 @@ impl Workspace {
             version: SNAPSHOT_VERSION,
             next_id: self.next_id,
             active_space: self.active_space,
+            pinned_tabs: self
+                .pinned_tabs
+                .iter()
+                .map(|p| PinnedDto {
+                    tab: TabDto {
+                        id: p.tab.id,
+                        url: p.tab.url.clone(),
+                        title: p.tab.title.clone(),
+                        custom_title: p.tab.custom_title.clone(),
+                    },
+                    width: p.width,
+                    height: p.height,
+                })
+                .collect(),
             spaces: self
                 .spaces
                 .iter()
@@ -267,10 +290,34 @@ impl Workspace {
         if !spaces.iter().any(|s| s.id == dto.active_space) {
             return Err(SnapshotError::Invalid("active space missing"));
         }
+        let mut pinned_tabs = Vec::new();
+        for p in dto.pinned_tabs {
+            if !ids.insert(p.tab.id) {
+                return Err(SnapshotError::Invalid("duplicate id"));
+            }
+            if !p.width.is_finite()
+                || !p.height.is_finite()
+                || !(240. ..=4096.).contains(&p.width)
+                || !(160. ..=4096.).contains(&p.height)
+            {
+                return Err(SnapshotError::Invalid("invalid pinned popup size"));
+            }
+            pinned_tabs.push(PinnedTab {
+                tab: Tab {
+                    id: p.tab.id,
+                    url: p.tab.url,
+                    title: p.tab.title,
+                    custom_title: p.tab.custom_title.filter(|c| !c.trim().is_empty()),
+                },
+                width: p.width,
+                height: p.height,
+            });
+        }
         // Never reissue an id that is already in use, even if next_id was tampered with.
         let next_id = dto.next_id.max(ids.iter().max().map_or(1, |m| m + 1));
         Ok(Self {
             spaces,
+            pinned_tabs,
             active_space: dto.active_space,
             next_id,
         })

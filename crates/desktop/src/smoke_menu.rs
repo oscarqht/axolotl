@@ -57,8 +57,15 @@ pub(crate) async fn run(
     ensure!(
         menu["hidden"] == false
             && menu["items"]
-                == serde_json::json!(["Back", "Forward", "Refresh", "Set title…", "Close"])
-            && menu["dividers"] == 2
+                == serde_json::json!([
+                    "Back",
+                    "Forward",
+                    "Refresh",
+                    "Set title…",
+                    "Pin to header",
+                    "Close"
+                ])
+            && menu["dividers"] == 3
             && menu["top"].as_f64().is_some_and(|t| t >= 0.)
             && menu["right"].as_f64() <= menu["viewport"].as_f64(),
         "Tab context menu has wrong structure or is clipped: {menu}"

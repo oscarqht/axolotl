@@ -283,6 +283,8 @@ impl BrowserApp {
         if let Some(drag) = self.tab_drag.take() {
             let moved = if !drag.active {
                 false
+            } else if !drag.whole && position.is_some_and(|p| self.pin_drop_target(p, window)) {
+                self.model.pin_tab(drag.source, drag.tab)
             } else if drag.whole {
                 if let Some((pane, edge, _)) = split {
                     self.model.move_pane(drag.source, pane, Some(edge))
@@ -306,7 +308,9 @@ impl BrowserApp {
             if moved {
                 self.sync_address(window, cx);
                 self.reveal_focused();
-                self.report(self.host.focus(drag.tab));
+                if !self.model.pinned_tabs.iter().any(|p| p.tab.id == drag.tab) {
+                    self.report(self.host.focus(drag.tab));
+                }
             }
             cx.notify();
         }

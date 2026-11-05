@@ -54,6 +54,110 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
 }
 
 impl BrowserApp {
+    fn pinned_header(&self, window: &Window, cx: &Context<Self>) -> AnyElement {
+        let colors = crate::chrome_theme::ChromeColors::current(cx);
+        let (visible, width) = crate::pinned_tabs::header_layout(
+            f32::from(window.viewport_size().width),
+            self.model.pinned_tabs.len(),
+        );
+        div()
+            .id("pinned-tabs")
+            .w(px(width))
+            .flex_shrink_0()
+            .flex()
+            .gap_1()
+            .children(self.model.pinned_tabs.iter().take(visible).map(|pin| {
+                let id = pin.tab.id;
+                let title = if pin.tab.display_title().is_empty() {
+                    pin.tab.url.clone()
+                } else {
+                    pin.tab.display_title().to_owned()
+                };
+
+                div()
+                    .id(("pinned-tab", id))
+                    .size(px(30.))
+                    .rounded_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .bg(rgb(if self.pins.open == Some(id) {
+                        colors.active_tab
+                    } else {
+                        colors.surface
+                    }))
+                    .border_1()
+                    .border_color(rgb(if self.pins.open == Some(id) {
+                        colors.accent
+                    } else {
+                        colors.border
+                    }))
+                    .hover(|s| s.bg(rgb(colors.hover)))
+                    .tooltip(move |window, cx| {
+                        gpui_component::tooltip::Tooltip::new(title.clone()).build(window, cx)
+                    })
+                    .when(!self.favicons.contains_key(&id), |button| {
+                        button.child(div().text_color(rgb(colors.muted)).child("◉"))
+                    })
+                    .children(
+                        self.favicons
+                            .get(&id)
+                            .map(|image| img(image.clone()).size(px(16.)).relative()),
+                    )
+                    .when(
+                        self.pins
+                            .drag
+                            .is_some_and(|(tab, _, active)| tab == id && active),
+                        |el| el.opacity(0.5),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            // Dismiss after a drag actually starts so a click can toggle the open pin.
+                            let _ = window;
+                            this.pins.suppress_click = false;
+                            this.pins.drag = Some((id, event.position, false));
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.pin_menu(Some(id), window, cx);
+                        }),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if !this.pins.suppress_click {
+                            this.toggle_pin(id, window, cx);
+                        }
+                    }))
+            }))
+            .when(visible < self.model.pinned_tabs.len(), |strip| {
+                strip.child(
+                    div()
+                        .id("pinned-overflow")
+                        .size(px(30.))
+                        .rounded_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .hover(|s| s.bg(rgb(colors.hover)))
+                        .child("•••")
+                        .tooltip(|w, cx| {
+                            gpui_component::tooltip::Tooltip::new("More pinned tabs").build(w, cx)
+                        })
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.pin_menu(None, window, cx)),
+                        ),
+                )
+            })
+            .into_any_element()
+    }
+
     fn compact_tab(
         &self,
         target: TabTarget,
@@ -308,6 +412,10 @@ impl Render for BrowserApp {
             f32::from(viewport.width),
             (f32::from(viewport.height) - TOP).max(0.),
         );
+        let (_, pin_width) = crate::pinned_tabs::header_layout(
+            f32::from(viewport.width),
+            self.model.pinned_tabs.len(),
+        );
         let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
         let panes = geometry
             .panes
@@ -369,6 +477,7 @@ impl Render for BrowserApp {
             .on_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
                     this.close_settings(window, cx);
+                    this.dismiss_pin(window, cx);
                     this.cancel_tab_drag(cx);
                     this.cancel_space_drag(cx);
                     this.close_space_menu(cx);
@@ -376,13 +485,36 @@ impl Render for BrowserApp {
                     cx.notify();
                 }),
             )
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
+                    this.dismiss_pin(window, cx);
                     this.close_space_menu(cx);
                     this.cancel_space_drag(cx);
                 }
             }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                    if this.pins.open.is_some() || this.pins.menu.is_some() {
+                        this.dismiss_pin(window, cx);
+                    }
+                }),
+            )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                if let Some((id, origin, active)) = this.pins.drag {
+                    if active
+                        || (f32::from(event.position.x - origin.x).abs()
+                            + f32::from(event.position.y - origin.y).abs())
+                            > 5.
+                    {
+                        if !active {
+                            this.dismiss_pin(window, cx);
+                        }
+                        this.pins.drag = Some((id, origin, true));
+                        this.pins.suppress_click = true;
+                        cx.notify();
+                    }
+                }
                 this.update_tab_drag(event, window, cx);
                 this.update_space_drag(event, window, cx);
                 if this.moving_window {
@@ -411,6 +543,23 @@ impl Render for BrowserApp {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    if let Some((id, _, active)) = this.pins.drag.take() {
+                        if active && this.pin_drop_target(event.position, window) {
+                            let w = f32::from(window.viewport_size().width);
+                            let (_, strip) =
+                                crate::pinned_tabs::header_layout(w, this.model.pinned_tabs.len());
+                            let right = if cfg!(target_os = "windows") {
+                                176.
+                            } else {
+                                42.
+                            };
+                            let slot = ((f32::from(event.position.x) - (w - right - strip) + 17.)
+                                / 34.)
+                                .max(0.) as usize;
+                            this.model.move_pin(id, slot);
+                            cx.notify();
+                        }
+                    }
                     this.finish_tab_drag(Some(event.position), window, cx);
                     this.finish_space_drag(Some(event.position), cx);
                     this.moving_window = false;
@@ -423,6 +572,7 @@ impl Render for BrowserApp {
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
+                    this.pins.drag = None;
                     this.finish_tab_drag(None, window, cx);
                     this.finish_space_drag(None, cx);
                     this.moving_window = false;
@@ -435,6 +585,12 @@ impl Render for BrowserApp {
             .child(
                 div()
                     .h(px(TOP))
+                    .when(
+                        self.tab_drag.is_some_and(|d| {
+                            d.active && !d.whole && self.pin_drop_target(d.position, window)
+                        }),
+                        |header| header.bg(rgb(colors.hover)),
+                    )
                     .flex()
                     .items_center()
                     .gap_1()
@@ -450,10 +606,14 @@ impl Render for BrowserApp {
                             .track_scroll(&self.space_scroll)
                             .when(cfg!(target_os = "windows"), |spaces| {
                                 // Reserve caption buttons, gaps, and an empty drag target.
-                                spaces.max_w(px((f32::from(viewport.width) - 228.).max(0.)))
+                                spaces.max_w(px(
+                                    (f32::from(viewport.width) - 228. - pin_width).max(0.)
+                                ))
                             })
                             .when(!cfg!(target_os = "windows"), |spaces| {
-                                spaces.max_w(px((f32::from(viewport.width) - 212.).max(0.)))
+                                spaces.max_w(px(
+                                    (f32::from(viewport.width) - 212. - pin_width).max(0.)
+                                ))
                             })
                             .min_w_0()
                             .flex()
@@ -504,6 +664,7 @@ impl Render for BrowserApp {
                                 drag.on_double_click(|_, window, _| window.titlebar_double_click())
                             }),
                     )
+                    .child(self.pinned_header(window, cx))
                     .child(
                         div()
                             .id("settings-button")

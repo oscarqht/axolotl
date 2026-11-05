@@ -21,6 +21,7 @@ mod macos_titlebar;
 mod native_webview;
 mod panel_controls;
 mod persistence;
+mod pinned_tabs;
 mod preferences;
 mod render;
 mod settings;
@@ -40,6 +41,8 @@ mod smoke_menu;
 mod smoke_notifications;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
+#[cfg(feature = "smoke")]
+mod smoke_pins;
 #[cfg(feature = "smoke")]
 mod smoke_settings;
 #[cfg(feature = "smoke")]

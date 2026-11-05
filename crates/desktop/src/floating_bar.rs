@@ -10,8 +10,8 @@ use std::{
 use workspace_core::Rect;
 use wry::{NewWindowResponse, WebViewBuilder};
 
-/// Room above the bar for the tab context menu (5 items, 2 dividers, padding, gap).
-pub const MENU_HEIGHT: f32 = 184.;
+/// Room above the bar for six menu items, three dividers, padding and gap.
+pub const MENU_HEIGHT: f32 = 224.;
 pub const MENU_WIDTH: f32 = 200.;
 
 pub struct FloatingBar {
@@ -58,6 +58,10 @@ impl FloatingBar {
             midpoints: vec![],
         })
     }
+    pub(crate) fn raise(&self) -> Result<()> {
+        crate::native_webview::raise(&self.view)
+    }
+
     pub fn place(&mut self, pane: Rect, mut state: Value) -> Result<()> {
         let editing = !state["editing"].is_null();
         let available = (pane.width - 24.).max(1.);

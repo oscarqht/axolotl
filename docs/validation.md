@@ -675,3 +675,24 @@ menu over live webpage pixels. The core still supports a grid, but the compact U
 has no standalone grid/maximize controls. Permission controls, downloads, browser
 profiles, extensions, saved layouts and performance benchmarking remain outside
 this change.
+
+## Pinned tab popovers (2026-11-05)
+
+- `cargo test -p workspace-core`: 37 passed, including pin identity, empty-source
+  collapse/final-pane replacement, cross-space focused-pane unpinning, order and
+  size persistence, legacy snapshots, and invalid saved pin data.
+- `cargo test -p axolotl --features smoke`: 16 passed, including bounded header
+  overflow and existing bridge, session and preference checks.
+- `node scripts/test-input-bridge.cjs`: 7 passed; changed JavaScript parses.
+- `cargo check -p axolotl` and smoke-feature build pass on macOS.
+- `target/debug/axolotl --smoke-test --smoke-pins` exercises the real native chip
+  menu and popup IPC, header-drop completion, real page favicon transfer, live document/form/scroll/history preservation,
+  cross-space popup visibility, switching/repeat-click/outside/Escape dismissal,
+  resizing, snapshot round trip and focused-pane unpinning. The smoke run uses
+  disposable state and does not read or overwrite the user's saved workspace.
+
+The smoke checks are programmatic native integration checks. OS pointer dragging,
+header icon reordering, grip dragging, narrow-window visual layout, full process
+restart restoration and Windows runtime behavior still require manual validation.
+Computer Use listed the isolated review app but repeatedly timed out acquiring
+its window, so no successful visual or OS-input verification is claimed here.

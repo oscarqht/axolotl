@@ -45,6 +45,7 @@ pub fn with_inline_html<'a>(
 #[derive(Debug, Clone)]
 pub enum BrowserEvent {
     Focused(TabId),
+    Favicon(TabId, String),
     Notification(TabId),
     Navigated(TabId, String),
     Title(TabId, String),
@@ -88,6 +89,7 @@ pub trait BrowserHost {
     fn has_view(&self, tab: TabId) -> bool;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
+    fn raise(&self, tab: TabId) -> Result<()>;
     fn focus(&self, tab: TabId) -> Result<()>;
     fn focus_parent(&self, tab: TabId) -> Result<()>;
     fn navigate(&self, tab: TabId, url: &str) -> Result<()>;
@@ -312,6 +314,12 @@ impl BrowserHost for WryHost {
                     let _ = ipc.try_send(BrowserEvent::Notification(tab));
                     return;
                 }
+                if let Some(encoded) = request.body().strip_prefix(&format!("{nonce}:favicon:")) {
+                    if encoded.len() <= 32768 {
+                        let _ = ipc.try_send(BrowserEvent::Favicon(tab, encoded.to_owned()));
+                    }
+                    return;
+                }
                 if !visible.borrow().contains(&tab) {
                     return;
                 }
@@ -333,8 +341,10 @@ impl BrowserHost for WryHost {
                 };
                 let event = match command {
                     "focus" => BrowserEvent::Focused(tab),
-                    "settings" | "address" | "new-tab" | "close-tab" | "reload" | "swipe-next"
-                    | "swipe-prev" => BrowserEvent::Shortcut(tab, command.to_owned()),
+                    "escape" | "settings" | "address" | "new-tab" | "close-tab" | "reload"
+                    | "swipe-next" | "swipe-prev" => {
+                        BrowserEvent::Shortcut(tab, command.to_owned())
+                    }
                     _ => return,
                 };
                 let _ = ipc.try_send(event);
@@ -416,6 +426,11 @@ impl BrowserHost for WryHost {
             shown.remove(&tab);
         }
         Ok(())
+    }
+
+    fn raise(&self, tab: TabId) -> Result<()> {
+        let view = self.get(tab)?;
+        crate::native_webview::raise(&view)
     }
 
     fn focus(&self, tab: TabId) -> Result<()> {
@@ -593,8 +608,8 @@ pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option
         return None;
     }
     match command {
-        "focus" | "settings" | "address" | "new-tab" | "close-tab" | "reload" | "swipe-next"
-        | "swipe-prev" => Some(command),
+        "escape" | "focus" | "settings" | "address" | "new-tab" | "close-tab" | "reload"
+        | "swipe-next" | "swipe-prev" => Some(command),
         _ => None,
     }
 }

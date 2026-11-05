@@ -197,6 +197,31 @@ mod windows_view {
             }
             Ok(())
         }
+        pub fn raise(&self) -> Result<()> {
+            self.call(|view| {
+                use windows::Win32::{
+                    Foundation::HWND,
+                    UI::WindowsAndMessaging::{
+                        HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+                    },
+                };
+                use wry::WebViewExtWindows;
+                unsafe {
+                    let mut parent = HWND::default();
+                    view.controller().ParentWindow(&mut parent)?;
+                    SetWindowPos(
+                        parent,
+                        Some(HWND_TOP),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    )?;
+                }
+                Ok(())
+            })
+        }
         pub fn focus(&self) -> Result<()> {
             self.call(|view| view.focus())
         }
@@ -280,4 +305,20 @@ mod windows_view {
                 .webview())
         }
     }
+}
+
+/// Reorder an existing child without destroying its document, history or focus state.
+pub fn raise(view: &NativeWebView) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindowOrderingMode;
+        use wry::WebViewExtMacOS;
+        let child = view.webview();
+        if let Some(parent) = unsafe { child.superview() } {
+            parent.addSubview_positioned_relativeTo(&child, NSWindowOrderingMode::Above, None);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    view.raise()?;
+    Ok(())
 }

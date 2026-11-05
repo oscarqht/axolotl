@@ -371,11 +371,20 @@ pub(crate) async fn check_sizing(
         )
     })?;
     view.update_in(cx, |app, _, _| {
-        app.bars[&control_pane].evaluate("pinned=true;expand(true);true", |_| {})
+        app.bars[&control_pane]
+            .evaluate(include_str!("../assets/smoke-hover-transition.js"), |_| {})
     })??;
     pause(cx).await;
     pause(cx).await;
     pause(cx).await;
+    let samples = bar_eval(view, control_pane, "window.hoverTransitionSamples", cx).await?;
+    ensure!(
+        samples.as_array().is_some_and(|steps| steps.len() == 6
+            && steps.iter().all(|s| s["overflow"] == false
+                && s["faded"] == false
+                && s["arrowWidth"].as_f64() == Some(0.))),
+        "Fitting chips introduced a second overflow/arrow animation: {samples}"
+    );
     let single=bar_eval(view,control_pane,"pinned=true;({width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),gap:document.querySelector('#add').getBoundingClientRect().left-tabs.lastElementChild.getBoundingClientRect().right})",cx).await?;
     ensure!(
         before == 1

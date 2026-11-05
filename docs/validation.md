@@ -1,3 +1,21 @@
+# Continuous chip hover expansion
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Reproduced a transient overflow state in the native CSS timeline: a single
+  fitting chip gained arrows/fades while the pill was still narrow. Removing
+  those arrows near the end started a second 180ms layout transition.
+- Overflow now uses the final expanded viewport capacity, measured fixed
+  controls/padding/gaps, and chip flex bases. Editing chips respect their final
+  maximum width. Fitting content never gains temporary arrows or fades; true
+  overflow still uses the existing scrolling controls and edge masks.
+- A native regression samples 0/40/80/120/180/240ms without finishing child-arrow
+  animations with the parent. It failed before the fix and passes afterward.
+  Focused native sizing/overflow checks and the full native smoke pass, along
+  with all 24 unit tests and strict Clippy. The macOS bundle was rebuilt. These
+  deterministic engine checks do not synthesize OS hover input; foreground and
+  Windows validation remain open.
+
 # Content-fitting expanded bar
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

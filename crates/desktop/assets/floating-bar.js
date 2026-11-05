@@ -20,19 +20,37 @@ function metrics() {
       return r.x + r.width / 2;
     }),
   });
-  // Ignore the arrows' own width when deciding whether they are needed.
-  const arrowWidth = [...bar.querySelectorAll(".arrow")].reduce(
-    (sum, arrow) => sum + arrow.getBoundingClientRect().width,
-    0,
-  );
-  bar.classList.toggle(
-    "overflow",
-    tabs.scrollWidth > tabs.clientWidth + arrowWidth + 1,
-  );
-  bar.classList.toggle("fade-left", tabs.scrollLeft > 1);
+  // Overflow is a property of the final expanded layout, not the animated
+  // viewport. Otherwise a fitting chip introduces arrows mid-expansion, then
+  // spends another 180ms removing them after the pill reaches its final width.
+  const style = getComputedStyle(bar);
+  const rowStyle = getComputedStyle(tabs);
+  const number = (value) => parseFloat(value) || 0;
+  const fixed =
+    document.querySelector("#handle").getBoundingClientRect().width +
+    document.querySelector("#add").getBoundingClientRect().width +
+    number(style.paddingLeft) +
+    number(style.paddingRight) +
+    number(style.borderLeftWidth) +
+    number(style.borderRightWidth) +
+    4 * number(style.columnGap);
+  const target = (state.expandedWidth ?? state.surfaceWidth ?? innerWidth) - 8;
+  const capacity = Math.max(0, target - fixed);
+  const required =
+    [...tabs.children].reduce((sum, chip) => {
+      const basis = number(getComputedStyle(chip).flexBasis);
+      return (
+        sum +
+        (chip.classList.contains("editing") ? Math.min(basis, capacity) : basis)
+      );
+    }, 0) +
+    Math.max(0, tabs.children.length - 1) * number(rowStyle.columnGap);
+  const overflow = required > capacity + 1;
+  bar.classList.toggle("overflow", overflow);
+  bar.classList.toggle("fade-left", overflow && tabs.scrollLeft > 1);
   bar.classList.toggle(
     "fade-right",
-    tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth - 1,
+    overflow && tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth - 1,
   );
 }
 function scheduleSettle(value, epoch) {

@@ -10,7 +10,12 @@ and **Bing**. Changes apply immediately to future address-bar searches; there
 is no Save/Cancel step. Existing pages are not reloaded, and explicit URLs,
 hostnames, localhost addresses, and `about:blank` retain their normal behavior.
 
-The theme-matched modal focuses the dropdown on opening, keeps Tab/Shift+Tab
+Settings opens in a centered, theme-matched modal with three tabs: **General**
+(search engine, homepage, default browser), **Privacy** (ad and tracker blocking,
+browsing history), and **Tabs & media** (picture-in-picture, automatic sleep).
+Use Left/Right arrows or Home/End on the tab bar to switch categories. Only the
+selected category participates in keyboard navigation. The modal focuses the
+search dropdown on opening, keeps Tab/Shift+Tab
 inside it, and dismisses with Escape or its labeled close button. Dismissal
 restores focus to the invoking header control or page. Background app commands
 are blocked while the modal is open.

@@ -3,18 +3,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
-body{display:grid;place-items:center;background:#0005;color:var(--ink);font:13px system-ui,sans-serif;padding:20px}
-#settings{width:380px;max-width:100%;max-height:100%;overflow:auto;padding:22px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 44px #0004}
-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}h1{font-size:18px;margin:0;font-weight:600}
-button,select,input{font:inherit;color:inherit;border:1px solid var(--border);border-radius:6px;background:var(--surface)}
-button{width:28px;height:28px;cursor:pointer;font-size:20px}button:hover{background:var(--hover)}
-label{display:block;font-weight:550;margin-bottom:8px}select{width:100%;padding:8px;cursor:pointer}
-input{width:100%;padding:8px}.field{margin-top:22px}
-:focus-visible{outline:2px solid var(--accent);outline-offset:3px}p{color:var(--muted);line-height:1.5;margin:12px 0 0;font-size:12px}#error{color:var(--ink)}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+body{display:grid;place-items:center;background:#0006;color:var(--ink);font:13px system-ui,sans-serif;padding:28px}
+#settings{display:flex;flex-direction:column;width:720px;max-width:100%;height:600px;max-height:100%;overflow:hidden;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 24px 80px #0005}
+header{display:flex;align-items:flex-start;justify-content:space-between;padding:24px 28px 20px;gap:16px}h1{font-size:22px;margin:0;font-weight:600;letter-spacing:-.4px}header p{margin-top:6px}
+button,select,input{font:inherit;color:inherit;border:1px solid var(--border);border-radius:7px;background:var(--surface)}
+button{min-height:32px;padding:6px 12px;cursor:pointer}button:hover{background:var(--hover)}button:disabled{opacity:.5;cursor:default}
+#close{width:32px;flex-shrink:0;padding:0;font-size:22px;border-color:transparent}
+.tabs{display:flex;gap:6px;padding:0 28px 16px;border-bottom:1px solid var(--border)}
+.tabs button{border-color:transparent;font-weight:550;color:var(--muted);padding:8px 14px}
+.tabs button[aria-selected="true"]{background:var(--hover);color:var(--ink);box-shadow:inset 0 -2px var(--accent)}
+.panels{flex:1;min-height:0;overflow:auto;padding:24px 28px;scrollbar-gutter:stable}
+h2{font-size:16px;font-weight:600;margin:0 0 20px}label{display:block;font-weight:550;margin-bottom:8px}select{width:100%;padding:9px;cursor:pointer}
+input{width:100%;padding:9px}input[type="checkbox"]{accent-color:var(--accent)}.field{margin-top:24px;padding-top:24px;border-top:1px solid var(--border)}[role="tabpanel"]>.field:first-of-type:not(#panel-general>.field){margin-top:0;padding-top:0;border-top:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}p{color:var(--muted);line-height:1.6;margin:10px 0 0;font-size:12px}#error{color:var(--ink)}
+footer{border-top:1px solid var(--border);padding:14px 28px;color:var(--muted);font-size:12px}
+@media(max-width:520px){body{padding:12px}header{padding:20px}.tabs{padding:0 16px 12px;gap:2px}.tabs button{padding:8px 10px}.panels{padding:20px}footer{padding:12px 20px}}
 </style>
-<section id="settings" role="dialog" aria-modal="true" aria-labelledby="heading" aria-describedby="hint">
-<header><h1 id="heading">Settings</h1><button id="close" aria-label="Close settings" title="Close settings (Esc)">×</button></header>
+<section id="settings" role="dialog" aria-modal="true" aria-labelledby="heading" aria-describedby="settings-hint">
+<header><div><h1 id="heading">Settings</h1><p id="settings-hint">Make Axolotl work the way you do.</p></div><button id="close" aria-label="Close settings" title="Close settings (Esc)">×</button></header>
+<nav class="tabs" role="tablist" aria-label="Settings categories">
+<button id="tab-general" role="tab" aria-selected="true" aria-controls="panel-general" tabindex="0">General</button>
+<button id="tab-privacy" role="tab" aria-selected="false" aria-controls="panel-privacy" tabindex="-1">Privacy</button>
+<button id="tab-media" role="tab" aria-selected="false" aria-controls="panel-media" tabindex="-1">Tabs &amp; media</button>
+</nav>
+<div class="panels">
+<section id="panel-general" role="tabpanel" aria-labelledby="tab-general">
+<h2>General</h2>
 <label for="search-engine">Search engine</label>
 <select id="search-engine" aria-describedby="hint"><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option></select>
 <p id="hint">Used for new searches from the address bar. Changes apply immediately.</p>
@@ -25,6 +40,16 @@ input{width:100%;padding:8px}.field{margin-top:22px}
 <p id="homepage-hint">Used for new tabs, new spaces, and startup without a saved session. Enter an HTTP or HTTPS URL. Leave blank or use about:blank for the built-in start page. Applied when you press Enter or leave the field.</p>
 <p id="homepage-error" role="alert" hidden></p>
 </div>
+<div class="field">
+<label>Default browser</label>
+<p id="default-browser-status" role="status" aria-live="polite">Checking default browser…</p>
+<button id="make-default" style="width:auto;height:auto;font-size:13px;padding:8px;margin-top:10px">Make default</button>
+<p id="default-browser-message"></p>
+<p id="default-browser-error" role="alert" hidden></p>
+</div>
+</section>
+<section id="panel-privacy" role="tabpanel" aria-labelledby="tab-privacy" hidden>
+<h2>Privacy</h2>
 <div class="field">
 <label><input id="protection-enabled" type="checkbox" style="width:auto;margin-right:8px">Block ads and trackers</label>
 <p>EasyList and EasyPrivacy. Enabled by default. Checks for updates daily while Axolotl is open. Changes reload open pages.</p>
@@ -41,22 +66,21 @@ input{width:100%;padding:8px}.field{margin-top:22px}
 <div id="history-confirm" hidden><p>Clear all browsing history? Cookies, login sessions, tabs, and Back/Forward will be kept.</p><button id="confirm-clear" style="width:auto;height:auto;font-size:13px;padding:8px">Clear history</button> <button id="cancel-clear" style="width:auto;height:auto;font-size:13px;padding:8px">Cancel</button></div>
 <p id="history-error" role="status" hidden></p>
 </div>
+</section>
+<section id="panel-media" role="tabpanel" aria-labelledby="tab-media" hidden>
+<h2>Tabs &amp; media</h2>
 <div class="field"><label><input id="auto-picture-in-picture" type="checkbox" style="width:auto" aria-describedby="pip-hint pip-error"> Automatic picture-in-picture</label>
 <p id="pip-hint">Keep an audible video playing in a floating window when switching tabs or spaces hides it. Return the video when its tab is visible again.</p>
 <p id="pip-error" role="alert" hidden></p></div>
 <div class="field"><label><input id="auto-sleep" type="checkbox" style="width:auto"> Automatically sleep hidden tabs</label>
 <label for="sleep-minutes">Inactive timeout (minutes)</label><input id="sleep-minutes" type="number" min="1" step="1" required>
 <p id="sleep-error" role="alert" hidden></p><p>Sleeping unloads the page. Click to reload it. Unsaved page state may be lost. Keep Alive protects tabs from automatic sleep and Sleep Space.</p></div>
-<div class="field">
-<label>Default browser</label>
-<p id="default-browser-status" role="status" aria-live="polite">Checking default browser…</p>
-<button id="make-default" style="width:auto;height:auto;font-size:13px;padding:8px;margin-top:10px">Make default</button>
-<p id="default-browser-message"></p>
-<p id="default-browser-error" role="alert" hidden></p>
+</section>
 </div>
+<footer>Changes apply immediately.</footer>
 </section>
 <script>
-const select=document.querySelector('select'), closeButton=document.querySelector('#close');
+const select=document.querySelector('#search-engine'), closeButton=document.querySelector('#close');
 const homepage=document.querySelector('#homepage-url');
 const send=(type,value)=>window.ipc.postMessage(JSON.stringify({type,value}));
 window.defaultBrowserState=state=>{
@@ -113,18 +137,39 @@ document.querySelector('#clear-history').onclick=()=>{confirmation.hidden=false;
 document.querySelector('#cancel-clear').onclick=()=>{confirmation.hidden=true;document.querySelector('#clear-history').focus()};
 document.querySelector('#confirm-clear').onclick=()=>send('history-clear');
 window.historyResult=result=>{const status=document.querySelector('#history-error');status.textContent=result.error||(result.cleared?'Browsing history cleared.':'History retention saved.');status.hidden=false;if(result.cleared&&!result.error){confirmation.hidden=true;document.querySelector('#clear-history').focus()}};
+const tabs=[...document.querySelectorAll('[role="tab"]')];
+const activateTab=tab=>{
+ for(const item of tabs){
+  const active=item===tab;
+  item.setAttribute('aria-selected',String(active));item.tabIndex=active?0:-1;
+  document.getElementById(item.getAttribute('aria-controls')).hidden=!active;
+ }
+ document.querySelector('.panels').scrollTop=0;
+};
+for(const tab of tabs){
+ tab.onclick=()=>activateTab(tab);
+ tab.onkeydown=event=>{
+  const index=tabs.indexOf(tab);
+  let next;
+  if(event.key==='ArrowRight')next=(index+1)%tabs.length;
+  if(event.key==='ArrowLeft')next=(index+tabs.length-1)%tabs.length;
+  if(event.key==='Home')next=0;
+  if(event.key==='End')next=tabs.length-1;
+  if(next!==undefined){event.preventDefault();activateTab(tabs[next]);tabs[next].focus()}
+ };
+}
 closeButton.onclick=()=>send('dismiss');
 document.addEventListener('keydown',event=>{
   if(event.key==='Escape'){event.preventDefault();send('dismiss')}
   if(event.key==='Tab'){
     event.preventDefault();
-    const controls=[...document.querySelectorAll('button,input,select')].filter(el=>!el.disabled&&!el.closest('[hidden]'));
+    const controls=[...document.querySelectorAll('button,input,select')].filter(el=>!el.disabled&&el.tabIndex>=0&&!el.closest('[hidden]'));
     const index=controls.indexOf(document.activeElement);
     controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
   }
   if((event.metaKey||event.ctrlKey)&&[',','l','t','w','r'].includes(event.key.toLowerCase()))event.preventDefault();
 });
-document.addEventListener('focusin',event=>{if(!document.querySelector('#settings').contains(event.target))select.focus()});
+document.addEventListener('focusin',event=>{if(!document.querySelector('#settings').contains(event.target))tabs.find(tab=>tab.tabIndex===0).focus()});
 select.focus();send('ready');
 document.addEventListener('keydown',event=>{
   if(event.isTrusted && event.shiftKey && !event.altKey && event.key.toLowerCase()==='t' &&

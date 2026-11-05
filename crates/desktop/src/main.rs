@@ -61,7 +61,7 @@ mod smoke_auto_pip_layout;
 mod smoke_auto_pip_youtube;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_copy_url;
-#[cfg(all(feature = "smoke", target_os = "macos"))]
+#[cfg(feature = "smoke")]
 mod smoke_corners;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;

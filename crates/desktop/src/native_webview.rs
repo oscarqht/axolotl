@@ -64,6 +64,52 @@ mod windows_view {
 
     type Operation = Box<dyn FnOnce(&wry::WebView) -> wry::Result<()>>;
     #[derive(Default)]
+    struct PanelClip {
+        radius: Cell<Option<f32>>,
+        geometry: Cell<Option<(i32, i32, i32)>>,
+    }
+
+    impl PanelClip {
+        fn apply(&self, view: &wry::WebView) -> Result<()> {
+            use windows::Win32::{
+                Foundation::{HWND, RECT},
+                Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn},
+                UI::{HiDpi::GetDpiForWindow, WindowsAndMessaging::GetClientRect},
+            };
+            use wry::WebViewExtWindows;
+            let Some(radius) = self.radius.get() else {
+                return Ok(());
+            };
+            unsafe {
+                // Clip Wry's child container: GPUI's overflow mask cannot reach
+                // the WebView2 HWND rendered above it. Coordinates are physical.
+                let mut container = HWND::default();
+                view.controller().ParentWindow(&mut container)?;
+                let mut rect = RECT::default();
+                GetClientRect(container, &mut rect)?;
+                let diameter =
+                    (radius * 2. * GetDpiForWindow(container) as f32 / 96.).round() as i32;
+                let geometry = (rect.right, rect.bottom, diameter);
+                if self.geometry.get() == Some(geometry) {
+                    return Ok(());
+                }
+                let region =
+                    CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, diameter, diameter);
+                if region.is_invalid() {
+                    return Err(anyhow!("Creating browser panel corner region"));
+                }
+                // Windows owns the region after success; release it only on failure.
+                if SetWindowRgn(container, Some(region), true) == 0 {
+                    let _ = DeleteObject(region.into());
+                    return Err(anyhow!("Clipping browser panel corners"));
+                }
+                self.geometry.set(Some(geometry));
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
     struct State {
         view: Option<Rc<wry::WebView>>,
         error: Option<String>,
@@ -71,6 +117,7 @@ mod windows_view {
         visible: Option<bool>,
         operations: Vec<Operation>,
         protection_script: Rc<RefCell<crate::protection_native::windows::ScriptState>>,
+        panel_clip: Rc<PanelClip>,
     }
     pub struct NativeWebView(Rc<RefCell<State>>);
 
@@ -223,10 +270,20 @@ mod windows_view {
             let mut state = self.0.borrow_mut();
             state.bounds = Some(bounds);
             if let Some(view) = state.view.clone() {
+                let clip = state.panel_clip.clone();
                 drop(state);
-                return Ok(view.set_bounds(bounds)?);
+                view.set_bounds(bounds)?;
+                return clip.apply(&view);
             }
             Ok(())
+        }
+        pub fn set_panel_corner_radius(&self, radius: f32) -> Result<()> {
+            let clip = self.0.borrow().panel_clip.clone();
+            clip.radius.set(Some(radius));
+            self.call(move |view| {
+                clip.apply(view)
+                    .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))
+            })
         }
         pub fn set_visible(&self, visible: bool) -> Result<()> {
             let mut state = self.0.borrow_mut();
@@ -284,6 +341,64 @@ mod windows_view {
             serde_json::json!({"ready":true,"visible":unsafe{IsWindowVisible(container).as_bool()},
                 "parent":parent.map(|p|p.0 as isize),"bounds":view.bounds().ok().map(|b|format!("{b:?}"))})
         }
+        #[cfg(feature = "smoke")]
+        pub fn test_panel_clip_state(&self) -> Result<serde_json::Value> {
+            use windows::Win32::{
+                Foundation::{HWND, RECT},
+                Graphics::Gdi::{
+                    CreateRectRgn, CreateRoundRectRgn, DeleteObject, ERROR, EqualRgn, GetWindowRgn,
+                    PtInRegion,
+                },
+                UI::{HiDpi::GetDpiForWindow, WindowsAndMessaging::GetClientRect},
+            };
+            use wry::WebViewExtWindows;
+            let view = self
+                .0
+                .borrow()
+                .view
+                .clone()
+                .ok_or_else(|| anyhow!("View is not ready"))?;
+            unsafe {
+                let mut container = HWND::default();
+                view.controller().ParentWindow(&mut container)?;
+                let mut rect = RECT::default();
+                GetClientRect(container, &mut rect)?;
+                let scale = f64::from(GetDpiForWindow(container)) / 96.;
+                let region = CreateRectRgn(0, 0, 0, 0);
+                let clips = GetWindowRgn(container, region).0 != ERROR;
+                let corners = [
+                    (0, 0),
+                    (rect.right - 1, 0),
+                    (0, rect.bottom - 1),
+                    (rect.right - 1, rect.bottom - 1),
+                ]
+                .into_iter()
+                .enumerate()
+                .fold(0, |mask, (i, (x, y))| {
+                    mask | if clips && !PtInRegion(region, x, y).as_bool() {
+                        1 << i
+                    } else {
+                        0
+                    }
+                });
+                let center = PtInRegion(region, rect.right / 2, rect.bottom / 2).as_bool();
+                let radius = crate::render::PANEL_CORNER_RADIUS;
+                let diameter = (f64::from(radius) * 2. * scale).round() as i32;
+                let expected =
+                    CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, diameter, diameter);
+                let matches_radius = clips && EqualRgn(region, expected).as_bool();
+                let _ = DeleteObject(expected.into());
+                let _ = DeleteObject(region.into());
+                Ok(serde_json::json!({
+                    "radius": matches_radius.then_some(radius),
+                    "clips": clips && center,
+                    "corners": corners,
+                    "width": f64::from(rect.right) / scale,
+                    "height": f64::from(rect.bottom) / scale,
+                }))
+            }
+        }
+
         pub fn raise(&self) -> Result<()> {
             self.after_creations(|view| {
                 use windows::Win32::{

@@ -182,7 +182,6 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-windows-controls") {
         return crate::smoke_panels::check_windows_controls(view, cx).await;
     }
-    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-corners") {
         return crate::smoke_corners::run(view, cx).await;
     }

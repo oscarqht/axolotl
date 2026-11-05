@@ -81,7 +81,12 @@ pub(crate) async fn run(
         dialog_eval(view, "autoPictureInPicture.checked", cx).await? == true,
         "Automatic picture-in-picture default missing"
     );
-    dialog_eval(view, "autoPictureInPicture.click();true", cx).await?;
+    dialog_eval(
+        view,
+        "document.querySelector('#tab-media').click();autoPictureInPicture.click();true",
+        cx,
+    )
+    .await?;
     pause(cx).await;
     ensure!(
         view.update_in(cx, |app, _, _| !app
@@ -127,35 +132,25 @@ pub(crate) async fn run(
         dialog_eval(view, "homepage.value", cx).await? == "about:blank",
         "Incorrect homepage default"
     );
+    ensure!(dialog_eval(view, "document.querySelector('#tab-general').focus();document.querySelector('#tab-general').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));document.activeElement.id==='tab-privacy' && document.querySelector('#tab-privacy').getAttribute('aria-selected')==='true' && !document.querySelector('#panel-privacy').hidden && document.querySelector('#panel-general').hidden && document.querySelector('#panel-media').hidden", cx).await? == true, "Settings category keyboard navigation failed");
+    ensure!(dialog_eval(view, "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true}));document.activeElement.id==='tab-media' && !document.querySelector('#panel-media').hidden", cx).await? == true, "Settings End key failed");
+    ensure!(dialog_eval(view, "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));document.activeElement.id==='tab-general' && !document.querySelector('#panel-general').hidden", cx).await? == true, "Settings tabs did not wrap");
+    dialog_eval(view, "select.focus();true", cx).await?;
     for shift in [false, true] {
         let expected = if shift {
             vec![
+                "tab-general",
                 "close",
                 "make-default",
-                "sleep-minutes",
-                "auto-sleep",
-                "auto-picture-in-picture",
-                "clear-history",
-                "history-days",
-                "history-retention",
-                "update-filters",
-                "protection-enabled",
                 "homepage-url",
                 "search-engine",
             ]
         } else {
             vec![
                 "homepage-url",
-                "protection-enabled",
-                "update-filters",
-                "history-retention",
-                "history-days",
-                "clear-history",
-                "auto-picture-in-picture",
-                "auto-sleep",
-                "sleep-minutes",
                 "make-default",
                 "close",
+                "tab-general",
                 "search-engine",
             ]
         };

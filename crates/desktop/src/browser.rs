@@ -166,7 +166,7 @@ pub trait BrowserHost {
     fn reset_popup_transition(&self, tab: TabId) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn popup_animation_state(&self, tab: TabId) -> Result<serde_json::Value>;
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    #[cfg(feature = "smoke")]
     fn panel_clip_state(&self, tab: TabId) -> Result<serde_json::Value>;
 
     fn rekey(&self, from: TabId, to: TabId) -> Result<()>;
@@ -515,6 +515,8 @@ impl WryHost {
         // Build without a target URL: filtering must be installed before the
         // first network navigation, including redirects and restored tabs.
         let view = build(builder).context("Creating native browser child view")?;
+        #[cfg(target_os = "windows")]
+        view.set_panel_corner_radius(crate::render::PANEL_CORNER_RADIUS)?;
         #[cfg(target_os = "macos")]
         {
             use wry::WebViewExtMacOS;
@@ -951,6 +953,11 @@ impl BrowserHost for WryHost {
             "width": frame.size.width,
             "height": frame.size.height,
         }))
+    }
+
+    #[cfg(all(feature = "smoke", target_os = "windows"))]
+    fn panel_clip_state(&self, tab: TabId) -> Result<serde_json::Value> {
+        self.get(tab)?.test_panel_clip_state()
     }
 
     fn show(&self, tab: TabId, visible: bool) -> Result<()> {

@@ -5,16 +5,24 @@ use workspace_core::{Axis, PaneId, Rect};
 
 pub const TOP: f32 = 38.;
 pub const TAB_WIDTH: f32 = 204.;
+pub const HEADER_CONTROL_HEIGHT: f32 = 30.;
 pub const PANEL_CORNER_RADIUS: f32 = 10.;
 pub const PANEL_OUTER_GAP: f32 = 6.;
+// Windows centers its tabs in the caption row. Count the row's bottom
+// padding toward the visible gutter so it matches the panel dividers.
+const PANEL_TOP_GAP: f32 = if cfg!(target_os = "windows") {
+    PANEL_OUTER_GAP - (TOP - HEADER_CONTROL_HEIGHT) / 2.
+} else {
+    PANEL_OUTER_GAP
+};
 
 /// Shared by panel painting, native view placement, and docking hit targets.
 pub(crate) fn panel_content_rect(width: f32, height: f32) -> Rect {
     Rect::new(
         PANEL_OUTER_GAP,
-        TOP + PANEL_OUTER_GAP,
+        TOP + PANEL_TOP_GAP,
         (width - 2. * PANEL_OUTER_GAP).max(0.),
-        (height - TOP - 2. * PANEL_OUTER_GAP).max(0.),
+        (height - TOP - PANEL_TOP_GAP - PANEL_OUTER_GAP).max(0.),
     )
 }
 
@@ -223,7 +231,7 @@ impl BrowserApp {
         };
         div()
             .id((kind, id))
-            .h(px(30.))
+            .h(px(HEADER_CONTROL_HEIGHT))
             .w(px(if editing { 320. } else { TAB_WIDTH }))
             .flex_shrink_0()
             .flex()
@@ -784,7 +792,7 @@ impl Render for BrowserApp {
                         div()
                             .id("new-space")
                             .w(px(30.))
-                            .h(px(30.))
+                            .h(px(HEADER_CONTROL_HEIGHT))
                             .flex_shrink_0()
                             .flex()
                             .items_center()
@@ -830,7 +838,7 @@ impl Render for BrowserApp {
                             .relative()
                             .track_focus(&self.downloads_focus)
                             .w(px(30.))
-                            .h(px(30.))
+                            .h(px(HEADER_CONTROL_HEIGHT))
                             .flex_shrink_0()
                             .flex()
                             .items_center()
@@ -895,7 +903,7 @@ impl Render for BrowserApp {
                             .id("settings-button")
                             .track_focus(&self.settings_focus)
                             .w(px(30.))
-                            .h(px(30.))
+                            .h(px(HEADER_CONTROL_HEIGHT))
                             .flex_shrink_0()
                             .flex()
                             .items_center()

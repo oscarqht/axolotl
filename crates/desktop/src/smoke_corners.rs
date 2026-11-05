@@ -43,9 +43,14 @@ async fn check(
             .iter()
             .map(|pane| pane.bounds.y + pane.bounds.height)
             .fold(f32::NEG_INFINITY, f32::max);
+        let header_bottom = if cfg!(target_os = "windows") {
+            (crate::render::TOP + 30.) / 2.
+        } else {
+            crate::render::TOP
+        };
         ensure!(
             (left - 6.).abs() < 1.
-                && (top - crate::render::TOP - 6.).abs() < 1.
+                && (top - header_bottom - 6.).abs() < 1.
                 && (f32::from(viewport.width) - right - 6.).abs() < 1.
                 && (f32::from(viewport.height) - bottom - 6.).abs() < 1.,
             "{stage}: panel layout lost its six-point outer gutter"

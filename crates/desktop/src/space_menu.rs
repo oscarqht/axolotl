@@ -109,6 +109,10 @@ impl BrowserApp {
                 break;
             };
             match event["type"].as_str().unwrap_or("") {
+                "new-space" => {
+                    self.space_menu = None;
+                    self.command(crate::app::Command::NewSpace, window, cx);
+                }
                 "ready" => {
                     if let Some(view) = &menu.view {
                         self.report(view.focus().map_err(Into::into));

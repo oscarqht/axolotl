@@ -96,6 +96,8 @@ pub struct BrowserApp {
     pub pins: crate::pinned_tabs::PinnedUi,
     pub preferences: crate::preferences::Preferences,
     pub settings: Option<crate::settings::SettingsDialog>,
+    pub link_popup: Option<crate::link_popup::LinkPopup>,
+    pub(crate) promoted_focus: Option<TabId>,
     pub settings_focus: FocusHandle,
     saver: crate::persistence::SessionSaver,
     window_saver: crate::window_state::WindowSaver,
@@ -204,6 +206,8 @@ impl BrowserApp {
             model,
             preferences,
             settings: None,
+            link_popup: None,
+            promoted_focus: None,
             settings_focus: cx.focus_handle(),
             saver,
             window_saver,
@@ -376,6 +380,27 @@ impl BrowserApp {
         if self.settings.is_some() {
             return;
         }
+        if self.link_popup.is_some() {
+            match command {
+                Command::CloseTab => {
+                    self.close_link_popup(window, cx);
+                    return;
+                }
+                Command::Reload => {
+                    self.report(self.host.reload(crate::link_popup::POPUP_TAB));
+                    return;
+                }
+                Command::Back => {
+                    self.report(self.host.back(crate::link_popup::POPUP_TAB));
+                    return;
+                }
+                Command::Forward => {
+                    self.report(self.host.forward(crate::link_popup::POPUP_TAB));
+                    return;
+                }
+                _ => self.close_link_popup(window, cx),
+            }
+        }
         if !matches!(command, Command::Address) {
             if self.editing.is_some() {
                 self.focus.focus(window);
@@ -418,9 +443,11 @@ impl BrowserApp {
                 self.sync_address(window, cx);
             }
             Command::NewSpace => {
+                self.report(self.host.focus_parent(self.active_tab()));
+                self.focus.focus(window);
                 let name = format!("Space {}", self.model.spaces.len() + 1);
-                self.model.add_space(&name, &self.preferences.homepage_url);
-                self.sync_address(window, cx);
+                let space = self.model.add_space(&name, &self.preferences.homepage_url);
+                self.begin_edit(TabTarget::Space(space), window, cx);
             }
             Command::NextPane => {
                 let space = self.model.active_space();
@@ -468,6 +495,7 @@ impl BrowserApp {
         self.window_saver.tick(window, cx);
         self.poll_settings(window, cx);
         self.poll_pins(window, cx);
+        self.poll_link_popup(window, cx);
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
@@ -482,6 +510,15 @@ impl BrowserApp {
         let mut events = self.host.drain_events();
         self.poll_count = (self.poll_count + 1) % 12;
         if self.poll_count == 0 {
+            if let Some(popup) = &self.link_popup {
+                let tab = crate::link_popup::POPUP_TAB;
+                if let Ok(url) = self.host.current_url(tab)
+                    && popup.url != url
+                    && crate::browser::allowed_url(&url)
+                {
+                    events.push(BrowserEvent::Navigated(tab, url));
+                }
+            }
             for tab in std::iter::once(self.active_tab())
                 .chain(self.model.pinned_tabs.iter().map(|p| p.tab.id))
             {
@@ -497,6 +534,9 @@ impl BrowserApp {
             return;
         }
         for event in events {
+            if self.handle_popup_event(&event, window, cx) {
+                continue;
+            }
             match event {
                 BrowserEvent::Favicon(tab, encoded) => {
                     use base64::Engine;
@@ -556,6 +596,9 @@ impl BrowserApp {
                     if tab == self.active_tab() {
                         self.status.clear();
                     }
+                }
+                BrowserEvent::PopupLink(source, url) => {
+                    self.open_link_popup(source, url, window, cx)
                 }
                 BrowserEvent::OpenLink(source, url) => {
                     if self.model.pinned_tabs.iter().any(|p| p.tab.id == source) {
@@ -664,6 +707,7 @@ impl BrowserApp {
                         "settings" => Some(Command::Settings),
                         "address" => Some(Command::Address),
                         "new-tab" => Some(Command::NewTab),
+                        "new-space" => Some(Command::NewSpace),
                         "close-tab" => Some(Command::CloseTab),
                         "reload" => Some(Command::Reload),
                         _ => None,

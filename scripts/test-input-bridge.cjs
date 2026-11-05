@@ -99,3 +99,64 @@ test('settings shortcut uses the platform modifier and rejects untrusted or modi
     }
   }
 });
+
+
+test('Option+click opens the popup and resolves nested links while preserving Cmd+click', () => {
+  const b = bridge();
+  const e = b.click({ metaKey: false, altKey: true });
+  assert.equal(e.defaultPrevented, true);
+  assert.equal(e.stopped, true);
+  assert.deepEqual(b.messages, ['secret:popup-link:https://example.com/next?q=1#part']);
+  b.click();
+  assert.equal(b.messages[1], 'secret:open-link:https://example.com/next?q=1#part');
+  for (const opts of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true },
+    { button: 1 }, { isTrusted: false }, { defaultPrevented: true }]) {
+    const other = bridge();
+    assert.equal(other.click({ metaKey: false, altKey: true, ...opts }).stopped, undefined);
+    assert.deepEqual(other.messages, []);
+  }
+});
+
+test('popup links reject unsafe schemes and downloads, including target blank navigation', () => {
+  for (const href of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', 'about:config', 'mailto:x@example.com']) {
+    const b = bridge();
+    assert.equal(b.click({ metaKey: false, altKey: true }, href).defaultPrevented, false);
+    assert.deepEqual(b.messages, []);
+  }
+  const b = bridge();
+  assert.equal(b.click({ metaKey: false, altKey: true }, '/file', true).defaultPrevented, false);
+});
+
+function key(b, options = {}) {
+  const event = { isTrusted: true, key: 'T', metaKey: true, ctrlKey: false, altKey: false, shiftKey: true,
+    preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...options };
+  b.listeners.keydown(event);
+  return event;
+}
+
+test('Cmd+Shift+T creates a space and Cmd+T remains a tab shortcut', () => {
+  const b = bridge();
+  assert.equal(key(b).prevented, true);
+  assert.deepEqual(b.messages, ['secret:new-space']);
+  assert.equal(key(b, { key: 't', shiftKey: false }).prevented, true);
+  assert.deepEqual(b.messages, ['secret:new-space', 'secret:new-tab']);
+  for (const opts of [{ isTrusted: false }, { altKey: true }, { metaKey: false }, { ctrlKey: true },
+    { key: 'r' }, { metaKey: false, ctrlKey: true }]) {
+    const other = bridge();
+    assert.equal(key(other, opts).prevented, undefined);
+    assert.deepEqual(other.messages, []);
+  }
+  const windows = bridge(false);
+  key(windows, { metaKey: false, ctrlKey: true });
+  assert.deepEqual(windows.messages, ['secret:new-space']);
+});
+
+test('trusted Escape reaches the shell without swallowing ordinary page behavior', () => {
+  const b = bridge();
+  const e = key(b, { key: 'Escape', metaKey: false, shiftKey: false });
+  assert.equal(e.prevented, undefined);
+  assert.deepEqual(b.messages, ['secret:escape']);
+  key(b, { key: 'Escape', metaKey: false, shiftKey: false, isTrusted: false });
+  key(b, { key: 'Escape', metaKey: false, shiftKey: true });
+  assert.equal(b.messages.length, 1);
+});

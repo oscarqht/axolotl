@@ -604,6 +604,13 @@ document.addEventListener("keydown", (e) => {
     document.activeElement?.blur();
     expand(false);
   }
+  if (e.shiftKey && !e.altKey && e.key.toLowerCase() === "t" &&
+      (navigator.platform.includes("Mac") ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    send({ type: "new-space" });
+    return;
+  }
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
     if (e.key === "," && !(navigator.platform.includes("Mac") ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return;
     let type = { l: "edit", t: "new", w: "close", r: "reload", ",": "settings" }[

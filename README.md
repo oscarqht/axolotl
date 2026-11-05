@@ -83,7 +83,8 @@ machine running the executable. See the validation report below for tested scope
   Drag the empty area to the right of the space tabs to move the window;
   double-click it to maximize/restore on Windows. Resize from the window edges.
 - Space tabs show the focused page title, with an in-tab **×** and one trailing
-  **+** to create a space. Closing the final space is disabled. Double-click a
+  **+** or Cmd/Ctrl+Shift+T to create and activate a space at the configured
+  homepage, with its address input focused and selected. Closing the final space is disabled. Double-click a
   space title to edit its focused page address. Drag a space title to reorder
   spaces; the insertion line shows the drop position. Hold near either edge of
   the strip to scroll through overflow. Drop inside the strip to save the new
@@ -135,6 +136,13 @@ machine running the executable. See the validation report below for tested scope
   in the originating pane. Cmd+click (Ctrl+click on Windows) opens one tab
   immediately after the source tab in the same pane, without navigating the source.
 
+Option+click a web link on macOS to open a temporary preview centered across the
+whole app window, including split layouts. The preview shares the browsing session;
+its links navigate inside it, and another Option+click replaces its page. Close it
+with **×**, Escape, or a click outside. **Open in new tab** moves the live page,
+including its history and form state, into the originating pane. Previews are not
+restored after restarting.
+
 Open **Settings** with the header gear or Cmd/Ctrl+, to choose the search engine
 and homepage URL. The homepage is used for new tabs, new spaces, replacement tabs
 when the final tab is closed, and startup when there is no saved session. Existing
@@ -147,6 +155,8 @@ to apply. Preferences are saved separately from the workspace session.
 | Cmd/Ctrl+Q | Quit the app (Cmd+Q also works while native web content has focus) |
 | Cmd/Ctrl+L | Edit the focused page URL inline |
 | Cmd/Ctrl+T | New tab in the focused pane |
+| Cmd/Ctrl+Shift+T | New space using the homepage; focus its address input |
+| Option+click (macOS) | Open a link in a temporary window-centered preview |
 | Cmd/Ctrl+W | Close the focused tab |
 | Cmd/Ctrl+R | Reload the focused tab |
 | Alt+Left / Alt+Right | Back / forward (when delivered to the shell) |
@@ -217,6 +227,9 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-men
 
 # Title/icon persistence across separate native processes and legacy sessions
 python3 scripts/test-space-session.py target/debug/axolotl
+
+# Temporary link preview, promotion, split centering and resize
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-link-popup
 
 # Space order, measured insertion slots, edge scrolling and cancellation
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-drag

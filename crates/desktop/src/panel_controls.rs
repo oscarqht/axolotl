@@ -63,6 +63,7 @@ impl BrowserApp {
                             .unwrap_or_default();
                     }
                 }
+                "new-space" => self.command(Command::NewSpace, window, cx),
                 "settings" => self.open_settings(false, window, cx),
                 "pin" => self.pin_page(pane, tab, window, cx),
                 "protection" => {
@@ -169,7 +170,7 @@ impl BrowserApp {
     }
 
     pub fn prepare_views(&mut self, window: &mut Window, cx: &gpui::App) {
-        let ids: HashSet<_> = self
+        let mut ids: HashSet<_> = self
             .model
             .spaces
             .iter()
@@ -178,6 +179,9 @@ impl BrowserApp {
             .map(|t| t.id)
             .chain(self.model.pinned_tabs.iter().map(|p| p.tab.id))
             .collect();
+        if self.link_popup.is_some() {
+            ids.insert(crate::link_popup::POPUP_TAB);
+        }
         self.host.retain(&ids);
         self.notifications.retain(|id, _| ids.contains(id));
         self.favicons.retain(|id, _| ids.contains(id));
@@ -215,7 +219,7 @@ impl BrowserApp {
         }
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {
-            if !visible.iter().any(|(tab, _)| tab == id) {
+            if *id != crate::link_popup::POPUP_TAB && !visible.iter().any(|(tab, _)| tab == id) {
                 self.report(self.host.show(*id, false));
             }
         }
@@ -231,7 +235,7 @@ impl BrowserApp {
         let native_views: HashSet<_> = ids
             .iter()
             .copied()
-            .filter(|id| self.host.has_view(*id))
+            .filter(|id| *id != crate::link_popup::POPUP_TAB && self.host.has_view(*id))
             .collect();
         let expanded: HashSet<_> = self
             .bars
@@ -308,5 +312,9 @@ impl BrowserApp {
         self.prepare_pins(window, cx);
         self.prepare_space_menu(window, cx);
         self.prepare_settings(window, cx);
+        self.prepare_link_popup(window, cx);
+        if let Some(tab) = self.promoted_focus.take() {
+            self.report(self.host.focus(tab));
+        }
     }
 }

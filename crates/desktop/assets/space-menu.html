@@ -46,4 +46,10 @@ document.addEventListener('pointerdown',e=>{if(!menu.contains(e.target))send('di
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(!form.hidden&&e.key==='Enter'&&!e.isComposing&&e.target.tagName!=='BUTTON'){e.preventDefault();form.requestSubmit()}else if(form.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();button.focus()}else if(e.key==='Tab'){const items=[...menu.querySelectorAll('button,input')].filter(el=>el.getClientRects().length);const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
 document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('resize',place);place();button.focus();send('ready');
+document.addEventListener('keydown',event=>{
+  if(event.isTrusted && event.shiftKey && !event.altKey && event.key.toLowerCase()==='t' &&
+    (navigator.platform.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)){
+    event.preventDefault();event.stopImmediatePropagation();send('new-space');
+  }
+},true);
 </script>

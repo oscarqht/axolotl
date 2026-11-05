@@ -72,5 +72,11 @@ document.addEventListener('keydown',event=>{
 });
 document.addEventListener('focusin',event=>{if(!document.querySelector('#settings').contains(event.target))select.focus()});
 select.focus();send('ready');
+document.addEventListener('keydown',event=>{
+  if(event.isTrusted && event.shiftKey && !event.altKey && event.key.toLowerCase()==='t' &&
+    (navigator.platform.includes('Mac') ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)){
+    event.preventDefault();event.stopImmediatePropagation();send('new-space');
+  }
+},true);
 </script>
 </html>

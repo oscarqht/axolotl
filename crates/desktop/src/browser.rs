@@ -7,7 +7,11 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::mpsc::{self, Receiver, SyncSender},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, Receiver, SyncSender},
+    },
 };
 
 use anyhow::{Context as _, Result, bail};
@@ -53,6 +57,7 @@ pub enum BrowserEvent {
     Loaded(TabId),
     NewTab(TabId, String),
     OpenLink(TabId, String),
+    PopupLink(TabId, String),
     Shortcut(TabId, String),
     Gesture(TabId, f64, f64),
     /// Whether the page can navigate back/forward, from a context-menu probe.
@@ -80,6 +85,8 @@ pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click_at(&self, tab: TabId, x: f64, y: f64, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_option_click(&self, tab: TabId) -> Result<()>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()>;
     #[cfg(feature = "smoke")]
     fn evaluate(
@@ -95,6 +102,7 @@ pub trait BrowserHost {
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>>;
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
+    fn rekey(&self, from: TabId, to: TabId) -> Result<()>;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
     fn raise(&self, tab: TabId) -> Result<()>;
@@ -138,6 +146,7 @@ pub struct WryHost {
     protection_revisions: RefCell<HashMap<TabId, (u64, u64)>>,
     protection_notified: RefCell<String>,
     views: RefCell<HashMap<TabId, Rc<WebView>>>,
+    identities: RefCell<HashMap<TabId, Arc<AtomicU64>>>,
     events: Receiver<BrowserEvent>,
     sender: SyncSender<BrowserEvent>,
     visible: Rc<RefCell<HashSet<TabId>>>,
@@ -153,6 +162,7 @@ impl Default for WryHost {
             protection_revisions: RefCell::new(HashMap::new()),
             protection_notified: RefCell::new(String::new()),
             views: RefCell::new(HashMap::new()),
+            identities: RefCell::new(HashMap::new()),
             events,
             sender,
             visible: Rc::new(RefCell::new(HashSet::new())),
@@ -162,6 +172,39 @@ impl Default for WryHost {
 }
 
 impl WryHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn native_test_click(
+        &self,
+        tab: TabId,
+        x: f64,
+        y: f64,
+        flags: objc2_app_kit::NSEventModifierFlags,
+    ) -> Result<()> {
+        use objc2_app_kit::{NSEvent, NSEventType};
+        use objc2_foundation::NSPoint;
+        use wry::WebViewExtMacOS;
+        let view = self.get(tab)?;
+        let webview = view.webview();
+        let window = view.ns_window();
+        let point = NSPoint::new(
+            x,
+            if webview.isFlipped() {
+                y
+            } else {
+                webview.frame().size.height - y
+            },
+        );
+        let point = webview.convertPoint_toView(point, None);
+        for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
+            let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                kind, point, flags, 0., window.windowNumber(), None, 0, 1, 1.,
+            ).context("create native click event")?;
+            // NSWindow hit testing delivers a genuine WebKit input event, not a
+            // JavaScript dispatchEvent (which the bridge intentionally rejects).
+            window.sendEvent(&event);
+        }
+        Ok(())
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -253,35 +296,21 @@ impl BrowserHost for WryHost {
     }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click_at(&self, tab: TabId, x: f64, y: f64, modified: bool) -> Result<()> {
-        use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
-        use objc2_foundation::NSPoint;
-        use wry::WebViewExtMacOS;
-        let view = self.get(tab)?;
-        let webview = view.webview();
-        let window = view.ns_window();
-        let point = NSPoint::new(
+        use objc2_app_kit::NSEventModifierFlags;
+        self.native_test_click(
+            tab,
             x,
-            if webview.isFlipped() {
-                y
+            y,
+            if modified {
+                NSEventModifierFlags::Command
             } else {
-                webview.frame().size.height - y
+                NSEventModifierFlags::empty()
             },
-        );
-        let point = webview.convertPoint_toView(point, None);
-        let flags = if modified {
-            NSEventModifierFlags::Command
-        } else {
-            NSEventModifierFlags::empty()
-        };
-        for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
-            let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-                kind, point, flags, 0., window.windowNumber(), None, 0, 1, 1.,
-            ).context("create native click event")?;
-            // NSWindow hit testing delivers a genuine WebKit input event, not a
-            // JavaScript dispatchEvent (which the bridge intentionally rejects).
-            window.sendEvent(&event);
-        }
-        Ok(())
+        )
+    }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_option_click(&self, tab: TabId) -> Result<()> {
+        self.native_test_click(tab, 60., 50., objc2_app_kit::NSEventModifierFlags::Option)
     }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn set_test_appearance(&self, tab: TabId, dark: Option<bool>) -> Result<()> {
@@ -336,6 +365,11 @@ impl BrowserHost for WryHost {
             }
             return Ok(());
         }
+        let identity = Arc::new(AtomicU64::new(tab));
+        let ipc_identity = identity.clone();
+        let title_identity = identity.clone();
+        let load_identity = identity.clone();
+        let popup_identity = identity.clone();
         let ipc = self.sender.clone();
         let title = self.sender.clone();
         let load = self.sender.clone();
@@ -388,6 +422,7 @@ impl BrowserHost for WryHost {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
             })
             .with_ipc_handler(move |request| {
+                let tab = ipc_identity.load(Ordering::Relaxed);
                 // Notifications must also arrive from hidden tabs and spaces.
                 if request.body() == &format!("{nonce}:notification") {
                     let _ = ipc.try_send(BrowserEvent::Notification(tab));
@@ -411,6 +446,10 @@ impl BrowserHost for WryHost {
                     let _ = ipc.try_send(BrowserEvent::Gesture(tab, x, y));
                     return;
                 }
+                if let Some(url) = authenticated_popup_link(request.body(), &nonce) {
+                    let _ = ipc.try_send(BrowserEvent::PopupLink(tab, url.to_owned()));
+                    return;
+                }
                 if let Some(url) = authenticated_link(request.body(), &nonce) {
                     let _ = ipc.try_send(BrowserEvent::OpenLink(tab, url.to_owned()));
                     return;
@@ -420,8 +459,8 @@ impl BrowserHost for WryHost {
                 };
                 let event = match command {
                     "focus" => BrowserEvent::Focused(tab),
-                    "escape" | "settings" | "address" | "new-tab" | "close-tab" | "reload"
-                    | "swipe-next" | "swipe-prev" => {
+                    "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
+                    | "reload" | "swipe-next" | "swipe-prev" => {
                         BrowserEvent::Shortcut(tab, command.to_owned())
                     }
                     _ => return,
@@ -429,9 +468,11 @@ impl BrowserHost for WryHost {
                 let _ = ipc.try_send(event);
             })
             .with_document_title_changed_handler(move |value| {
+                let tab = title_identity.load(Ordering::Relaxed);
                 let _ = title.try_send(BrowserEvent::Title(tab, value));
             })
             .with_on_page_load_handler(move |event, url| {
+                let tab = load_identity.load(Ordering::Relaxed);
                 if matches!(event, PageLoadEvent::Finished) {
                     loaded.borrow_mut().insert(tab);
                 } else {
@@ -443,6 +484,7 @@ impl BrowserHost for WryHost {
                 }
             })
             .with_new_window_req_handler(move |url, _| {
+                let tab = popup_identity.load(Ordering::Relaxed);
                 if allowed_url(&url) {
                     let _ = popup.try_send(BrowserEvent::NewTab(tab, url));
                 }
@@ -490,11 +532,41 @@ impl BrowserHost for WryHost {
         view.focus_parent()
             .context("Returning focus from new browser view")?;
         self.views.borrow_mut().insert(tab, Rc::new(view));
+        self.identities.borrow_mut().insert(tab, identity);
         Ok(())
     }
 
     fn has_view(&self, tab: TabId) -> bool {
         self.views.borrow().contains_key(&tab)
+    }
+
+    fn rekey(&self, from: TabId, to: TabId) -> Result<()> {
+        let mut views = self.views.borrow_mut();
+        if views.contains_key(&to) {
+            bail!("Destination browser view already exists");
+        }
+        let view = views
+            .remove(&from)
+            .context("Source browser view is unavailable")?;
+        let identity = self
+            .identities
+            .borrow_mut()
+            .remove(&from)
+            .expect("view identity");
+        identity.store(to, Ordering::Relaxed);
+        self.identities.borrow_mut().insert(to, identity);
+        views.insert(to, view);
+        let revision = self.protection_revisions.borrow_mut().remove(&from);
+        if let Some(revision) = revision {
+            self.protection_revisions.borrow_mut().insert(to, revision);
+        }
+        for ids in [&self.visible, &self.loaded] {
+            let mut ids = ids.borrow_mut();
+            if ids.remove(&from) {
+                ids.insert(to);
+            }
+        }
+        Ok(())
     }
 
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()> {
@@ -577,10 +649,20 @@ impl BrowserHost for WryHost {
 
     fn probe_history(&self, tab: TabId) -> Result<()> {
         let sender = self.sender.clone();
+        let identity = self
+            .identities
+            .borrow()
+            .get(&tab)
+            .cloned()
+            .context("Browser view identity unavailable")?;
         self.get(tab)?
             .evaluate_script_with_callback(HISTORY_PROBE, move |value| {
                 let (back, forward) = parse_history(&value);
-                let _ = sender.try_send(BrowserEvent::History(tab, back, forward));
+                let _ = sender.try_send(BrowserEvent::History(
+                    identity.load(Ordering::Relaxed),
+                    back,
+                    forward,
+                ));
             })
             .context("Reading navigation history")
     }
@@ -602,6 +684,9 @@ impl BrowserHost for WryHost {
 
     fn retain(&self, tabs: &HashSet<TabId>) {
         self.protection_revisions
+            .borrow_mut()
+            .retain(|id, _| tabs.contains(id));
+        self.identities
             .borrow_mut()
             .retain(|id, _| tabs.contains(id));
         self.visible.borrow_mut().retain(|id| tabs.contains(id));
@@ -766,8 +851,8 @@ pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option
         return None;
     }
     match command {
-        "escape" | "focus" | "settings" | "address" | "new-tab" | "close-tab" | "reload"
-        | "swipe-next" | "swipe-prev" => Some(command),
+        "focus" | "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
+        | "reload" | "swipe-next" | "swipe-prev" => Some(command),
         _ => None,
     }
 }
@@ -779,6 +864,16 @@ pub(crate) fn authenticated_link<'a>(message: &'a str, nonce: &str) -> Option<&'
     }
     command
         .strip_prefix("open-link:")
+        .filter(|url| allowed_url(url))
+}
+
+pub(crate) fn authenticated_popup_link<'a>(message: &'a str, nonce: &str) -> Option<&'a str> {
+    let (token, command) = message.split_once(':')?;
+    if token != nonce {
+        return None;
+    }
+    command
+        .strip_prefix("popup-link:")
         .filter(|url| allowed_url(url))
 }
 

@@ -471,6 +471,9 @@ impl Render for BrowserApp {
             .on_action(cx.listener(|this, _: &crate::NewTab, window, cx| {
                 this.command(Command::NewTab, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &crate::NewSpace, window, cx| {
+                this.command(Command::NewSpace, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &crate::CloseTab, window, cx| {
                 this.command(Command::CloseTab, window, cx)
             }))
@@ -488,6 +491,7 @@ impl Render for BrowserApp {
             }))
             .on_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
+                    this.close_link_popup(window, cx);
                     this.close_settings(window, cx);
                     this.dismiss_pin(window, cx);
                     this.cancel_tab_drag(cx);

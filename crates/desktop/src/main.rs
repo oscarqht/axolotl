@@ -10,6 +10,7 @@ mod drag_preview;
 mod floating_bar;
 #[cfg(test)]
 mod gesture_tests;
+mod link_popup;
 #[cfg(target_os = "macos")]
 mod macos_keyboard;
 #[cfg(target_os = "macos")]
@@ -39,6 +40,8 @@ mod smoke_identity;
 mod smoke_input;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_keyboard;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_link_popup;
 #[cfg(feature = "smoke")]
 mod smoke_menu;
 #[cfg(feature = "smoke")]
@@ -69,7 +72,7 @@ use gpui_component::Root;
 actions!(
     axolotl,
     [
-        Quit, Address, NewTab, CloseTab, Reload, NextPane, Back, Forward, Settings
+        Quit, Address, NewTab, NewSpace, CloseTab, Reload, NextPane, Back, Forward, Settings
     ]
 );
 
@@ -95,6 +98,7 @@ fn main() {
             KeyBinding::new(&format!("{modifier}-q"), Quit, None),
             KeyBinding::new(&format!("{modifier}-l"), Address, None),
             KeyBinding::new(&format!("{modifier}-t"), NewTab, None),
+            KeyBinding::new(&format!("{modifier}-shift-t"), NewSpace, None),
             KeyBinding::new(&format!("{modifier}-w"), CloseTab, None),
             KeyBinding::new(&format!("{modifier}-r"), Reload, None),
             KeyBinding::new("f6", NextPane, None),

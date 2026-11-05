@@ -54,6 +54,41 @@ Run on 2026-11-05 in `bro-edit-space-emoji` on macOS.
 - Windows runtime and OS-specific emoji glyph availability were not checked on
   this Mac.
 
+# Space shortcut and temporary link preview validation
+
+Run on 2026-11-05 on macOS in `bro-space-shortcut-link-popup`.
+
+- `cargo test --workspace --all-features --locked`: 53 tests passed.
+- `node scripts/test-input-bridge.cjs`: 11 tests passed, including trusted
+  Option-click, safe destination/nonce checks, Cmd+Shift+T, Escape and unchanged
+  Cmd+click/Cmd+T routing.
+- Native `--smoke-test --smoke-link-popup` passed on actual WKWebViews in 18.671s.
+  Loopback fixtures and AppKit/NSWindow input verify Option-click and
+  `target=_blank` suppression, a unique shared session cookie, retained source
+  form state, singleton replacement and ordinary navigation inside the preview.
+  Geometry is measured across split panes and after a native window resize.
+  Native header promotion preserves the live document, form, back/forward history
+  and subsequent title callbacks in the originating pane. Outside click, Escape
+  and the close button dispose of the temporary page. Native Cmd+click retains
+  sibling insertion and source state; native Cmd+Shift+T from the popup uses the
+  homepage and retains address-input focus. Popup state stays outside snapshots.
+- The header test caught inactive-window first clicks being swallowed. The
+  backdrop now accepts first mouse, matching page views; the passing test keeps
+  its inactive-window click rather than activating the window first.
+- A separate ad hoc signed review app was operated through desktop automation.
+  OS Cmd+Shift+T from shell and webpage focus created spaces at the configured
+  homepage, and screenshots confirmed the selected address input. Option-click
+  displayed the native preview, source page, dim backdrop, title, close button
+  and promotion button, centered after resizing.
+
+The existing foreground GPUI chrome redraw problem remains: changes to the space
+strip sometimes appeared only after zooming/resizing the window. Desktop
+accessibility input also became intermittent (`noWindowsAvailable` and timeouts),
+so complete foreground navigation/dismissal acceptance is not claimed from that
+adapter. The AppKit regression above passed these native routes, using explicit
+frame draws in the existing smoke harness. This does not establish smooth
+foreground chrome presentation. Windows interaction remains untested.
+
 # Queued native tab split release
 
 Run on 2026-11-05 in `bro-fix-tab-split-drop` on macOS.

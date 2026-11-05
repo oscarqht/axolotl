@@ -102,3 +102,42 @@ fn history_probe_results_fail_closed() {
         assert_eq!(parse_history(bad), (false, false), "{bad}");
     }
 }
+
+#[test]
+fn popup_bridge_requires_nonce_and_safe_destination() {
+    use crate::browser::authenticated_popup_link;
+    for url in [
+        "https://example.com/a:b",
+        "http://localhost:8000/",
+        "about:blank",
+    ] {
+        assert_eq!(
+            authenticated_popup_link(&format!("secret:popup-link:{url}"), "secret"),
+            Some(url)
+        );
+    }
+    for message in [
+        "popup-link:https://example.com",
+        "wrong:popup-link:https://example.com",
+        "secret:open-link:https://example.com",
+        "secret:popup-link:file:///etc/passwd",
+        "secret:popup-link:javascript:alert(1)",
+        "secret:popup-link:data:text/html,x",
+        "secret:popup-link:about:config",
+        "secret:popup-link:",
+    ] {
+        assert_eq!(
+            authenticated_popup_link(message, "secret"),
+            None,
+            "{message}"
+        );
+    }
+    assert_eq!(
+        authenticated_command("secret:new-space", "secret"),
+        Some("new-space")
+    );
+    assert_eq!(
+        authenticated_command("secret:escape", "secret"),
+        Some("escape")
+    );
+}

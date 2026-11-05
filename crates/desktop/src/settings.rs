@@ -43,6 +43,7 @@ impl BrowserApp {
             return;
         }
         self.dismiss_pin(window, cx);
+        self.close_link_popup(window, cx);
         let previous_focus = window.focused(cx);
         self.cancel_edit(window, cx);
         self.cancel_tab_drag(cx);
@@ -136,6 +137,10 @@ impl BrowserApp {
                 break;
             }
             match event["type"].as_str().unwrap_or("") {
+                "new-space" => {
+                    self.close_settings(window, cx);
+                    self.command(crate::app::Command::NewSpace, window, cx);
+                }
                 "ready" => {
                     if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
                         self.report(view.focus().map_err(Into::into));

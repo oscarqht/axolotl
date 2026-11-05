@@ -180,6 +180,8 @@ supplies standard copy/paste actions to both web content and the inline URL inpu
 Cmd+Shift+C works with webpage or browser chrome focus and copies the live page
 URL, including query strings and fragments, without changing an unfinished
 address edit. Open pinned pages and temporary previews copy their own URL.
+A small black **URL copied** toast appears at that page's top-right for 1.6 seconds.
+It does not take focus or block clicks; repeated copies refresh it.
 
 Window size and position, zoom/maximized state, and macOS full-screen state are
 saved in `app.sqlite3` alongside the browsing session. Normal bounds survive

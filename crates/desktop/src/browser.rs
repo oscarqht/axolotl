@@ -170,6 +170,8 @@ pub trait BrowserHost {
     /// Ask the page whether history exists in each direction; answered by `BrowserEvent::History`.
     fn probe_history(&self, tab: TabId) -> Result<()>;
     fn current_url(&self, tab: TabId) -> Result<String>;
+    #[cfg(target_os = "macos")]
+    fn show_copy_url_toast(&self, tab: TabId) -> Result<()>;
     fn retain(&self, tabs: &HashSet<TabId>);
     fn drag_preview(
         &self,
@@ -981,6 +983,13 @@ impl BrowserHost for WryHost {
         }
         #[cfg(not(target_os = "macos"))]
         view.url().context("Reading browser URL")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn show_copy_url_toast(&self, tab: TabId) -> Result<()> {
+        self.get(tab)?
+            .evaluate_script(include_str!("../assets/copy-url-toast.js"))
+            .context("Showing URL copied toast")
     }
 
     fn retain(&self, tabs: &HashSet<TabId>) {

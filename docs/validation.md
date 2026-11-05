@@ -9,6 +9,18 @@ Copying keeps focus and drafts intact; no committed URL leaves the clipboard
 unchanged. Open pinned pages and temporary previews use their own URL; a preview
 that is already closing no longer takes precedence over the underlying tab.
 
+Successful copies now show a small black **URL copied** toast 16px from the
+copied page's top-right corner. It does not take focus or intercept clicks and
+removes itself after 1.6 seconds. Repeated copies replace the existing toast and
+restart its lifetime. Styling is isolated with a shadow root and inline styles
+so restrictive stylesheet policies do not suppress the feedback.
+
+- The updated `--smoke-copy-url` passed in 23.722s. It verifies visible toast
+  text, black/white styling, size and top-right geometry on regular tabs, pinned
+  pages and previews; a fixture with `style-src 'none'`; repeat/replacement and
+  automatic dismissal; and the existing clipboard/focus/navigation checks.
+  A native WKWebView snapshot was saved and visually inspected.
+
 - `--smoke-copy-url` passed in 14.267s using real WKWebViews and queued AppKit
   events. It checks document and SPA navigation, switching tabs and returning,
   webpage and chrome focus, GPUI and native address drafts, page shortcut

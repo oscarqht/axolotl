@@ -25,6 +25,9 @@ impl BrowserApp {
                     // With no committed document, leave the clipboard untouched.
                     if let Ok(url) = app.host.current_url(tab) {
                         cx.write_to_clipboard(ClipboardItem::new_string(url));
+                        if let Err(error) = app.host.show_copy_url_toast(tab) {
+                            eprintln!("URL copy toast: {error:#}");
+                        }
                     }
                 });
             });

@@ -22,7 +22,7 @@ fn fixture_url() -> Result<String> {
             let body = "<!doctype html><title>Copy URL fixture</title><input value='selected webpage text'><script>window.copyUrlKeys=0;addEventListener('keydown',e=>{if(e.metaKey&&e.shiftKey&&e.key.toLowerCase()==='c'){copyUrlKeys++;e.preventDefault();}},true);</script>";
             let _ = write!(
                 stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'none'\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
         }
@@ -43,10 +43,37 @@ async fn copy_and_check(
         if cx.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))?
             == Some(expected.to_string())
         {
+            check_toast(host, tab, cx).await?;
             return Ok(());
         }
     }
     anyhow::bail!("Cmd+Shift+C did not copy {expected} for tab {tab}")
+}
+
+async fn check_toast(host: &Host, tab: TabId, cx: &mut AsyncWindowContext) -> Result<()> {
+    let valid = eval(
+        host,
+        tab,
+        r#"(() => {
+        const t = document.getElementById('axolotl-copy-url-toast');
+        if (!t) return false;
+        const r = t.getBoundingClientRect(), s = getComputedStyle(t);
+        return t.shadowRoot.textContent === 'URL copied' &&
+            document.querySelectorAll('#axolotl-copy-url-toast').length === 1 &&
+            t.getAttribute('role') === 'status' && s.backgroundColor === 'rgb(17, 17, 17)' &&
+            s.color === 'rgb(255, 255, 255)' && s.pointerEvents === 'none' &&
+            s.position === 'fixed' && Math.abs(r.top - 16) < 1 &&
+            Math.abs(innerWidth - r.right - 16) < 1 &&
+            r.width > 50 && r.width < 160 && r.height > 20 && r.height < 50;
+    })()"#,
+        cx,
+    )
+    .await?;
+    ensure!(
+        valid == true,
+        "Missing or misplaced black URL copied toast in tab {tab}"
+    );
+    Ok(())
 }
 
 pub async fn run(
@@ -76,6 +103,65 @@ async fn checks(
     ensure!(
         eval(&host, first, "copyUrlKeys", cx).await? == 0,
         "Reserved URL shortcut reached the webpage"
+    );
+    if let Ok(path) = std::env::var("AXOLOTL_SMOKE_TOAST_SNAPSHOT") {
+        host.save_test_snapshot(first, &path)?;
+        for _ in 0..10 {
+            pause(cx).await;
+            if std::path::Path::new(&path).is_file() {
+                break;
+            }
+        }
+        ensure!(
+            std::path::Path::new(&path).is_file(),
+            "Toast snapshot was not saved"
+        );
+    }
+    // Re-copying refreshes one toast; the first timeout cannot remove the new one.
+    copy_and_check(&host, first, &initial, cx).await?;
+    eval(
+        &host,
+        first,
+        "window.oldCopyToast=document.getElementById('axolotl-copy-url-toast');true",
+        cx,
+    )
+    .await?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    copy_and_check(&host, first, &initial, cx).await?;
+    ensure!(
+        eval(&host, first, "!oldCopyToast.isConnected", cx).await? == true,
+        "Repeated copies stacked toasts"
+    );
+    for _ in 0..4 {
+        pause(cx).await;
+    }
+    check_toast(&host, first, cx).await?;
+    for _ in 0..20 {
+        pause(cx).await;
+        if eval(
+            &host,
+            first,
+            "!document.getElementById('axolotl-copy-url-toast')",
+            cx,
+        )
+        .await?
+            == true
+        {
+            break;
+        }
+    }
+    ensure!(
+        eval(
+            &host,
+            first,
+            "!document.getElementById('axolotl-copy-url-toast')",
+            cx
+        )
+        .await?
+            == true,
+        "Copy toast did not dismiss automatically"
     );
 
     // A real new document, followed by SPA navigation, must each copy the live URL.
@@ -249,5 +335,6 @@ async fn checks(
         "URL copy reserves the shortcut before page handlers and preserves focus/address drafts",
         "Chrome action and native address focus copy current URL; ordinary Cmd+C copies selected page text",
         "Pinned pages and temporary previews copy their own current URL",
+        "Black success toast appears at the copied page's top-right, works under strict CSP, refreshes on repeat and dismisses automatically",
     ])
 }

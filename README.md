@@ -33,6 +33,10 @@ Website passkeys use WKWebView and the macOS credential provider. Choose
 This requires Apple-approved signing and provisioning; the default ad-hoc build
 reports the missing entitlement. See [macOS passkey setup and testing](docs/passkeys-macos.md).
 
+Website pages use a Safari-compatible identity based on the installed Safari
+version to avoid unsupported-browser warnings and legacy site layouts. See
+[macOS browser compatibility and validation](docs/browser-compatibility-macos.md).
+
 ### Windows (x64)
 
 Install Rust stable with the MSVC toolchain, Visual Studio Build Tools with
@@ -179,6 +183,9 @@ exits. It requires a GUI session and HTTPS access to example.com:
 
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
+
+# macOS native HTTP/JavaScript browser identity regression (no network needed)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-identity
 
 # Focused native check for page notifications and unread badges (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications

@@ -1,5 +1,7 @@
 mod app;
 mod browser;
+#[cfg(target_os = "macos")]
+mod browser_identity;
 #[cfg(test)]
 mod browser_tests;
 mod chrome_theme;
@@ -26,6 +28,8 @@ mod settings;
 mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_input;
 #[cfg(all(feature = "smoke", target_os = "macos"))]

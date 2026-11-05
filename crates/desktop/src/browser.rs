@@ -363,6 +363,14 @@ impl BrowserHost for WryHost {
             // Download management belongs to a later browser milestone. Deny
             // here rather than writing files without a visible download flow.
             .with_download_started_handler(|_, _| false);
+        // Set the native UA before the first request, so HTTP and JavaScript
+        // detection agree on initial loads, redirects, frames and new tabs.
+        #[cfg(target_os = "macos")]
+        let builder = if let Some(agent) = crate::browser_identity::user_agent() {
+            builder.with_user_agent(agent)
+        } else {
+            builder
+        };
         let builder = if url == "about:blank" {
             builder.with_html(include_str!("../assets/start.html"))
         } else {

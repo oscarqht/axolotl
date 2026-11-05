@@ -179,6 +179,10 @@ async fn run(
         return crate::smoke_keyboard::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-browser-identity") {
+        return crate::smoke_identity::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-input") {
         return crate::smoke_input::run(view, cx).await;
     }

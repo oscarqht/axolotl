@@ -92,6 +92,7 @@ impl BrowserApp {
         self.close_space_menu(cx);
         self.close_settings(window, cx);
         if !closing {
+            self.wake_tab(id);
             self.pins.open = Some(id);
             self.pins.focus_page = true;
             self.notifications.remove(&id);
@@ -172,7 +173,8 @@ impl BrowserApp {
                 "rect": rect.map(|r| json!({"x":r.x,"y":r.y-crate::render::TOP,"width":r.width,"height":r.height})),
                 "menu": self.pins.menu.is_some(),
                 "unpin": self.pins.menu.flatten(),
-                "pins": self.model.pinned_tabs.iter().map(|p| json!({"id":p.tab.id,"title":p.tab.display_title(),"url":p.tab.url})).collect::<Vec<_>>()
+                "keepAlive": self.pins.menu.flatten().is_some_and(|id| self.sleep.keep_alive(id)),
+                "pins": self.model.pinned_tabs.iter().map(|p| json!({"id":p.tab.id,"title":p.tab.display_title(),"url":p.tab.url,"sleeping":self.sleep.is_sleeping(p.tab.id)})).collect::<Vec<_>>()
             }).to_string();
             // Also push on ready: initialization can finish after the first evaluation.
             if state != self.pins.state {
@@ -216,6 +218,18 @@ impl BrowserApp {
                         }
                     }
                 }
+                "sleep-hover" => {
+                    let id = event["id"].as_u64().filter(|_| event["value"] == true);
+                    self.hover_sleep(
+                        id,
+                        point(
+                            px(event["x"].as_f64().unwrap_or(0.) as f32),
+                            px(event["y"].as_f64().unwrap_or(0.) as f32 + crate::render::TOP),
+                        ),
+                        window,
+                        cx,
+                    );
+                }
                 "dismiss" => self.dismiss_pin(window, cx),
                 "open" => {
                     if let Some(id) = event["id"].as_u64() {
@@ -225,6 +239,18 @@ impl BrowserApp {
                 "context" => {
                     if let Some(id) = event["id"].as_u64() {
                         self.pins.menu = Some(Some(id));
+                        cx.notify();
+                    }
+                }
+                "sleep" => {
+                    if let Some(id) = self.pins.menu.flatten() {
+                        self.dismiss_pin(window, cx);
+                        self.sleep_tab(id, window, cx);
+                    }
+                }
+                "keep-alive" => {
+                    if let Some(id) = self.pins.menu.flatten() {
+                        self.toggle_keep_alive(id);
                         cx.notify();
                     }
                 }

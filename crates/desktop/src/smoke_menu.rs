@@ -62,17 +62,20 @@ pub(crate) async fn run(
                     "Forward",
                     "Refresh",
                     "Set title…",
+                    "Sleep Tab",
+                    "Keep Alive",
                     "Pin to header",
                     "Close"
                 ])
-            && menu["dividers"] == 3
+            && menu["dividers"] == 4
             && menu["top"].as_f64().is_some_and(|t| t >= 0.)
             && menu["right"].as_f64() <= menu["viewport"].as_f64(),
         "Tab context menu has wrong structure or is clipped: {menu}"
     );
     // The lazily-created tab has no page history or view to act on.
     ensure!(
-        menu["disabled"] == serde_json::json!([true, true, true, false, false]),
+        menu["disabled"]
+            == serde_json::json!([true, true, true, false, false, false, false, false]),
         "Back/Forward/Refresh must be disabled without history: {menu}"
     );
     view.update_in(cx, |app, _, _| {

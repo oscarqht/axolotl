@@ -226,7 +226,7 @@ pub async fn run(
     pause(cx).await;
     popup_action(
         view,
-        "document.querySelector('#menu button').click();true",
+        "[...document.querySelectorAll('#menu button')].find(b=>b.textContent==='Unpin to focused pane').click();true",
         cx,
     )
     .await?;

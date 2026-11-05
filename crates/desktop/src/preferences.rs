@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use workspace_core::{NavigationError, SearchEngine, normalize_url, write_atomic};
 
 pub struct Preferences {
+    pub auto_sleep: bool,
+    pub sleep_minutes: u64,
     pub search_engine: SearchEngine,
     pub homepage_url: String,
     pub history_retention_days: Option<u32>,
@@ -21,6 +23,11 @@ impl Preferences {
             .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
             .unwrap_or_default();
         Self {
+            auto_sleep: value["auto_sleep"].as_bool().unwrap_or(true),
+            sleep_minutes: value["sleep_minutes"]
+                .as_u64()
+                .filter(|n| *n >= 1)
+                .unwrap_or(30),
             search_engine: value["search_engine"]
                 .as_str()
                 .and_then(SearchEngine::from_id)
@@ -71,11 +78,24 @@ impl Preferences {
         self.save()
     }
 
+    pub fn set_sleep(&mut self, enabled: bool, minutes: u64) -> std::io::Result<()> {
+        if minutes == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Use at least one whole minute",
+            ));
+        }
+        self.auto_sleep = enabled;
+        self.sleep_minutes = minutes;
+        self.save()
+    }
     fn save(&self) -> std::io::Result<()> {
         let Some(path) = &self.path else {
             return Ok(());
         };
         let json = serde_json::json!({
+            "auto_sleep": self.auto_sleep,
+            "sleep_minutes": self.sleep_minutes,
             "search_engine": self.search_engine.id(),
             "homepage_url": self.homepage_url,
             "history_retention_days": self.history_retention_days,
@@ -234,6 +254,37 @@ mod tests {
                 Preferences::load(Some(path.clone())).history_retention_days,
                 Some(30)
             );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn sleep_preferences_defaults_validation_and_round_trip() {
+        let dir =
+            std::env::temp_dir().join(format!("axolotl-sleep-prefs-{}", uuid::Uuid::new_v4()));
+        let path = dir.join("settings.json");
+        let mut prefs = Preferences::load(Some(path.clone()));
+        assert!(prefs.auto_sleep);
+        assert_eq!(prefs.sleep_minutes, 30);
+        prefs.set_sleep(false, 1).unwrap();
+        let restored = Preferences::load(Some(path.clone()));
+        assert!(!restored.auto_sleep);
+        assert_eq!(restored.sleep_minutes, 1);
+        assert!(prefs.set_sleep(true, 0).is_err());
+        assert!(!prefs.auto_sleep);
+        assert_eq!(prefs.sleep_minutes, 1);
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("30"),
+        ] {
+            std::fs::write(
+                &path,
+                serde_json::json!({"sleep_minutes":value}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(Preferences::load(Some(path.clone())).sleep_minutes, 30);
         }
         std::fs::remove_dir_all(dir).unwrap();
     }

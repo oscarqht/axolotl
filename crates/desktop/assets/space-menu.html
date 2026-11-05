@@ -10,6 +10,7 @@ button{padding:8px 12px;text-align:left;border:0;border-radius:4px;background:tr
 #picker{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}.picker-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.picker-heading label{margin:0}#clear{padding:4px 8px}#emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(32px,1fr));max-height:180px;overflow:auto;margin-top:8px;gap:2px}#emojis button{padding:4px 0;height:34px;text-align:center;font-size:22px}#emojis button[aria-pressed=true]{background:var(--hover)}#empty{padding:10px 0;margin:0;opacity:.7}[hidden]{display:none!important}
 </style>
 <div id="menu" role="menu" aria-label="Space tab">
+<button id="sleep-space" role="menuitem">Sleep Space</button>
 <button id="edit-space" role="menuitem">Edit space</button>
 <form hidden>
 <h2>Edit space</h2><label for="title">Space title</label>
@@ -37,13 +38,14 @@ function renderEmojis(){
  emojis.replaceChildren(...results.map(([emoji,name])=>{const b=document.createElement('button');b.type='button';b.textContent=emoji;b.title=name;b.setAttribute('aria-label',name);b.setAttribute('aria-pressed',String(icon===emoji));b.onclick=()=>{icon=emoji;updateIcon();closePicker()};return b}));
  document.querySelector('#empty').hidden=results.length>0;emojis.scrollTop=0;place();
 }
-button.onclick=()=>{button.hidden=true;form.hidden=false;menu.classList.add('editing');menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Edit space');input.value=state.title;input.placeholder=state.placeholder;updateIcon();place();input.focus();input.select()};
+document.querySelector("#sleep-space").onclick=()=>send("sleep");
+button.onclick=()=>{document.querySelector("#sleep-space").hidden=true;button.hidden=true;form.hidden=false;menu.classList.add('editing');menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Edit space');input.value=state.title;input.placeholder=state.placeholder;updateIcon();place();input.focus();input.select()};
 iconButton.onclick=()=>{if(!picker.hidden){closePicker();return}picker.hidden=false;iconButton.setAttribute('aria-expanded','true');search.value='';renderEmojis();search.focus()};
 search.oninput=renderEmojis;
 document.querySelector('#clear').onclick=()=>{icon=null;updateIcon();closePicker()};
 form.onsubmit=e=>{e.preventDefault();send('save',input.value)};
 document.addEventListener('pointerdown',e=>{if(!menu.contains(e.target))send('dismiss')});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(!form.hidden&&e.key==='Enter'&&!e.isComposing&&e.target.tagName!=='BUTTON'){e.preventDefault();form.requestSubmit()}else if(form.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();button.focus()}else if(e.key==='Tab'){const items=[...menu.querySelectorAll('button,input')].filter(el=>el.getClientRects().length);const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(!form.hidden&&e.key==='Enter'&&!e.isComposing&&e.target.tagName!=='BUTTON'){e.preventDefault();form.requestSubmit()}else if(form.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();const items=[...menu.querySelectorAll(':scope > button')].filter(el=>!el.hidden);const i=items.indexOf(document.activeElement);items[(i+(e.key==='ArrowUp'?-1:1)+items.length)%items.length].focus()}else if(e.key==='Tab'){const items=[...menu.querySelectorAll('button,input')].filter(el=>el.getClientRects().length);const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
 document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('resize',place);place();button.focus();send('ready');
 document.addEventListener('keydown',event=>{

@@ -41,6 +41,9 @@ input{width:100%;padding:8px}.field{margin-top:22px}
 <div id="history-confirm" hidden><p>Clear all browsing history? Cookies, login sessions, tabs, and Back/Forward will be kept.</p><button id="confirm-clear" style="width:auto;height:auto;font-size:13px;padding:8px">Clear history</button> <button id="cancel-clear" style="width:auto;height:auto;font-size:13px;padding:8px">Cancel</button></div>
 <p id="history-error" role="status" hidden></p>
 </div>
+<div class="field"><label><input id="auto-sleep" type="checkbox" style="width:auto"> Automatically sleep hidden tabs</label>
+<label for="sleep-minutes">Inactive timeout (minutes)</label><input id="sleep-minutes" type="number" min="1" step="1" required>
+<p id="sleep-error" role="alert" hidden></p><p>Sleeping unloads the page. Click to reload it. Unsaved page state may be lost. Keep Alive protects tabs from automatic sleep and Sleep Space.</p></div>
 </section>
 <script>
 const select=document.querySelector('select'), closeButton=document.querySelector('#close');
@@ -56,6 +59,12 @@ window.protectionState=state=>{
 protectionState(window.settingsState.protection);
 document.querySelector('#protection-enabled').onchange=event=>send('protection',event.target.checked);
 document.querySelector('#update-filters').onclick=()=>send('update-filters');
+const autoSleep=document.querySelector('#auto-sleep'), sleepMinutes=document.querySelector('#sleep-minutes');
+autoSleep.checked=window.settingsState.autoSleep;sleepMinutes.value=window.settingsState.sleepMinutes;
+let appliedMinutes=window.settingsState.sleepMinutes;
+const sendSleep=()=>window.ipc.postMessage(JSON.stringify({type:'sleep',enabled:autoSleep.checked,minutes:appliedMinutes}));
+const applySleep=()=>{if(sleepMinutes.reportValidity()){appliedMinutes=Number(sleepMinutes.value);sendSleep()}};
+autoSleep.onchange=()=>{if(!autoSleep.checked&&!sleepMinutes.checkValidity())sendSleep();else applySleep()};sleepMinutes.onchange=applySleep;
 select.value=window.settingsState.engine;
 select.onchange=()=>send('engine',select.value);
 homepage.value=window.settingsState.homepage;

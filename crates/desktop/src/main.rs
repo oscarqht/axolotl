@@ -32,6 +32,7 @@ mod protection_native;
 mod protection_script;
 mod render;
 mod settings;
+mod sleep;
 #[cfg(feature = "smoke")]
 mod smoke;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -58,6 +59,8 @@ mod smoke_pins;
 mod smoke_protection;
 #[cfg(feature = "smoke")]
 mod smoke_settings;
+#[cfg(feature = "smoke")]
+mod smoke_sleep;
 #[cfg(feature = "smoke")]
 mod smoke_space_drag;
 #[cfg(feature = "smoke")]
@@ -179,7 +182,9 @@ fn main() {
                 #[cfg(feature = "smoke")]
                 smoke_space_menu::session_probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
-                if std::env::args().any(|arg| arg == "--smoke-test") {
+                if std::env::args()
+                    .any(|arg| arg == "--smoke-test" || arg == "--smoke-sleep-session")
+                {
                     smoke::start(&app, window, cx);
                 }
                 cx.new(|cx| Root::new(app, window, cx))

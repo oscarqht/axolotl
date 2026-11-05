@@ -11,6 +11,7 @@ use wry::{NewWindowResponse, WebViewBuilder};
 
 pub struct SpaceMenu {
     pub space: SpaceId,
+    pub(crate) needs_raise: bool,
     position: Point<Pixels>,
     view: Option<NativeWebView>,
     events: Option<Receiver<Value>>,
@@ -32,6 +33,7 @@ impl BrowserApp {
         self.cancel_tab_drag(cx);
         self.space_menu = Some(SpaceMenu {
             space,
+            needs_raise: false,
             position,
             view: None,
             events: None,
@@ -82,6 +84,10 @@ impl BrowserApp {
                 menu.events = Some(events);
                 menu.view = Some(view);
             }
+            if menu.needs_raise {
+                crate::native_webview::raise(menu.view.as_ref().unwrap())?;
+                menu.needs_raise = false;
+            }
             menu.view
                 .as_ref()
                 .unwrap()
@@ -117,6 +123,26 @@ impl BrowserApp {
                     if let Some(view) = &menu.view {
                         self.report(view.focus().map_err(Into::into));
                     }
+                }
+                "sleep" => {
+                    let space = menu.space;
+                    self.space_menu = None;
+                    let ids: Vec<_> = self
+                        .model
+                        .spaces
+                        .iter()
+                        .find(|s| s.id == space)
+                        .into_iter()
+                        .flat_map(|s| &s.panes)
+                        .flat_map(|p| &p.tabs)
+                        .map(|t| t.id)
+                        .collect();
+                    for id in ids {
+                        if !self.sleep.keep_alive(id) {
+                            self.sleep_tab(id, window, cx);
+                        }
+                    }
+                    cx.notify();
                 }
                 "save" | "dismiss" => {
                     if event["type"] == "save"

@@ -88,3 +88,48 @@ It covers redirects/subframes/failed loads, repeat visits, late titles, both
 suggestion inputs, keyboard and mouse selection handlers, retention changes and
 periodic pruning, confirmed clearing, and retained cookies/page/navigation state.
 Append `--smoke-hold-history` to pause at both suggestion surfaces for visual review.
+
+## Tab and space sleep
+
+The tab context menu offers **Sleep Tab** and a checked **Keep Alive** choice
+(including pinned tabs). The space context menu offers **Sleep Space**. Keep
+Alive protects against automatic sleep and Sleep Space; explicit Sleep Tab
+still sleeps that tab once, preserving Keep Alive.
+
+Settings enables automatic sleep by default after **30 whole minutes** hidden.
+The enable checkbox and timeout (at least one whole minute) apply immediately.
+All visible split panes stay awake. Tabs in inactive spaces are hidden. Turning
+off automatic sleep does not wake manual sleepers. Pages are checked before
+sleeping for playing media, live capture streams, active Web Audio contexts,
+peer connections, and trusted form edits. Cross-origin or uninspectable frames
+are conservatively exempt. Custom editors and page overrides may escape these
+best-effort checks; manual sleep remains available.
+
+Sleep captures a small PNG before dropping the native page. A faded snapshot
+(or a title placeholder if capture fails) stays in the pane until clicked.
+Selecting/focusing the tab recreates it at its saved URL; unsaved live state
+may be lost. Returning to a space wakes only its visible tabs. Sleeping tab
+titles show 💤 and exactly 50% text opacity. Hover previews use the cached
+images without creating or waking page views; space previews include sleeping
+visible panes.
+
+Sleep/Keep Alive metadata lives in `sleep/state.json`, with local `sleep/<tab-id>.png`
+caches alongside the session and settings. Waking or closing tabs removes their
+cached images. Sleep state and previews survive restarts; restored visible
+sleepers wait for user activation too.
+
+Focused checks (use a GUI desktop for native tests):
+
+```sh
+node scripts/test-sleep-activity.cjs
+cargo test --workspace --locked
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-sleep
+python3 scripts/test-sleep-session.py target/debug/axolotl
+```
+
+The sleep smoke test ages hidden timestamps to exercise the automatic deadline
+without a 30-minute wait. `--sleep-inspect` can be added to hold a sleeping pane
+for an OS click (up to 60 seconds). The restart script supplies a temporary data
+directory; do not run `--smoke-sleep-session` directly against a real profile.
+macOS native checks do not establish Windows runtime behavior; run them again
+on a Windows desktop using WebView2.

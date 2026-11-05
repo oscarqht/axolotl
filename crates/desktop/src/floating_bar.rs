@@ -11,7 +11,7 @@ use workspace_core::Rect;
 use wry::{NewWindowResponse, WebViewBuilder};
 
 /// Room above the bar for six menu items, three dividers, padding and gap.
-pub const MENU_HEIGHT: f32 = 224.;
+pub const MENU_HEIGHT: f32 = 304.;
 pub const MENU_WIDTH: f32 = 200.;
 
 pub struct FloatingBar {

@@ -64,6 +64,21 @@ impl BrowserApp {
                     }
                 }
                 "new-space" => self.command(Command::NewSpace, window, cx),
+                "sleep-hover" => {
+                    self.hover_sleep(
+                        event["value"].as_bool().unwrap_or(false).then_some(tab),
+                        position.unwrap_or_default(),
+                        window,
+                        cx,
+                    );
+                }
+                "sleep" => {
+                    self.sleep_tab(tab, window, cx);
+                }
+                "keep-alive" => {
+                    self.toggle_keep_alive(tab);
+                    cx.notify();
+                }
                 "settings" => self.open_settings(false, window, cx),
                 "pin" => self.pin_page(pane, tab, window, cx),
                 "protection" => {
@@ -209,9 +224,17 @@ impl BrowserApp {
             ids.insert(crate::link_popup::POPUP_TAB);
         }
         self.host.retain(&ids);
+        self.sleep.retain(&ids);
         self.notifications.retain(|id, _| ids.contains(id));
         self.favicons.retain(|id, _| ids.contains(id));
-        for pin in self.model.pinned_tabs.clone() {
+        for pin in self
+            .model
+            .pinned_tabs
+            .clone()
+            .into_iter()
+            .filter(|p| !self.sleep.is_sleeping(p.tab.id))
+            .collect::<Vec<_>>()
+        {
             self.report(self.host.ensure(pin.tab.id, &pin.tab.url, window, cx));
         }
         self.visit_ids.retain(|id, _| ids.contains(id));
@@ -245,6 +268,7 @@ impl BrowserApp {
         {
             visible.push((id, tab.url.clone()));
         }
+        self.wake_newly_visible(visible.iter().map(|(id, _)| *id).collect());
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {
             if *id != crate::link_popup::POPUP_TAB && !visible.iter().any(|(tab, _)| tab == id) {
@@ -252,6 +276,9 @@ impl BrowserApp {
             }
         }
         for (id, url) in visible {
+            if self.sleep.is_sleeping(id) {
+                continue;
+            }
             let result = self.host.ensure(id, &url, window, cx);
             self.report(result);
             if self.host.has_view(id) {
@@ -271,13 +298,17 @@ impl BrowserApp {
             .filter(|(_, bar)| bar.expanded)
             .map(|(id, _)| *id)
             .collect();
-        if native_views != self.chrome_views && !self.tab_drag_active() {
-            self.space_menu = None;
+        if !native_views.is_subset(&self.chrome_views) && !self.tab_drag_active() {
+            if let Some(menu) = &mut self.space_menu {
+                menu.needs_raise = true;
+            }
             self.history_popup = None;
             if let Some(dialog) = &mut self.settings {
                 dialog.view = None;
             }
             self.bars.clear();
+        }
+        if !self.tab_drag_active() {
             self.chrome_views = native_views;
         }
         let active_panes: HashSet<_> = geometry.panes.iter().map(|p| p.id).collect();
@@ -311,6 +342,8 @@ impl BrowserApp {
                         "protectionGlobal": self.host.protection().borrow().policy.enabled,
                         "protectionReady": self.host.protection().borrow().native.ready(),
                         "protectionSite": crate::protection::host(&t.url),
+                        "sleeping": self.sleep.is_sleeping(t.id),
+                        "keepAlive": self.sleep.keep_alive(t.id),
                         "notifications": self.notifications.get(&t.id).copied().unwrap_or_default(),
                         "title": t.display_title(),
                         "customTitle": t.custom_title,
@@ -346,5 +379,6 @@ impl BrowserApp {
         if let Some(tab) = self.pending_page_focus.take() {
             self.report(self.host.focus(tab));
         }
+        self.focus_woken_page();
     }
 }

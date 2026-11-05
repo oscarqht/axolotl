@@ -94,15 +94,30 @@ impl BrowserApp {
                         colors.border
                     }))
                     .hover(|s| s.bg(rgb(colors.hover)))
-                    .tooltip(move |window, cx| {
-                        gpui_component::tooltip::Tooltip::new(title.clone()).build(window, cx)
+                    .when(!self.sleep.is_sleeping(id), |button| {
+                        button.tooltip(move |window, cx| {
+                            gpui_component::tooltip::Tooltip::new(title.clone()).build(window, cx)
+                        })
                     })
-                    .when(!self.favicons.contains_key(&id), |button| {
-                        button.child(div().text_color(rgb(colors.muted)).child("◉"))
+                    .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                        this.hover_sleep(
+                            hovered.then_some(id),
+                            window.mouse_position(),
+                            window,
+                            cx,
+                        );
+                    }))
+                    .when(self.sleep.is_sleeping(id), |button| {
+                        button.child(div().opacity(0.5).child("💤"))
                     })
+                    .when(
+                        !self.sleep.is_sleeping(id) && !self.favicons.contains_key(&id),
+                        |button| button.child(div().text_color(rgb(colors.muted)).child("◉")),
+                    )
                     .children(
                         self.favicons
                             .get(&id)
+                            .filter(|_| !self.sleep.is_sleeping(id))
                             .map(|image| img(image.clone()).size(px(16.)).relative()),
                     )
                     .when(
@@ -217,6 +232,20 @@ impl BrowserApp {
                     }
                 }),
             )
+            .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                if !*hovered {
+                    this.hover_sleep(None, window.mouse_position(), window, cx);
+                    return;
+                }
+                match target {
+                    TabTarget::Page(_, id) => {
+                        this.hover_sleep(Some(id), window.mouse_position(), window, cx)
+                    }
+                    TabTarget::Space(id) => {
+                        this.hover_sleep_space(id, window.mouse_position(), window, cx)
+                    }
+                }
+            }))
             // Keep tab clicks from bubbling into the surrounding pane header.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(if editing {
@@ -416,14 +445,48 @@ impl BrowserApp {
                     .left_0()
                     .right_0()
                     .bg(rgb(colors.page))
-                    .child(if unavailable {
+                    .child(if self.sleep.is_sleeping(tab) {
+                        div()
+                            .id(("sleeping-pane", tab))
+                            .size_full()
+                            .relative()
+                            .cursor_pointer()
+                            .children(
+                                self.sleep
+                                    .image(tab)
+                                    .map(|image| img(image).size_full().opacity(0.5)),
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top(px(12.))
+                                    .left(px(12.))
+                                    .text_size(px(12.))
+                                    .child("💤 Sleeping · Click to wake"),
+                            )
+                            .when(self.sleep.image(tab).is_none(), |el| {
+                                el.child(div().opacity(0.5).child(format!(
+                                    "💤 {}",
+                                    if pane.active_tab().display_title().is_empty() {
+                                        "New tab"
+                                    } else {
+                                        pane.active_tab().display_title()
+                                    }
+                                )))
+                            })
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.focus_pane(pane_id, window, cx);
+                                cx.notify();
+                            }))
+                            .into_any_element()
+                    } else if unavailable {
                         div()
                             .size_full()
                             .flex()
                             .items_center()
                             .justify_center()
                             .text_color(rgb(colors.muted))
-                            .child(if unavailable { "Page unavailable" } else { "" })
+                            .child("Page unavailable")
                             .into_any_element()
                     } else {
                         canvas(

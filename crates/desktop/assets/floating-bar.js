@@ -329,6 +329,8 @@ window.updateBar = (s) => {
         send({ type: "close", tab: t.id });
       };
       chip.append(close);
+      chip.onmouseenter = e => send({type:"sleep-hover",tab:t.id,value:true,x:e.clientX,y:e.clientY});
+      chip.onmouseleave = () => send({type:"sleep-hover",tab:t.id,value:false});
       chip.oncontextmenu = (e) => {
         e.preventDefault();
         if (e.target.closest("input")) return;
@@ -367,7 +369,7 @@ window.updateBar = (s) => {
     updateBadge(chip, t.notifications || 0);
     chip.setAttribute("aria-label", `${chip.title}${t.notifications ? `, ${t.notifications} unread notifications` : ''}`);
     const label = chip.querySelector(".label");
-    if (label) label.textContent = t.title || t.url || "New tab";
+    if (label) { label.textContent = (t.sleeping ? "💤 " : "") + (t.title || t.url || "New tab"); label.style.opacity = t.sleeping ? "0.5" : "1"; }
     const image = chip.querySelector("img");
     if (image && old.tabs[index]?.url !== t.url) {
       try {
@@ -445,6 +447,8 @@ function renderMenu() {
         },
       ],
     ],
+    [["Sleep Tab", t.sleeping, (id) => send({type:"sleep",tab:id})],
+     [t.keepAlive ? "✓ Keep Alive" : "Keep Alive", false, (id) => send({type:"keep-alive",tab:id})]],
     [["Pin to header", false, (id) => send({ type: "pin", tab: id })]],
     [["Close", false, (id) => send({ type: "close", tab: id })]],
   ];
@@ -456,6 +460,7 @@ function renderMenu() {
         b.type = "button";
         b.setAttribute("role", "menuitem");
         b.textContent = label;
+        if (label.includes("Keep Alive")) { b.setAttribute("role","menuitemcheckbox"); b.setAttribute("aria-checked",String(!!t.keepAlive)); }
         b.disabled = disabled;
         b.onclick = act(fn);
         return b;

@@ -74,7 +74,8 @@ pub(crate) async fn run(
         pause(cx).await;
         let snapshot = eval(view, "(()=>{const r=menu.getBoundingClientRect();return {items:[...menu.querySelectorAll('[role=menuitem]')].map(b=>b.textContent),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight}})()", cx).await?;
         ensure!(
-            snapshot["items"] == serde_json::json!(["Edit space"]) && snapshot["fits"] == true,
+            snapshot["items"] == serde_json::json!(["Sleep Space", "Edit space"])
+                && snapshot["fits"] == true,
             "Incorrect/clipped space menu: {snapshot}"
         );
         let editor = eval(view, "button.click();({focused:document.activeElement===input,fits:menu.getBoundingClientRect().bottom<=innerHeight,icon:icon})", cx).await?;

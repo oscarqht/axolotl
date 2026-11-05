@@ -85,7 +85,7 @@ impl BrowserApp {
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
                 let (sender, events) = mpsc::channel();
-                let state = serde_json::json!({"engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state});
+                let state = serde_json::json!({"autoSleep": self.preferences.auto_sleep, "sleepMinutes": self.preferences.sleep_minutes, "engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -156,6 +156,23 @@ impl BrowserApp {
                 "update-filters" => {
                     self.host.protection().borrow_mut().update();
                     cx.notify();
+                }
+                "sleep" => {
+                    if let (Some(enabled), Some(minutes)) =
+                        (event["enabled"].as_bool(), event["minutes"].as_u64())
+                    {
+                        let result = self.preferences.set_sleep(enabled, minutes);
+                        if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
+                            let message = if result.is_err() {
+                                "Couldn't save sleep settings. Changes apply until the app closes."
+                            } else {
+                                ""
+                            };
+                            let message = serde_json::to_string(message).unwrap();
+                            let _ = view.evaluate_script(&format!("document.querySelector('#sleep-error').textContent={message};document.querySelector('#sleep-error').hidden={message}.length===0"));
+                        }
+                        self.report(result.map_err(Into::into));
+                    }
                 }
                 "engine" => {
                     if let Some(engine) = event["value"].as_str().and_then(SearchEngine::from_id) {

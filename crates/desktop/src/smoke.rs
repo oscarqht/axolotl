@@ -70,7 +70,7 @@ pub(crate) async fn eval(
             .timer(Duration::from_millis(100))
             .await;
     }
-    anyhow::bail!("Native web engine evaluation timed out")
+    anyhow::bail!("Native web engine evaluation timed out in tab {tab}: {script}")
 }
 
 pub(crate) async fn bar_eval(
@@ -173,7 +173,13 @@ async fn run(
         cx.activate(true);
         (app.host.clone(), app.active_tab())
     })?;
+    if std::env::args().any(|arg| arg == "--smoke-sleep-session") {
+        return crate::smoke_sleep::session(view, cx).await;
+    }
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
+    if std::env::args().any(|arg| arg == "--smoke-sleep") {
+        return crate::smoke_sleep::run(view, cx).await;
+    }
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-keyboard") {
         return crate::smoke_keyboard::run(view, cx).await;

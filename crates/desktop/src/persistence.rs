@@ -81,6 +81,11 @@ impl SessionSaver {
         }
     }
 
+    /// Pair durable tab metadata with the exact workspace/IDs it refers to.
+    pub fn checkpoint(&mut self, workspace: &Workspace) {
+        self.write(workspace.to_json());
+    }
+
     /// Unconditional save for shutdown.
     pub fn flush(&mut self, workspace: &Workspace) {
         let json = workspace.to_json();

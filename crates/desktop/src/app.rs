@@ -89,6 +89,7 @@ impl SwipeState {
 }
 
 pub struct BrowserApp {
+    pub sleep: crate::sleep::SleepState,
     pub swipes: HashMap<PaneId, SwipeState>,
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
@@ -108,7 +109,7 @@ pub struct BrowserApp {
     pub link_popup: Option<crate::link_popup::LinkPopup>,
     pub(crate) pending_page_focus: Option<TabId>,
     pub settings_focus: FocusHandle,
-    saver: crate::persistence::SessionSaver,
+    pub(crate) saver: crate::persistence::SessionSaver,
     window_saver: crate::window_state::WindowSaver,
     last_fullscreen: bool,
     pub host: Rc<dyn BrowserHost>,
@@ -237,6 +238,7 @@ impl BrowserApp {
         })
         .detach();
         Self {
+            sleep: crate::sleep::SleepState::restore(),
             last_fullscreen: window.is_fullscreen(),
             bars: HashMap::new(),
             chrome_views: HashSet::new(),
@@ -348,6 +350,21 @@ impl BrowserApp {
                 self.model.switch_tab(pane, tab);
             }
         }
+        match target {
+            TabTarget::Page(_, id) => self.wake_tab(id),
+            TabTarget::Space(_) => {
+                let ids: Vec<_> = self
+                    .model
+                    .active_space()
+                    .panes
+                    .iter()
+                    .map(|p| p.active_tab)
+                    .collect();
+                for id in ids {
+                    self.wake_tab(id);
+                }
+            }
+        }
         if self.editing.is_none() {
             self.focus.focus(window);
         }
@@ -419,6 +436,7 @@ impl BrowserApp {
             self.cancel_edit(window, cx);
         }
         self.model.focus_pane(pane);
+        self.wake_tab(self.active_tab());
         self.notifications.remove(&self.active_tab());
         self.sync_address(window, cx);
         cx.notify();
@@ -505,7 +523,9 @@ impl BrowserApp {
                     .unwrap_or(0);
                 let next = space.panes[(index + 1) % space.panes.len()].id;
                 self.focus_pane(next, window, cx);
-                self.report(self.host.focus(self.active_tab()));
+                if self.host.has_view(self.active_tab()) {
+                    self.report(self.host.focus(self.active_tab()));
+                }
             }
         }
         self.reveal_focused();
@@ -550,6 +570,7 @@ impl BrowserApp {
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
+        self.poll_sleep(window, cx);
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(
                 self.tab_drag.expect("preview belongs to a drag").position,
@@ -586,6 +607,26 @@ impl BrowserApp {
         }
         for event in events {
             if self.handle_popup_event(&event, window, cx) {
+                continue;
+            }
+            let event_tab = match &event {
+                BrowserEvent::Focused(id)
+                | BrowserEvent::Favicon(id, _)
+                | BrowserEvent::Notification(id)
+                | BrowserEvent::Navigated(id, _)
+                | BrowserEvent::Title(id, _, _)
+                | BrowserEvent::Loaded(id)
+                | BrowserEvent::LoadStarted(id)
+                | BrowserEvent::VisitCompleted(id, _, _)
+                | BrowserEvent::NewTab(id, _)
+                | BrowserEvent::OpenLink(id, _)
+                | BrowserEvent::PopupLink(id, _)
+                | BrowserEvent::Shortcut(id, _)
+                | BrowserEvent::Gesture(id, _, _)
+                | BrowserEvent::History(id, _, _) => Some(*id),
+                BrowserEvent::ProtectionChanged => None,
+            };
+            if event_tab.is_some_and(|id| self.sleep.is_sleeping(id)) {
                 continue;
             }
             match event {
@@ -723,6 +764,7 @@ impl BrowserApp {
                     if let Some(pane) = pane {
                         self.cancel_edit(window, cx);
                         self.model.focus_pane(pane);
+                        self.wake_tab(self.active_tab());
                         self.model.add_tab(&url);
                         self.sync_address(window, cx);
                     }
@@ -790,6 +832,7 @@ impl BrowserApp {
                         continue;
                     }
                     self.model.focus_pane(pane);
+                    self.wake_tab(self.active_tab());
                     if key == "swipe-next" || key == "swipe-prev" {
                         self.cancel_edit(window, cx);
                         self.model.cycle_tab(pane, key == "swipe-next");

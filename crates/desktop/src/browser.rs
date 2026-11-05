@@ -107,6 +107,9 @@ pub trait BrowserHost {
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
     fn rekey(&self, from: TabId, to: TabId) -> Result<()>;
+    fn capture_sleep(&self, tab: TabId, image: crate::drag_preview::Snapshot) -> Result<()>;
+    fn unload(&self, tab: TabId);
+    fn probe_sleep(&self, tab: TabId, callback: Box<dyn Fn(String) + Send>) -> Result<()>;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
     fn raise(&self, tab: TabId) -> Result<()>;
@@ -440,6 +443,10 @@ impl BrowserHost for WryHost {
                 false,
             )
             .with_initialization_script_for_main_only(input_bridge, false)
+            .with_initialization_script_for_main_only(
+                include_str!("../assets/sleep-activity.js"),
+                false,
+            )
             .with_initialization_script_for_main_only(notifications, false)
             .with_initialization_script_for_main_only(webm_alpha, false)
             .with_navigation_handler(move |url| {
@@ -593,6 +600,23 @@ impl BrowserHost for WryHost {
         Ok(())
     }
 
+    fn capture_sleep(&self, tab: TabId, image: crate::drag_preview::Snapshot) -> Result<()> {
+        crate::drag_preview::capture(self.get(tab)?.as_ref(), image)
+    }
+    fn unload(&self, tab: TabId) {
+        if let Some(view) = self.views.borrow_mut().remove(&tab) {
+            let _ = view.set_visible(false);
+        }
+        self.visible.borrow_mut().remove(&tab);
+        self.loaded.borrow_mut().remove(&tab);
+    }
+    fn probe_sleep(&self, tab: TabId, callback: Box<dyn Fn(String) + Send>) -> Result<()> {
+        self.get(tab)?.evaluate_script_with_callback(
+            "window.__axolotlSleepBusy ? window.__axolotlSleepBusy() : true",
+            callback,
+        )?;
+        Ok(())
+    }
     fn has_view(&self, tab: TabId) -> bool {
         self.views.borrow().contains_key(&tab)
     }

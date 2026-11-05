@@ -12,7 +12,7 @@ use base64::Engine as _;
 use gpui::{Bounds, Pixels, Point, Size, Window, px, size};
 use wry::WebViewBuilder;
 
-type Snapshot = Rc<RefCell<Option<String>>>;
+pub(crate) type Snapshot = Rc<RefCell<Option<String>>>;
 
 pub struct DragPreview {
     view: WebView,
@@ -21,6 +21,8 @@ pub struct DragPreview {
     source: Option<Rc<WebView>>,
     source_ready: Box<dyn Fn() -> bool>,
     capture_started: Cell<bool>,
+    faded: bool,
+    cached_tiles: Option<Vec<(String, String)>>,
 }
 
 impl DragPreview {
@@ -60,9 +62,26 @@ impl DragPreview {
             source,
             source_ready: Box::new(source_ready),
             capture_started: Cell::new(false),
+            faded: false,
+            cached_tiles: None,
         })
     }
 
+    pub fn cached(title: &str, image: String, window: &Window, cx: &gpui::App) -> Result<Self> {
+        Self::cached_many(title, vec![(title.to_owned(), image)], window, cx)
+    }
+    pub fn cached_many(
+        title: &str,
+        tiles: Vec<(String, String)>,
+        window: &Window,
+        cx: &gpui::App,
+    ) -> Result<Self> {
+        let mut preview = Self::new(None, || true, title, window, cx)?;
+        preview.faded = true;
+        preview.cached_tiles = Some(tiles);
+        *preview.image.borrow_mut() = Some(String::new());
+        Ok(preview)
+    }
     #[cfg(feature = "smoke")]
     pub fn evaluate(&self, script: &str, callback: impl Fn(String) + Send + 'static) -> Result<()> {
         self.view.evaluate_script_with_callback(script, callback)?;
@@ -107,6 +126,20 @@ impl DragPreview {
                     serde_json::to_string(&image)?
                 )
             };
+            let script = if let Some(tiles) = &self.cached_tiles {
+                format!(
+                    r#"document.querySelector('p').hidden=true;const grid=document.createElement('div');grid.style.cssText='display:grid;height:146px;gap:2px;grid-template-columns:repeat({},1fr)';for(const [title,src] of {}){{const tile=document.createElement('div');tile.style.cssText='min-width:0;min-height:0;overflow:hidden';if(src){{const img=document.createElement('img');img.src=src;img.style.cssText='width:100%;height:100%;object-fit:cover;object-position:top';tile.append(img)}}else{{tile.textContent='💤 '+(title||'New tab');tile.style.padding='12px'}}grid.append(tile)}}document.querySelector('img').replaceWith(grid);"#,
+                    if tiles.len() > 1 { 2 } else { 1 },
+                    serde_json::to_string(tiles)?
+                )
+            } else {
+                script
+            };
+            let script = if self.faded {
+                format!("document.querySelector('.card').style.opacity='0.5';{script}")
+            } else {
+                script
+            };
             self.view.evaluate_script(&script)?;
         }
         Ok(())
@@ -120,7 +153,7 @@ impl Drop for DragPreview {
 }
 
 #[cfg(target_os = "macos")]
-fn capture(source: &WebView, image: Snapshot) -> Result<()> {
+pub(crate) fn capture(source: &WebView, image: Snapshot) -> Result<()> {
     use block2::RcBlock;
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
     use objc2_foundation::{NSDictionary, NSError, NSNumber};
@@ -158,7 +191,7 @@ fn capture(source: &WebView, image: Snapshot) -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn capture(source: &WebView, image: Snapshot) -> Result<()> {
+pub(crate) fn capture(source: &WebView, image: Snapshot) -> Result<()> {
     use webview2_com::{
         CapturePreviewCompletedHandler,
         Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
@@ -209,6 +242,6 @@ fn capture(source: &WebView, image: Snapshot) -> Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn capture(_source: &WebView, _image: Snapshot) -> Result<()> {
+pub(crate) fn capture(_source: &WebView, _image: Snapshot) -> Result<()> {
     Ok(())
 }

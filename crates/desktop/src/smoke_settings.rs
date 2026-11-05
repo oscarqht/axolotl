@@ -62,6 +62,27 @@ pub(crate) async fn run(
             && state["fits"] == true,
         "Incorrect settings dialog: {state}"
     );
+    ensure!(
+        dialog_eval(
+            view,
+            "autoSleep.checked && sleepMinutes.value==='30' && sleepMinutes.min==='1'",
+            cx
+        )
+        .await?
+            == true,
+        "Sleep settings defaults missing"
+    );
+    dialog_eval(view,"autoSleep.checked=false;sleepMinutes.value='7';autoSleep.dispatchEvent(new Event('change'));true",cx).await?;
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| {
+        ensure!(
+            !app.preferences.auto_sleep && app.preferences.sleep_minutes == 7,
+            "Sleep settings IPC failed"
+        );
+        Ok(())
+    })??;
+    dialog_eval(view,"autoSleep.checked=true;sleepMinutes.value='30';sleepMinutes.dispatchEvent(new Event('change'));true",cx).await?;
+    pause(cx).await;
     #[cfg(target_os = "macos")]
     {
         for dark in [true, false] {
@@ -85,6 +106,8 @@ pub(crate) async fn run(
         let expected = if shift {
             vec![
                 "close",
+                "sleep-minutes",
+                "auto-sleep",
                 "clear-history",
                 "history-days",
                 "history-retention",
@@ -101,6 +124,8 @@ pub(crate) async fn run(
                 "history-retention",
                 "history-days",
                 "clear-history",
+                "auto-sleep",
+                "sleep-minutes",
                 "close",
                 "search-engine",
             ]

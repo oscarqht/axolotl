@@ -55,6 +55,10 @@ mod smoke;
 mod smoke_auto_pip;
 #[cfg(feature = "smoke")]
 mod smoke_auto_pip_frames;
+#[cfg(feature = "smoke")]
+mod smoke_auto_pip_layout;
+#[cfg(feature = "smoke")]
+mod smoke_auto_pip_youtube;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_copy_url;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -62,9 +66,9 @@ mod smoke_corners;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_docking;
 #[cfg(feature = "smoke")]
-mod smoke_external_urls;
-#[cfg(feature = "smoke")]
 mod smoke_downloads;
+#[cfg(feature = "smoke")]
+mod smoke_external_urls;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_google_popup;
 #[cfg(feature = "smoke")]
@@ -86,9 +90,9 @@ mod smoke_oauth;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
 #[cfg(feature = "smoke")]
-mod smoke_persistence;
-#[cfg(feature = "smoke")]
 mod smoke_performance;
+#[cfg(feature = "smoke")]
+mod smoke_persistence;
 #[cfg(feature = "smoke")]
 mod smoke_pins;
 #[cfg(all(feature = "smoke", target_os = "macos"))]

@@ -118,7 +118,10 @@ fall back to enabled. Disabling it returns an automatically detached video.
 The floating window retains the original WKWebView/WebView2 page, so playback,
 streams, and page state remain in the same engine. Temporary styles isolate the
 selected video and its frame ancestors; returning removes them and restores the
-video's controls. Open shadow roots and cross-origin frames are included. Videos
+video's controls. Responsive players that relocate their video subtree when the
+PiP window shrinks (including YouTube's full-bleed layout) keep the current
+ancestor path visible; abandoned containers recover their original attributes.
+Open shadow roots and cross-origin frames are included. Videos
 must have enabled audio tracks or decoder evidence of audio, be unmuted with
 positive volume, and be visible and playing. Pages opting out with
 `disablePictureInPicture` are respected. Existing native PiP in this browser is
@@ -132,6 +135,17 @@ fixture with quiet test audio, with no Internet or profile access):
 node --test scripts/test-auto-pip.cjs
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-auto-pip
 ```
+
+The offline suite also covers responsive player relocation. A focused live
+YouTube check is opt-in and needs Internet access:
+
+```sh
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-auto-pip-youtube
+```
+
+It records the player layout before/after entry and, on macOS, native snapshots
+at `/tmp/axolotl-youtube-pip-before.png` and `/tmp/axolotl-youtube-pip-after.png`.
+A live playback check does not establish ad-blocking or account/login behavior.
 
 Add `--pip-inspect` to hold the first floating video for visual inspection.
 The check inspects the actual native window's visibility, stacking and live child

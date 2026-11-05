@@ -65,31 +65,52 @@
     if (timer !== null) clearInterval(timer);
     timer = null;
     if (!selection) return;
+    selection.observer.disconnect();
     for (const [el, previous] of selection.attributes) {
       if (previous === null) el.removeAttribute('data-axolotl-pip');
       else el.setAttribute('data-axolotl-pip', previous);
     }
-    for (const style of selection.styles) style.remove();
+    for (const style of selection.styles.values()) style.remove();
     if (selection.video) selection.video.controls = selection.controls;
     selection = null;
   };
   const isolate = (el, request, video) => {
     restore();
-    const attributes = [], styles = [], trees = new Set();
-    for (let node = el; node; node = node.parentElement || node.getRootNode().host) {
-      attributes.push([node, node.getAttribute('data-axolotl-pip')]);
-      node.setAttribute('data-axolotl-pip', node === el ? 'target' : 'branch');
-      trees.add(node.getRootNode());
-    }
+    const attributes = new Map(), styles = new Map();
     const css = `:root{overflow:hidden!important;background:#000!important}
 [data-axolotl-pip="branch"]{display:block!important;position:fixed!important;inset:0!important;margin:0!important;padding:0!important;border:0!important;width:100vw!important;height:100vh!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;transform:none!important;filter:none!important;perspective:none!important;contain:none!important;overflow:visible!important;clip:auto!important;clip-path:none!important;visibility:visible!important;opacity:1!important;background:#000!important}
 [data-axolotl-pip="branch"]>:not([data-axolotl-pip]):not(style){display:none!important}
 [data-axolotl-pip="target"]{display:block!important;position:fixed!important;inset:0!important;margin:0!important;padding:0!important;border:0!important;width:100vw!important;height:100vh!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;transform:none!important;object-fit:contain!important;visibility:visible!important;opacity:1!important;z-index:2147483647!important;background:#000!important}`;
-    for (const root of trees) {
-      const style = document.createElement('style'); style.textContent = css;
-      (root.head || root).appendChild(style); styles.push(style);
-    }
-    selection = {request, attributes, styles, video, controls:video?.controls};
+    // Responsive players (including YouTube) relocate the live video subtree
+    // after the native window shrinks. Follow its current ancestors; otherwise
+    // the sibling-hiding rule hides the new parent and renders a black window.
+    const observer = new MutationObserver(() => { if (el.isConnected) refresh(); });
+    const refresh = () => {
+      const path = new Set(), trees = new Set();
+      for (let node = el; node; node = node.parentElement || node.getRootNode().host) {
+        path.add(node); trees.add(node.getRootNode());
+      }
+      for (const [node, previous] of attributes) if (!path.has(node)) {
+        if (previous === null) node.removeAttribute('data-axolotl-pip');
+        else node.setAttribute('data-axolotl-pip', previous);
+        attributes.delete(node);
+      }
+      for (const node of path) {
+        if (!attributes.has(node)) attributes.set(node, node.getAttribute('data-axolotl-pip'));
+        const marker = node === el ? 'target' : 'branch';
+        if (node.getAttribute('data-axolotl-pip') !== marker) node.setAttribute('data-axolotl-pip', marker);
+      }
+      for (const [root, style] of styles) if (!trees.has(root)) { style.remove(); styles.delete(root); }
+      for (const root of trees) {
+        if (!styles.has(root)) {
+          const style = document.createElement('style'); style.textContent = css;
+          (root.head || root).appendChild(style); styles.set(root, style);
+        }
+        observer.observe(root, {childList:true, subtree:true});
+      }
+    };
+    selection = {request, attributes, styles, observer, video, controls:video?.controls};
+    refresh();
     if (video) video.controls = true;
     const src = video?.currentSrc, stream = video?.srcObject;
     timer = setInterval(() => {
@@ -97,6 +118,7 @@
       // every isolated ancestor as well as the original media element.
       if (!el.isConnected || (video && (video.ended || video.currentSrc !== src || video.srcObject !== stream)))
         send({kind:'stopped', request, frame:frameId});
+      else refresh();
     }, 500);
   };
   const selected = (request, frame) => {

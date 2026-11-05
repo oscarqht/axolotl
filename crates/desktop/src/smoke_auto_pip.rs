@@ -258,6 +258,7 @@ pub(crate) async fn run(
         "visible split focus and minimization do not trigger",
         "space switch entry/return; source unload cleanup",
     ];
+    checks.extend(crate::smoke_auto_pip_layout::run(view, cx).await?);
     checks.extend(crate::smoke_auto_pip_frames::run(view, cx).await?);
     Ok(checks)
 }

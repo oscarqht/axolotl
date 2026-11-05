@@ -91,6 +91,54 @@ suggestion inputs, keyboard and mouse selection handlers, retention changes and
 periodic pruning, confirmed clearing, and retained cookies/page/navigation state.
 Append `--smoke-hold-history` to pause at both suggestion surfaces for visual review.
 
+## Automatic picture-in-picture
+
+**Automatic picture-in-picture** is enabled by default on macOS and Windows.
+Switching tabs or spaces moves an audible playing video into a floating window
+when its source tab becomes hidden. Returning to the source tab returns the video
+to the page. Focusing another visible split pane, switching apps, and minimizing
+alone do not start it.
+
+Only one video is shown at a time: the largest eligible video in the tab being
+hidden is selected, and an existing picture-in-picture session is preserved.
+Closing automatic picture-in-picture keeps it closed until you revisit the source
+tab and leave again. Closing or unloading the source page cleans up its session.
+The Settings toggle applies immediately and persists as the boolean
+`automatic_picture_in_picture` in `settings.json`. Missing or invalid values
+fall back to enabled. Disabling it returns an automatically detached video.
+
+The floating window retains the original WKWebView/WebView2 page, so playback,
+streams, and page state remain in the same engine. Temporary styles isolate the
+selected video and its frame ancestors; returning removes them and restores the
+video's controls. Open shadow roots and cross-origin frames are included. Videos
+must have enabled audio tracks or decoder evidence of audio, be unmuted with
+positive volume, and be visible and playing. Pages opting out with
+`disablePictureInPicture` are respected. Existing native PiP in this browser is
+preserved. Pinned pages return when reopened and qualify when a tab or space
+switch hides them; dismissing their overlay alone does not start PiP.
+
+Focused native check (requires a GUI desktop; uses a generated local H.264/AAC
+fixture with quiet test audio, with no Internet or profile access):
+
+```sh
+node --test scripts/test-auto-pip.cjs
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-auto-pip
+```
+
+Add `--pip-inspect` to hold the first floating video for visual inspection.
+The check inspects the actual native window's visibility, stacking and live child
+attachment, video selection and playback progress, native Close, automatic return,
+Settings disable, visible splits, app hiding/minimizing, tab/space navigation,
+cross-origin frames, and source unload/navigation/end/close cleanup. On macOS it
+also saves a native webview snapshot to `/tmp/axolotl-auto-pip.png`. The fixture was
+generated using FFmpeg's `testsrc2` and `sine` sources (320×180 at 12 fps, three
+seconds, H.264/AAC); it contains no external media.
+
+macOS checks do not establish WebView2 runtime behavior. Run this same check on a
+Windows desktop with the MSVC toolchain, Windows SDK, and WebView2 runtime before
+claiming Windows native acceptance. Custom canvas players, closed shadow roots,
+and sites that prevent background playback may not qualify.
+
 ## Tab and space sleep
 
 The tab context menu offers **Sleep Tab** and a checked **Keep Alive** choice

@@ -89,7 +89,7 @@ impl BrowserApp {
         let result = (|| -> anyhow::Result<()> {
             if dialog.view.is_none() {
                 let (sender, events) = crate::ui_events::channel();
-                let state = serde_json::json!({"autoSleep": self.preferences.auto_sleep, "sleepMinutes": self.preferences.sleep_minutes, "engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state, "defaultBrowser": self.default_browser.state});
+                let state = serde_json::json!({"autoPictureInPicture": self.preferences.automatic_picture_in_picture, "autoSleep": self.preferences.auto_sleep, "sleepMinutes": self.preferences.sleep_minutes, "engine": self.preferences.search_engine.id(), "homepage": self.preferences.homepage_url, "historyDays": self.preferences.history_retention_days, "theme": current_theme, "protection": protection_state, "defaultBrowser": self.default_browser.state});
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -181,6 +181,26 @@ impl BrowserApp {
                 "update-filters" => {
                     self.host.protection().borrow_mut().update();
                     cx.notify();
+                }
+                "auto-picture-in-picture" => {
+                    if let Some(enabled) = event["value"].as_bool() {
+                        let saved = self.preferences.set_automatic_picture_in_picture(enabled);
+                        let applied = self.host.set_automatic_picture_in_picture(enabled);
+                        let message = if applied.is_err() {
+                            "Couldn't apply automatic picture-in-picture."
+                        } else if saved.is_err() {
+                            "Couldn't save automatic picture-in-picture. This choice applies until the app closes."
+                        } else {
+                            ""
+                        };
+                        if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
+                            let message = serde_json::to_string(message).unwrap();
+                            let _ = view.evaluate_script(&format!("document.querySelector('#pip-error').textContent={message};document.querySelector('#pip-error').hidden={message}.length===0"));
+                        }
+                        self.report(saved.map_err(Into::into));
+                        self.report(applied);
+                        cx.notify();
+                    }
                 }
                 "sleep" => {
                     if let (Some(enabled), Some(minutes)) =

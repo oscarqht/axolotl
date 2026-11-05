@@ -272,10 +272,23 @@ impl BrowserApp {
                 None
             }
         };
+        let host = Rc::new(WryHost::new());
+        let _ = host.set_automatic_picture_in_picture(preferences.automatic_picture_in_picture);
+        let closing_host = Rc::downgrade(&host);
+        window.on_window_should_close(cx, move |_, cx| {
+            if let Some(host) = closing_host.upgrade()
+                && let Err(error) = host.shutdown_picture_in_picture(cx)
+            {
+                eprintln!("Closing picture in picture: {error:#}");
+                return false;
+            }
+            true
+        });
         let model = crate::persistence::restore(&preferences.homepage_url);
         let saver = crate::persistence::SessionSaver::new(&model);
         // Cmd+Q, window close and the app menu all end in cx.quit().
-        cx.on_app_quit(|this, _| {
+        cx.on_app_quit(|this, cx| {
+            this.report(this.host.shutdown_picture_in_picture(cx));
             this.flush_persistence();
             async {}
         })
@@ -307,7 +320,7 @@ impl BrowserApp {
             downloads_popup: None,
             saver,
             window_saver,
-            host: Rc::new(WryHost::new()),
+            host,
             address,
             focus: cx.focus_handle(),
             editing: None,
@@ -647,6 +660,29 @@ impl BrowserApp {
         for urls in batches {
             self.open_external_urls(urls, window, cx);
         }
+        // Opening a GPUI window draws it immediately and clears the shared
+        // element arena. Do this outside Render, using model visibility only.
+        let visible = self
+            .model
+            .active_space()
+            .panes
+            .iter()
+            .map(|p| p.active_tab)
+            .collect();
+        let live = self
+            .model
+            .spaces
+            .iter()
+            .flat_map(|s| &s.panes)
+            .flat_map(|p| &p.tabs)
+            .map(|t| t.id)
+            .chain(self.model.pinned_tabs.iter().map(|p| p.tab.id))
+            .collect();
+        self.report(
+            self.host
+                .sync_picture_in_picture(&visible, self.pins.open, &live, cx),
+        );
+
         // AppKit can finish changing fullscreen state after the last resize.
         // Invalidate the header even when no further bounds event arrives.
         let fullscreen = window.is_fullscreen();

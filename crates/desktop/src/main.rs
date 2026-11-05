@@ -1,5 +1,6 @@
 mod app;
 mod app_database;
+mod auto_pip;
 mod browser;
 #[cfg(target_os = "macos")]
 mod browser_identity;
@@ -37,6 +38,7 @@ mod panel_controls;
 mod persistence;
 mod persistence_worker;
 mod pinned_tabs;
+mod pip_window;
 mod popup_transition;
 mod preferences;
 mod protection;
@@ -48,6 +50,10 @@ mod settings;
 mod sleep;
 #[cfg(feature = "smoke")]
 mod smoke;
+#[cfg(feature = "smoke")]
+mod smoke_auto_pip;
+#[cfg(feature = "smoke")]
+mod smoke_auto_pip_frames;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_copy_url;
 #[cfg(all(feature = "smoke", target_os = "macos"))]

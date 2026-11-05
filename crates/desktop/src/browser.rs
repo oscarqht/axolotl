@@ -103,6 +103,11 @@ impl BrowserEvent {
 /// The operations a replacement engine must provide. Browser state is never
 /// serialized into the layout core, so a future mobile adapter can share it.
 pub trait BrowserHost {
+    fn shutdown_picture_in_picture(&self, cx: &mut gpui::App) -> Result<()>;
+    #[cfg(feature = "smoke")]
+    fn picture_in_picture_state(&self, cx: &gpui::App) -> serde_json::Value;
+    #[cfg(feature = "smoke")]
+    fn test_close_picture_in_picture(&self, cx: &mut gpui::App) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_key(
         &self,
@@ -138,6 +143,14 @@ pub trait BrowserHost {
     #[cfg(feature = "smoke")]
     fn is_loaded(&self, tab: TabId) -> bool;
     fn downloads(&self) -> Rc<RefCell<crate::downloads::DownloadManager>>;
+    fn set_automatic_picture_in_picture(&self, enabled: bool) -> Result<()>;
+    fn sync_picture_in_picture(
+        &self,
+        visible: &HashSet<TabId>,
+        pin: Option<TabId>,
+        live: &HashSet<TabId>,
+        cx: &mut gpui::App,
+    ) -> Result<()>;
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>>;
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
     fn has_view(&self, tab: TabId) -> bool;
@@ -216,6 +229,7 @@ pub struct WryState {
     #[cfg(target_os = "macos")]
     popup_delegates:
         RefCell<HashMap<TabId, objc2::rc::Retained<crate::macos_popup::PopupDelegate>>>,
+    auto_pip: RefCell<crate::auto_pip::AutoPip>,
     protection: Rc<RefCell<crate::protection::Protection>>,
     protection_revisions: RefCell<HashMap<TabId, (u64, crate::protection::Policy)>>,
     protection_notified: RefCell<String>,
@@ -240,6 +254,7 @@ impl Default for WryHost {
             next_popup: std::cell::Cell::new(u64::MAX - 1),
             #[cfg(target_os = "macos")]
             popup_delegates: RefCell::new(HashMap::new()),
+            auto_pip: RefCell::new(crate::auto_pip::AutoPip::default()),
             protection: Rc::new(RefCell::new(crate::protection::Protection::restore())),
             protection_revisions: RefCell::new(HashMap::new()),
             protection_notified: RefCell::new(String::new()),
@@ -320,6 +335,8 @@ impl WryHost {
         let title_identity = identity.clone();
         let load_identity = identity.clone();
         let popup_identity = identity.clone();
+        let pip = self.auto_pip.borrow().sender();
+        let pip_load = pip.clone();
         let ipc = self.sender.clone();
         let title = self.sender.clone();
         // Title KVO can precede load-start. Snapshot its document URL so a new
@@ -369,11 +386,23 @@ impl WryHost {
                 false,
             )
             .with_initialization_script_for_main_only(notifications, false)
+            .with_initialization_script_for_main_only(
+                include_str!("../assets/auto-pip.js").replace("__NONCE__", &nonce),
+                false,
+            )
             .with_navigation_handler(move |url| {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
             })
             .with_ipc_handler(move |request| {
                 let tab = ipc_identity.load(Ordering::Relaxed);
+                if let Some(body) = request.body().strip_prefix(&format!("{nonce}:pip:")) {
+                    if body.len() <= 2048
+                        && let Ok(message) = serde_json::from_str(body)
+                    {
+                        let _ = pip.try_send((tab, message));
+                    }
+                    return;
+                }
                 // Notifications must also arrive from hidden tabs and spaces.
                 if request.body() == &format!("{nonce}:notification") {
                     let _ = ipc.try_send(BrowserEvent::Notification(tab));
@@ -433,6 +462,7 @@ impl WryHost {
                     loaded.borrow_mut().insert(tab);
                 } else {
                     loaded.borrow_mut().remove(&tab);
+                    let _ = pip_load.try_send((tab, crate::auto_pip::Message::Reset));
                     completed.set(false);
                     #[cfg(not(target_os = "windows"))]
                     let _ = load.try_send(BrowserEvent::LoadStarted(tab));
@@ -611,6 +641,17 @@ impl BrowserHost for WryHost {
     fn downloads(&self) -> Rc<RefCell<crate::downloads::DownloadManager>> {
         self.downloads.clone()
     }
+    fn shutdown_picture_in_picture(&self, cx: &mut gpui::App) -> Result<()> {
+        self.auto_pip.borrow_mut().shutdown(cx)
+    }
+    #[cfg(feature = "smoke")]
+    fn picture_in_picture_state(&self, cx: &gpui::App) -> serde_json::Value {
+        self.auto_pip.borrow().test_state(cx)
+    }
+    #[cfg(feature = "smoke")]
+    fn test_close_picture_in_picture(&self, cx: &mut gpui::App) -> Result<()> {
+        self.auto_pip.borrow().test_close(cx)
+    }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()> {
         use block2::RcBlock;
@@ -638,6 +679,29 @@ impl BrowserHost for WryHost {
         Ok(())
     }
 
+    fn set_automatic_picture_in_picture(&self, enabled: bool) -> Result<()> {
+        self.auto_pip.borrow_mut().enabled(enabled);
+        Ok(())
+    }
+    fn sync_picture_in_picture(
+        &self,
+        visible: &HashSet<TabId>,
+        pin: Option<TabId>,
+        live: &HashSet<TabId>,
+        cx: &mut gpui::App,
+    ) -> Result<()> {
+        let mut pip = self.auto_pip.borrow_mut();
+        let previous = pip.owned_tab();
+        let result = pip.sync(visible, pin, live, &self.views.borrow(), cx);
+        if previous != pip.owned_tab()
+            && let Some(tab) = previous
+        {
+            // A return hides/reparents the child. Force the shell's next show
+            // even if a render already marked the source logically visible.
+            self.visible.borrow_mut().remove(&tab);
+        }
+        result
+    }
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>> {
         self.protection.clone()
     }
@@ -777,6 +841,7 @@ impl BrowserHost for WryHost {
             self.pending_popups.borrow_mut().remove(&tab);
             self.popup_delegates.borrow_mut().remove(&tab);
         }
+        self.auto_pip.borrow_mut().invalidate(tab);
         if let Some(view) = self.views.borrow_mut().remove(&tab) {
             let _ = view.set_visible(false);
             if self.downloads_active() {
@@ -843,6 +908,7 @@ impl BrowserHost for WryHost {
         identity.store(to, Ordering::Relaxed);
         self.identities.borrow_mut().insert(to, identity);
         views.insert(to, view);
+        self.auto_pip.borrow_mut().rekey(from, to);
         let revision = self.protection_revisions.borrow_mut().remove(&from);
         if let Some(revision) = revision {
             self.protection_revisions.borrow_mut().insert(to, revision);
@@ -857,6 +923,9 @@ impl BrowserHost for WryHost {
     }
 
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()> {
+        if self.auto_pip.borrow().owns(tab) {
+            return Ok(());
+        }
         self.get(tab)?
             .set_bounds(native_bounds(bounds))
             .context("Positioning browser view")
@@ -890,8 +959,10 @@ impl BrowserHost for WryHost {
         if shown.contains(&tab) == visible {
             return Ok(());
         }
-        view.set_visible(visible)
-            .context("Changing browser visibility")?;
+        if !self.auto_pip.borrow().owns(tab) {
+            view.set_visible(visible)
+                .context("Changing browser visibility")?;
+        }
         if visible {
             shown.insert(tab);
         } else {

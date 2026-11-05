@@ -1,3 +1,15 @@
+# Plus-button address autofocus
+
+Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.
+
+- Clicking plus now uses the same new-tab command as Cmd/Ctrl+T: the new tab is
+  selected, its inline address editor opens, and the address is focused/selected
+  for immediate replacement. Hovering plus still does not expand the chips.
+- Full native smoke passed, including a plus-click IPC check that verifies the
+  new tab's editing target, actual native DOM input focus and full address
+  selection. Strict Clippy passed and the macOS app was rebuilt. OS input and
+  Windows runtime checks remain unverified.
+
 # Translucent idle bar
 
 Run on 2026-11-05 in `bro-floating-panel-tab-chips` on macOS.

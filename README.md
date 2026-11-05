@@ -79,10 +79,10 @@ machine running the executable. See the validation report below for tested scope
 - Each panel has a bottom-centered floating bar above its live page: a panel
   drag handle, active index/count (for example **2/5**), and **+**. Hover or focus
   the count/chip area, or tap the count, to expand it into favicon/title chips.
-  Hovering or clicking the handle or **+** does not expand it. Each chip has
+  Hovering the handle or **+** does not expand it. Each chip has
   a close button; double-click the label to edit its address. Enter navigates and
-  Escape cancels. **+** creates a blank tab while leaving the chip row closed;
-  Cmd/Ctrl+T creates a tab with address editing. Long stacks remain
+  Escape cancels. Clicking **+** or pressing Cmd/Ctrl+T creates a new tab and
+  immediately focuses its address input, with the current address selected. Long stacks remain
   in one horizontal row, with overflow arrows and automatic active-chip reveal.
   The bar animates between compact and expanded states, fitting the handle,
   chips and add button. Its maximum is the panel width with 16px edge margins. Overflow fades indicate hidden chips on either side

@@ -21,22 +21,28 @@ pub(crate) async fn run(
         "Handle/+ hover or focus expanded compact bar: {triggers}"
     );
     let before = view.update_in(cx, |app, _, _| app.model.focused_pane().tabs.len())?;
-    // Creating a page replaces the native control surface, so observe the
-    // resulting model instead of awaiting JS in the surface being destroyed.
+    // Observe creation in the model: the old native surface may be destroyed.
     view.update_in(cx, |app, _, _| {
         app.bars[&control_pane].evaluate("document.querySelector('#add').click();true", |_| {})
     })??;
     pause(cx).await;
-    view.update_in(cx, |app, window, cx| {
+    view.update_in(cx, |app, _, _| {
         ensure!(
             app.model.focused_pane().tabs.len() == before + 1
-                && app.editing.is_none()
-                && !app.bars[&control_pane].expanded,
-            "Plus must create a tab without expanding/editing"
+                && app.editing == Some(crate::app::TabTarget::Page(control_pane, app.active_tab())),
+            "Plus must create a tab and open its address editor"
         );
-        app.command(crate::app::Command::CloseTab, window, cx);
         Ok(())
     })??;
+    pause(cx).await;
+    let editor=bar_eval(view,control_pane,"(()=>{const i=document.querySelector('input');return {focused:i===document.activeElement,value:i?.value,selected:i?.selectionEnd-i?.selectionStart}})()",cx).await?;
+    ensure!(
+        editor["focused"] == true && editor["value"] == "about:blank" && editor["selected"] == 11,
+        "Plus-created address input is not ready for typing: {editor}"
+    );
+    view.update_in(cx, |app, window, cx| {
+        app.command(crate::app::Command::CloseTab, window, cx)
+    })?;
     pause(cx).await;
     view.update_in(cx,|app,_,_|app.bars[&control_pane].evaluate("document.querySelector('#count').dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));true",|_|{}))??;
     pause(cx).await;
@@ -53,9 +59,8 @@ pub(crate) async fn run(
     })??;
     pause(cx).await;
     pause(cx).await;
-    checks.push("only count/chip hover expands; handle/plus hover and focus stay compact; plus creates a tab without address editing");
+    checks.push("only count/chip hover expands; handle/plus hover stay compact; plus click creates a tab with focused address editing");
 
-    // Native bar states, overflow and IPC use the production surface above live pages.
     let pane = view.update_in(cx, |app, window, cx| {
         app.cancel_edit(window, cx);
         let pane = app.model.focused_pane().id;
@@ -358,7 +363,6 @@ pub(crate) async fn run(
     Ok(checks)
 }
 
-/// Focused native geometry checks, independent of network/history/drag fixtures.
 pub(crate) async fn check_sizing(
     view: &WeakEntity<BrowserApp>,
     cx: &mut AsyncWindowContext,

@@ -173,8 +173,7 @@ document.querySelector("#count").onclick = () => {
   pinned = !pinned;
   expand(true);
 };
-document.querySelector("#add").onclick = () =>
-  send({ type: "new", edit: false });
+document.querySelector("#add").onclick = () => send({ type: "new" });
 document.querySelector("#prev").onclick = () =>
   tabs.scrollBy({ left: -190, behavior: "smooth" });
 document.querySelector("#next").onclick = () =>

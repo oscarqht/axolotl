@@ -161,7 +161,7 @@ pub(crate) fn parse_history(value: &str) -> (bool, bool) {
 
 pub struct WryHost {
     protection: Rc<RefCell<crate::protection::Protection>>,
-    protection_revisions: RefCell<HashMap<TabId, (u64, u64)>>,
+    protection_revisions: RefCell<HashMap<TabId, (u64, crate::protection::Policy)>>,
     protection_notified: RefCell<String>,
     views: RefCell<HashMap<TabId, Rc<WebView>>>,
     identities: RefCell<HashMap<TabId, Arc<AtomicU64>>>,
@@ -583,7 +583,7 @@ impl BrowserHost for WryHost {
         }
         self.protection_revisions
             .borrow_mut()
-            .insert(tab, (p.revision, p.policy_revision));
+            .insert(tab, (p.revision, p.policy.clone()));
         // `with_focused(false)` is ignored on macOS; explicitly return focus.
         view.focus_parent()
             .context("Returning focus from new browser view")?;
@@ -859,12 +859,16 @@ impl BrowserHost for WryHost {
                 .protection_revisions
                 .borrow()
                 .iter()
-                .filter(|(_, r)| r.0 != p.revision || r.1 != p.policy_revision)
-                .map(|(id, r)| (*id, r.1 != p.policy_revision))
+                .filter(|(_, r)| r.0 != p.revision)
+                .map(|(id, r)| (*id, r.1.clone()))
                 .collect();
             if !needs.is_empty() {
                 let script = p.rules.script(&p.policy);
-                for (tab, reload) in needs {
+                for (tab, previous_policy) in needs {
+                    // Native rules/scripts are shared, but a site switch must
+                    // reload only documents whose effective protection changed.
+                    let url = self.current_url(tab).unwrap_or_default();
+                    let reload = previous_policy.allows(&url) != p.policy.allows(&url);
                     #[cfg(feature = "smoke")]
                     eprintln!(
                         "Protection: applying revision {} policy {} to tab {tab}; reload={reload}",
@@ -893,7 +897,7 @@ impl BrowserHost for WryHost {
                             Ok(()) => {
                                 self.protection_revisions
                                     .borrow_mut()
-                                    .insert(tab, (p.revision, p.policy_revision));
+                                    .insert(tab, (p.revision, p.policy.clone()));
                             }
                             Err(error) => eprintln!("Applying protection: {error}"),
                         }

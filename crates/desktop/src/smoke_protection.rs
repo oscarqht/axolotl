@@ -88,6 +88,31 @@ pub(crate) async fn run(
         "Native protection failed: {state}, server hits={}",
         hits.load(Ordering::Relaxed)
     );
+    let other_url = url.replace("127.0.0.1", "localhost");
+    let unrelated = view.update_in(cx, |app, window, cx| {
+        let other = app.model.add_tab(&other_url);
+        app.model.switch_tab(pane, tab);
+        app.host.ensure(other, &other_url, window, cx)?;
+        anyhow::Ok(other)
+    })??;
+    for _ in 0..100 {
+        pause(cx).await;
+        if host.is_loaded(unrelated) {
+            break;
+        }
+    }
+    eval(&host, unrelated, "window.unrelatedMarker=91;true", cx).await?;
+    ensure!(
+        bar_eval(
+            view,
+            pane,
+            "document.querySelector('#shield').dataset.protectionState",
+            cx
+        )
+        .await?
+            == "on",
+        "Shield does not show protection on"
+    );
     let shield_hit=bar_eval(view,pane,"(()=>{const r=document.querySelector('#shield').getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')?.id})()",cx).await?;
     ensure!(
         shield_hit == "shield",
@@ -169,6 +194,11 @@ pub(crate) async fn run(
     }
     let diagnostic=eval(&host,tab,"({url:location.href,ad:!!window.adReached,body:document.body.innerText,style:!!document.querySelector('[data-axolotl-protection]')})",cx).await?;
     ensure!(
+        eval(&host, unrelated, "window.unrelatedMarker", cx).await? == 91,
+        "A site toggle reloaded an unrelated website"
+    );
+    ensure!(bar_eval(view,pane,"(()=>{const s=document.querySelector('#shield');return s.dataset.protectionState==='off'&&s.getAttribute('aria-pressed')==='false'&&getComputedStyle(s.querySelector('.shield-off-mark')).display!=='none'})()",cx).await?==true,"Shield does not visibly show protection off");
+    ensure!(
         bypass && hits.load(Ordering::Relaxed) > 0,
         "Site exception did not allow the native request: {diagnostic}, hits={}",
         hits.load(Ordering::Relaxed)
@@ -197,6 +227,21 @@ pub(crate) async fn run(
         if eval(&host,tab,"Boolean(window.fixtureReady)&&!window.adReached&&getComputedStyle(document.querySelector('#advert')).display==='none'",cx).await?==true {resumed=true;break;}
     }
     ensure!(resumed, "Re-enabling protection failed");
+    ensure!(
+        eval(&host, unrelated, "window.unrelatedMarker", cx).await? == 91,
+        "Re-enabling protection reloaded an unrelated website"
+    );
+    ensure!(
+        bar_eval(
+            view,
+            pane,
+            "document.querySelector('#shield').dataset.protectionState",
+            cx
+        )
+        .await?
+            == "on",
+        "Shield does not return to protection on"
+    );
 
     view.update_in(cx, |app, window, cx| app.open_settings(false, window, cx))?;
     pause(cx).await;
@@ -305,6 +350,7 @@ pub(crate) async fn run(
     }
     Ok(vec![
         "shield receives native hit testing; hover retains compact and expanded states",
+        "site toggle preserves unrelated tab state and visibly switches shield on/off",
         "native request blocked before reaching server",
         "ordinary document preserved",
         "maintained cosmetic selector hidden",

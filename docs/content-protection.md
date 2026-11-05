@@ -3,8 +3,9 @@
 Protection is enabled by default on macOS and Windows. Settings contains a global
 **Block ads and trackers** switch and **Update now**. Each panel's floating bar
 has a shield for the active website. Its tooltip reports status and hostname;
-clicking toggles an exact-hostname exception and reloads pages after native
-rules are ready. A disabled global switch disables the site control. The shield
+clicking toggles an exact-hostname exception and reloads that hostname's pages
+after native rules are ready. A filled shield means on, a slashed shield means
+off, and a dotted indicator means the change is being applied. A disabled global switch disables the site control. The shield
 is unavailable on the built-in start page. Exceptions do not automatically apply
 to sibling hosts or subdomains.
 
@@ -12,8 +13,9 @@ The global setting and hostname exceptions are saved atomically to
 `protection.json` in the normal app-data directory, independently of session and
 search/homepage settings. Write failures are reported, and the in-memory choice
 still applies. The native views remain alive across protection changes, retaining
-back/forward history. All open native pages currently reload after a policy change, including hidden
-pages; unsent page form state can be lost. Automatic filter updates replace native
+back/forward history. A policy change reloads only open pages whose effective protection changed,
+including hidden pages on the affected hostname; unsent form state on those
+pages can be lost. Unrelated websites keep their loaded documents and state. Automatic filter updates replace native
 network rules without reloading documents. Updated cosmetics apply on the next
 normal navigation or reload.
 

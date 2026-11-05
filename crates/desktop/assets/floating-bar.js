@@ -209,9 +209,11 @@ new ResizeObserver(metrics).observe(tabs);
 window.updateBar = (s) => {
   const shield=document.querySelector('#shield'), active=s.tabs.find(t=>t.id===s.active);
   shield.disabled=!active?.protectionSite || !active?.protectionGlobal || active?.protectionReady===false;
+  shield.dataset.protectionState=active?.protectionReady===false ? 'pending' : active?.protection ? 'on' : 'off';
+  shield.setAttribute('aria-busy',String(active?.protectionReady===false));
   shield.style.color=active?.protection ? 'var(--accent)' : 'var(--muted)';
   shield.setAttribute('aria-pressed',String(!!active?.protection));
-  shield.title=active?.protectionReady===false ? 'Applying protection…' : active?.protectionSite ? (active.protectionGlobal ? `${active.protection?'Protection on':'Protection off'} for ${active.protectionSite}. Click to ${active.protection?'disable':'enable'} and reload.` : 'Protection is off in Settings.') : 'Protection is available on websites.';
+  shield.title=active?.protectionReady===false ? `Applying protection ${active?.protection?'on':'off'}${active?.protectionSite?' for '+active.protectionSite:''}…` : active?.protectionSite ? (active.protectionGlobal ? `${active.protection?'Protection on':'Protection off'} for ${active.protectionSite}. Click to ${active.protection?'disable':'enable'} and reload.` : 'Protection is off in Settings.') : 'Protection is available on websites.';
   shield.setAttribute('aria-label',shield.title);
   const old = state;
   state = s;

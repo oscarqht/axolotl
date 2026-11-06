@@ -166,6 +166,8 @@ pub trait BrowserHost {
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
     fn set_panel_corners(&self, tab: TabId, radius: f32, bottom_only: bool) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
+    #[cfg(target_os = "macos")]
+    fn auto_pip_visibility(&self, visible: HashSet<TabId>);
     fn raise(&self, tab: TabId) -> Result<()>;
     fn focus(&self, tab: TabId) -> Result<()>;
     fn focus_parent(&self, tab: TabId) -> Result<()>;
@@ -234,6 +236,12 @@ pub struct WryState {
     sender: crate::ui_events::SyncSender<BrowserEvent>,
     visible: Rc<RefCell<HashSet<TabId>>>,
     loaded: Rc<RefCell<HashSet<TabId>>>,
+    #[cfg(target_os = "macos")]
+    pip_owner: Rc<std::cell::Cell<Option<TabId>>>,
+    #[cfg(target_os = "macos")]
+    pip_visible: RefCell<HashSet<TabId>>,
+    #[cfg(target_os = "macos")]
+    pip_pending: RefCell<Vec<TabId>>,
 }
 
 impl Default for WryHost {
@@ -260,11 +268,38 @@ impl Default for WryHost {
             sender,
             visible: Rc::new(RefCell::new(HashSet::new())),
             loaded: Rc::new(RefCell::new(HashSet::new())),
+            #[cfg(target_os = "macos")]
+            pip_owner: Rc::new(std::cell::Cell::new(None)),
+            #[cfg(target_os = "macos")]
+            pip_visible: RefCell::new(HashSet::new()),
+            #[cfg(target_os = "macos")]
+            pip_pending: RefCell::new(Vec::new()),
         }))
     }
 }
 
 impl WryHost {
+    #[cfg(target_os = "macos")]
+    fn request_next_pip(&self) {
+        while self.pip_owner.get().is_none() {
+            let Some(tab) = self.pip_pending.borrow_mut().pop() else {
+                break;
+            };
+            if self.pip_visible.borrow().contains(&tab) || !self.loaded.borrow().contains(&tab) {
+                continue;
+            }
+            if let Ok(view) = self.get(tab) {
+                self.pip_owner.set(Some(tab));
+                if view
+                    .evaluate_script("window.__axolotlNativePip?.()")
+                    .is_err()
+                {
+                    self.pip_owner.set(None);
+                }
+            }
+        }
+    }
+
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn native_test_click(
         &self,
@@ -344,6 +379,12 @@ impl WryHost {
         #[cfg(target_os = "macos")]
         let popup_host = Rc::downgrade(&self.0);
         let visible = self.visible.clone();
+        #[cfg(target_os = "macos")]
+        let pip_owner = self.pip_owner.clone();
+        #[cfg(target_os = "macos")]
+        let pip_host = Rc::downgrade(&self.0);
+        #[cfg(target_os = "macos")]
+        let pip_load_owner = self.pip_owner.clone();
         let nonce = uuid::Uuid::new_v4().simple().to_string();
         let input_bridge = INPUT_BRIDGE
             .replace("__NONCE__", &nonce)
@@ -357,6 +398,11 @@ impl WryHost {
             )
             .replace("__GESTURES__", include_str!("../assets/gestures.js"));
         let notifications = include_str!("../assets/notifications.js").replace("__NONCE__", &nonce);
+        let native_pip = if cfg!(target_os = "macos") {
+            include_str!("../assets/native-pip.js").replace("__NONCE__", &nonce)
+        } else {
+            String::new()
+        };
         let start_url = html_data_url(START_HTML);
         let builder = WebViewBuilder::new()
             .with_visible(false)
@@ -379,11 +425,37 @@ impl WryHost {
                 false,
             )
             .with_initialization_script_for_main_only(notifications, false)
+            .with_initialization_script(&native_pip)
             .with_navigation_handler(move |url| {
                 allowed_url(&url) || (cfg!(target_os = "windows") && url == start_url)
             })
             .with_ipc_handler(move |request| {
                 let tab = ipc_identity.load(Ordering::Relaxed);
+                #[cfg(target_os = "macos")]
+                {
+                    if request.body() == &format!("{nonce}:pip:entered") {
+                        pip_owner.set(Some(tab));
+                        if let Some(host) = pip_host.upgrade() {
+                            host.pip_pending.borrow_mut().clear();
+                        }
+                        return;
+                    }
+                    if request.body() == &format!("{nonce}:pip:unavailable") {
+                        if pip_owner.get() == Some(tab) {
+                            pip_owner.set(None);
+                            if let Some(host) = pip_host.upgrade() {
+                                WryHost(host).request_next_pip();
+                            }
+                        }
+                        return;
+                    }
+                    if request.body() == &format!("{nonce}:pip:left") {
+                        if pip_owner.get() == Some(tab) {
+                            pip_owner.set(None);
+                        }
+                        return;
+                    }
+                }
                 // Notifications must also arrive from hidden tabs and spaces.
                 if request.body() == &format!("{nonce}:notification") {
                     let _ = ipc.try_send(BrowserEvent::Notification(tab));
@@ -445,6 +517,10 @@ impl WryHost {
                 } else {
                     loaded.borrow_mut().remove(&tab);
                     completed.set(false);
+                    #[cfg(target_os = "macos")]
+                    if pip_load_owner.get() == Some(tab) {
+                        pip_load_owner.set(None);
+                    }
                     #[cfg(not(target_os = "windows"))]
                     let _ = load.try_send(BrowserEvent::LoadStarted(tab));
                 }
@@ -800,6 +876,13 @@ impl BrowserHost for WryHost {
         crate::drag_preview::capture(self.get(tab)?.as_ref(), image)
     }
     fn unload(&self, tab: TabId) {
+        #[cfg(target_os = "macos")]
+        {
+            if self.pip_owner.get() == Some(tab) {
+                self.pip_owner.set(None);
+            }
+            self.pip_visible.borrow_mut().remove(&tab);
+        }
         self.unsaved_zoom.borrow_mut().remove(&tab);
         #[cfg(target_os = "macos")]
         {
@@ -809,6 +892,8 @@ impl BrowserHost for WryHost {
         if let Some(view) = self.views.borrow_mut().remove(&tab) {
             let _ = view.set_visible(false);
             if self.downloads_active() {
+                #[cfg(target_os = "macos")]
+                let _ = view.evaluate_script("for (const v of document.querySelectorAll('video')) if (v.webkitPresentationMode === 'picture-in-picture') v.webkitSetPresentationMode('inline')");
                 self.retired_views.borrow_mut().push(view);
             }
         }
@@ -927,6 +1012,16 @@ impl BrowserHost for WryHost {
                 delegates.insert(to, delegate);
             }
         }
+        #[cfg(target_os = "macos")]
+        {
+            if self.pip_owner.get() == Some(from) {
+                self.pip_owner.set(Some(to));
+            }
+            let mut visible = self.pip_visible.borrow_mut();
+            if visible.remove(&from) {
+                visible.insert(to);
+            }
+        }
         identity.store(to, Ordering::Relaxed);
         self.identities.borrow_mut().insert(to, identity);
         views.insert(to, view);
@@ -1004,6 +1099,22 @@ impl BrowserHost for WryHost {
     #[cfg(all(feature = "smoke", target_os = "windows"))]
     fn panel_clip_state(&self, tab: TabId) -> Result<serde_json::Value> {
         self.get(tab)?.test_panel_clip_state()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn auto_pip_visibility(&self, visible: HashSet<TabId>) {
+        let previous = {
+            let mut previous = self.pip_visible.borrow_mut();
+            if *previous == visible {
+                return;
+            }
+            std::mem::replace(&mut *previous, visible.clone())
+        };
+        // Showing a tab never exits PiP. A dismissal cannot retry until another hide.
+        if self.pip_owner.get().is_none() {
+            *self.pip_pending.borrow_mut() = previous.difference(&visible).copied().collect();
+            self.request_next_pip();
+        }
     }
 
     fn show(&self, tab: TabId, visible: bool) -> Result<()> {
@@ -1122,6 +1233,13 @@ impl BrowserHost for WryHost {
 
     fn retain(&self, tabs: &HashSet<TabId>) {
         #[cfg(target_os = "macos")]
+        {
+            if self.pip_owner.get().is_some_and(|id| !tabs.contains(&id)) {
+                self.pip_owner.set(None);
+            }
+            self.pip_visible.borrow_mut().retain(|id| tabs.contains(id));
+        }
+        #[cfg(target_os = "macos")]
         let tabs = &tabs
             .union(&self.pending_popups.borrow())
             .copied()
@@ -1151,6 +1269,8 @@ impl BrowserHost for WryHost {
                 eprintln!("Could not hide closed browser view: {error}");
             }
             if self.downloads_active() {
+                #[cfg(target_os = "macos")]
+                let _ = view.evaluate_script("for (const v of document.querySelectorAll('video')) if (v.webkitPresentationMode === 'picture-in-picture') v.webkitSetPresentationMode('inline')");
                 self.retired_views.borrow_mut().push(view.clone());
             }
             false

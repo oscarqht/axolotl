@@ -273,6 +273,10 @@ async fn run(
         return crate::smoke_history_shortcuts::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-native-pip") {
+        return crate::smoke_native_pip::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-page-tools") {
         return crate::smoke_page_tools::run(view, cx).await;
     }

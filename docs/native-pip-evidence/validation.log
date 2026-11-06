@@ -1,0 +1,20 @@
+Axolotl: initializing platform
+Axolotl: platform launched
+Protection: compiling 106302 WebKit rules
+Axolotl: window created
+Protection: WebKit compilation completed in 3.120834042s: ready
+PIP_MEASURE {"phase":"inline","seconds":10.165702792,"host_cpu_percent":2.315757255713406,"before":{"time":7.682198751,"paused":false,"total":352,"dropped":0},"after":{"total":957,"paused":false,"time":17.952161417,"dropped":0}}
+PIP_READY
+PIP_CHECK mode=picture-in-picture
+PIP_MEASURE {"phase":"hidden-pip","seconds":10.086560917,"host_cpu_percent":2.10884563876966,"before":{"time":21.386225376,"paused":false,"total":1258,"dropped":0},"after":{"dropped":0,"paused":false,"time":31.579014083,"total":1860}}
+PIP_CHECK mode=picture-in-picture
+PIP_CHECK mode=picture-in-picture
+PIP_CHECK mode=picture-in-picture
+PIP_CHECK mode=picture-in-picture
+PIP_CHECK mode=picture-in-picture
+PIP_CHECK mode=picture-in-picture
+PIP_CHECK mode=inline
+PIP_CHECK mode=inline
+PIP_CHECK mode=picture-in-picture
+PIP_VISUAL_READY
+AXOLOTL_SMOKE {"result":"passed","checks":["Live YouTube: tab hide enters native PiP, continued hidden playback, three return/hide cycles preserve PiP, dismissal stays inline until shown then hidden, space hide reenters PiP, source closure removes view"],"elapsed_ms":76618,"kind":"programmatic native smoke; OS mouse/keyboard not simulated"}

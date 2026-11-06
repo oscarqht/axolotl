@@ -89,6 +89,8 @@ mod smoke_keyboard;
 mod smoke_link_popup;
 #[cfg(feature = "smoke")]
 mod smoke_menu;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_native_pip;
 #[cfg(feature = "smoke")]
 mod smoke_notifications;
 #[cfg(all(feature = "smoke", target_os = "macos"))]

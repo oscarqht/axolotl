@@ -49,6 +49,11 @@ Website pages use a Safari-compatible identity based on the installed Safari
 version to avoid unsupported-browser warnings and legacy site layouts. See
 [macOS browser compatibility and validation](docs/browser-compatibility-macos.md).
 
+On macOS, switching away from a tab or Axolotl space with a playing video
+requests native WebKit Picture in Picture. Returning keeps PiP open; dismissing
+it suppresses reopening until the tab is shown and hidden again. See
+[native auto-PiP behavior and validation](docs/native-auto-pip.md).
+
 ### Windows (x64)
 
 Install Rust stable with the MSVC toolchain, Visual Studio Build Tools with

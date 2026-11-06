@@ -266,6 +266,15 @@ impl BrowserApp {
         {
             visible.push((id, tab.url.clone()));
         }
+        #[cfg(target_os = "macos")]
+        self.host.auto_pip_visibility(
+            self.model
+                .active_space()
+                .panes
+                .iter()
+                .map(|p| p.active_tab)
+                .collect(),
+        );
         self.wake_newly_visible(visible.iter().map(|(id, _)| *id).collect());
         // Hide only inactive surfaces; hiding the focused view every frame steals page input.
         for id in &ids {

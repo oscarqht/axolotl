@@ -1,4 +1,5 @@
 use crate::app::{BrowserApp, Command, TabAction, TabTarget};
+use crate::icons::icon;
 use gpui::{prelude::*, *};
 use gpui_component::{InteractiveElementExt, input::Input};
 use workspace_core::{Axis, PaneId, Rect};
@@ -32,17 +33,17 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
         .h_full()
         .children(
             [
-                ("minimize", WindowControlArea::Min, '\u{e921}'),
+                ("minimize", WindowControlArea::Min, "minus"),
                 (
                     "maximize-restore",
                     WindowControlArea::Max,
                     if window.is_maximized() {
-                        '\u{e923}'
+                        "square-2-stack"
                     } else {
-                        '\u{e922}'
+                        "stop"
                     },
                 ),
-                ("close", WindowControlArea::Close, '\u{e8bb}'),
+                ("close", WindowControlArea::Close, "x-mark"),
             ]
             .into_iter()
             .map(|(id, area, glyph)| {
@@ -54,7 +55,6 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .font_family("Segoe MDL2 Assets")
                     .text_size(px(10.))
                     .window_control_area(area)
                     .hover(move |style| {
@@ -64,7 +64,7 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
                             style.bg(rgb(colors.hover))
                         }
                     })
-                    .child(glyph.to_string())
+                    .child(icon(glyph, 16.))
             }),
         )
 }
@@ -155,13 +155,19 @@ impl BrowserApp {
                         );
                     }))
                     .when(self.sleep.is_sleeping(id), |button| {
-                        button.child(div().opacity(0.5).child("💤"))
+                        button.child(div().opacity(0.5).child(icon("moon", 16.)))
                     })
                     .when(
                         !self.sleep.is_sleeping(id)
                             && pin.icon.is_none()
                             && !self.favicons.contains_key(&id),
-                        |button| button.child(div().text_color(rgb(colors.muted)).child("◉")),
+                        |button| {
+                            button.child(
+                                div()
+                                    .text_color(rgb(colors.muted))
+                                    .child(icon("globe-alt", 16.)),
+                            )
+                        },
                     )
                     .children(
                         pin.icon
@@ -215,7 +221,7 @@ impl BrowserApp {
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.bg(rgb(colors.hover)))
-                        .child("•••")
+                        .child(icon("ellipsis-horizontal", 18.))
                         .tooltip(|w, cx| {
                             gpui_component::tooltip::Tooltip::new("More pinned tabs").build(w, cx)
                         })
@@ -515,7 +521,7 @@ impl BrowserApp {
                                 1.
                             },
                         )
-                        .child("×")
+                        .child(icon("x-mark", 14.))
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             cx.stop_propagation();
                             if matches!(target, TabTarget::Space(_)) && this.model.spaces.len() == 1
@@ -593,14 +599,19 @@ impl BrowserApp {
                                     .opacity(0.5)
                             }))
                             .when(self.sleep.image(tab).is_none(), |el| {
-                                el.child(div().opacity(0.5).child(format!(
-                                    "💤 {}",
-                                    if pane.active_tab().display_title().is_empty() {
-                                        "New tab"
-                                    } else {
-                                        pane.active_tab().display_title()
-                                    }
-                                )))
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .opacity(0.5)
+                                        .child(icon("moon", 18.))
+                                        .child(if pane.active_tab().display_title().is_empty() {
+                                            "New tab".to_owned()
+                                        } else {
+                                            pane.active_tab().display_title().to_owned()
+                                        }),
+                                )
                             })
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.focus_pane(pane_id, window, cx);
@@ -944,7 +955,7 @@ impl Render for BrowserApp {
                             .cursor_pointer()
                             .hover(|s| s.bg(rgb(colors.hover)))
                             .text_size(px(22.))
-                            .child("+")
+                            .child(icon("plus", 18.))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.command(Command::NewSpace, window, cx)
                             })),
@@ -998,18 +1009,7 @@ impl Render for BrowserApp {
                                 };
                                 gpui_component::tooltip::Tooltip::new(label).build(window, cx)
                             })
-                            .child(
-                                div()
-                                    .w(px(16.))
-                                    .h(px(21.))
-                                    .border_b_2()
-                                    .border_color(rgb(colors.ink))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_size(px(22.))
-                                    .child("↓"),
-                            )
+                            .child(icon("arrow-down-tray", 20.))
                             .when(downloading > 0, |button| {
                                 button.child(
                                     div()
@@ -1060,7 +1060,7 @@ impl Render for BrowserApp {
                                     .action(&crate::Settings, None)
                                     .build(window, cx)
                             })
-                            .child("⚙")
+                            .child(icon("cog-8-tooth", 20.))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.settings_focus.focus(window);
                                 this.open_settings(false, window, cx)

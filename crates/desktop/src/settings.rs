@@ -102,7 +102,7 @@ impl BrowserApp {
                                 let _ = sender.send(event);
                             }
                         }),
-                    include_str!("../assets/settings.html"),
+                    crate::icons::html(include_str!("../assets/settings.html")),
                 )
                 .build_native_child(window, cx)?;
                 dialog.view = Some(view);

@@ -288,7 +288,7 @@ impl BrowserApp {
                                 let _ = sender.try_send(r.body().clone());
                             }
                         }),
-                    include_str!("../assets/link-popup.html"),
+                    crate::icons::html(include_str!("../assets/link-popup.html")),
                 )
                 .build_native_child(window, cx)?;
                 popup.backdrop = Some(view);

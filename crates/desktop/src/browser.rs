@@ -945,7 +945,7 @@ impl BrowserHost for WryHost {
         let view = self.get(tab)?;
         if operation == Operation::Find {
             view.focus()?;
-            view.evaluate_script(include_str!("../assets/page-find.js"))?;
+            view.evaluate_script(&crate::icons::html(include_str!("../assets/page-find.js")))?;
             return Ok(());
         }
         let url = view.url()?;

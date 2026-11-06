@@ -31,6 +31,7 @@ mod floating_panels;
 mod gesture_tests;
 mod history_shortcuts;
 mod history_suggestions;
+mod icons;
 mod link_popup;
 #[cfg(target_os = "macos")]
 mod macos_keyboard;
@@ -188,7 +189,7 @@ fn main() {
         std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "true");
     }
     let incoming = instance.incoming.clone();
-    let application = Application::new();
+    let application = Application::new().with_assets(icons::Assets);
     // Install before AppKit starts dispatching cold-launch Apple events.
     application.on_open_urls(move |urls| external_urls::enqueue(&incoming, urls));
     application.run(move |cx: &mut App| {

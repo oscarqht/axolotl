@@ -108,9 +108,25 @@ The enable checkbox and timeout (at least one whole minute) apply immediately.
 All visible split panes stay awake. Tabs in inactive spaces are hidden. Turning
 off automatic sleep does not wake manual sleepers. Pages are checked before
 sleeping for playing media, live capture streams, active Web Audio contexts,
-peer connections, and trusted form edits. Cross-origin or uninspectable frames
+peer connections, connecting/open WebSocket and EventSource connections, and
+trusted form edits. Submitting a form does not clear edit protection: a prevented,
+asynchronous, or failed submission may still contain unsaved work. Cross-origin or uninspectable frames
 are conservatively exempt. Custom editors and page overrides may escape these
 best-effort checks; manual sleep remains available.
+
+On macOS 14 and newer, loaded content views disable WebKit's independent inactive
+scheduling. Keep Alive therefore prevents Axolotl unloading while WebKit is also
+allowed to keep background work running. Ordinary idle tabs can still be unloaded
+by Axolotl's automatic sleep. Retaining live webapps may use more energy/memory.
+This does not keep the computer awake or guarantee network connectivity during
+system sleep; webapps still need their own reconnection handling after wake.
+
+For a page that remains stuck after Refresh, the tab context menu offers
+**Recover Tab…**. Its native warning explains that recreation loses unsaved
+changes and Back/Forward history. Cancel preserves the current page; Recreate
+Tab opens its saved URL with the same cookies and persistent site data. Recovery
+is manual and unavailable during active downloads or a linked sign-in popup.
+See [webapp reliability investigation and validation](webapp-stability.md).
 
 Sleep captures a small PNG before dropping the native page. A faded snapshot
 (or a title placeholder if capture fails) stays in the pane until clicked.

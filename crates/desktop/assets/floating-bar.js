@@ -457,6 +457,7 @@ function renderMenu() {
       ["Back", !t.canBack, (id) => send({ type: "back", tab: id })],
       ["Forward", !t.canForward, (id) => send({ type: "forward", tab: id })],
       ["Refresh", !t.canReload, (id) => send({ type: "reload", tab: id })],
+      ["Recover Tab…", !t.canReload, (id) => send({ type: "recover", tab: id })],
     ],
     [
       [

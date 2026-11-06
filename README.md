@@ -48,6 +48,8 @@ reports the missing entitlement. See [macOS passkey setup and testing](docs/pass
 Website pages use a Safari-compatible identity based on the installed Safari
 version to avoid unsupported-browser warnings and legacy site layouts. See
 [macOS browser compatibility and validation](docs/browser-compatibility-macos.md).
+Background webapp handling, Keep Alive, reload and explicit tab recovery are
+covered in [webapp reliability](docs/webapp-stability.md).
 
 On macOS, switching away from a tab or Axolotl space with a playing video
 requests native WebKit Picture in Picture. Returning keeps PiP open; dismissing

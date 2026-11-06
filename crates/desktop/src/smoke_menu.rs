@@ -61,6 +61,7 @@ pub(crate) async fn run(
                     "Back",
                     "Forward",
                     "Refresh",
+                    "Recover Tab…",
                     "Set title…",
                     "Sleep Tab",
                     "Keep Alive",
@@ -72,10 +73,41 @@ pub(crate) async fn run(
             && menu["right"].as_f64() <= menu["viewport"].as_f64(),
         "Tab context menu has wrong structure or is clipped: {menu}"
     );
+    #[cfg(target_os = "macos")]
+    if let Some(path) = std::env::args().find_map(|arg| {
+        arg.strip_prefix("--smoke-menu-snapshot=")
+            .map(str::to_owned)
+    }) {
+        // Show the action enabled on a loaded page in the native proof, while
+        // retaining the unloaded-background-target assertions below.
+        bar_eval(view, pane, "document.querySelector('.chip.active').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:60}));true", cx).await?;
+        pause(cx).await;
+        pause(cx).await;
+        ensure!(bar_eval(view, pane, "[...document.querySelectorAll('#menu button')].find(b=>b.textContent==='Recover Tab…').disabled", cx).await? == false, "Loaded page cannot be recovered from its menu");
+        let previous_snapshot = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        view.update_in(cx, |app, _, _| {
+            app.bars[&pane].native_snapshot(path.clone())
+        })?;
+        for _ in 0..15 {
+            if std::fs::metadata(&path)
+                .is_ok_and(|m| m.len() > 0 && m.modified().ok() != previous_snapshot)
+            {
+                break;
+            }
+            pause(cx).await;
+        }
+        ensure!(
+            std::fs::metadata(&path)
+                .is_ok_and(|m| m.len() > 0 && m.modified().ok() != previous_snapshot),
+            "Native tab-menu snapshot missing"
+        );
+        bar_eval(view, pane, OPEN, cx).await?;
+        pause(cx).await;
+    }
     // The lazily-created tab has no page history or view to act on.
     ensure!(
         menu["disabled"]
-            == serde_json::json!([true, true, true, false, false, false, false, false]),
+            == serde_json::json!([true, true, true, true, false, false, false, false, false]),
         "Back/Forward/Refresh must be disabled without history: {menu}"
     );
     view.update_in(cx, |app, _, _| {

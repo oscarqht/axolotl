@@ -99,6 +99,7 @@ impl BrowserApp {
                     self.command(Command::NewTab, window, cx);
                 }
                 "reload" => self.report(self.host.reload(tab)),
+                "recover" => self.confirm_tab_recovery(tab, window, cx),
                 "back" => self.report(self.host.back(tab)),
                 "forward" => self.report(self.host.forward(tab)),
                 "menu-open" => {

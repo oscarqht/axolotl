@@ -325,6 +325,12 @@ impl BrowserApp {
                         cx.notify();
                     }
                 }
+                "recover" => {
+                    if let Some(id) = self.pins.menu.flatten() {
+                        self.dismiss_pin(window, cx);
+                        self.confirm_tab_recovery(id, window, cx);
+                    }
+                }
                 "unpin" => {
                     if let Some(id) = self.pins.menu.flatten() {
                         self.dismiss_pin(window, cx);

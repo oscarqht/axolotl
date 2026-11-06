@@ -104,6 +104,8 @@ impl BrowserEvent {
 /// serialized into the layout core, so a future mobile adapter can share it.
 pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_background_policy(&self, tab: TabId) -> Result<isize>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_zoom(&self, tab: TabId) -> Result<f64>;
 
     #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -405,6 +407,11 @@ impl WryHost {
         };
         let start_url = html_data_url(START_HTML);
         let builder = WebViewBuilder::new()
+            // Keep retained webapps running independently of view visibility.
+            // Keep Alive only governs our unload timer; WebKit's separate
+            // inactive scheduling can otherwise suspend even those pages.
+            // Wry applies this on macOS 14+, ignoring unsupported platforms.
+            .with_background_throttling(wry::BackgroundThrottlingPolicy::Disabled)
             .with_visible(false)
             .with_focused(false)
             .with_bounds(wry::Rect {
@@ -708,6 +715,13 @@ impl WryHost {
 }
 
 impl BrowserHost for WryHost {
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_background_policy(&self, tab: TabId) -> Result<isize> {
+        use wry::WebViewExtMacOS;
+        let view = self.get(tab)?;
+        let preferences = unsafe { view.webview().configuration().preferences() };
+        Ok(unsafe { objc2::msg_send![&*preferences, inactiveSchedulingPolicy] })
+    }
     fn downloads(&self) -> Rc<RefCell<crate::downloads::DownloadManager>> {
         self.downloads.clone()
     }

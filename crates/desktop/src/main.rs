@@ -56,6 +56,7 @@ mod protection;
 mod protection_native;
 #[cfg(any(test, target_os = "windows"))]
 mod protection_script;
+mod reload_shortcuts;
 mod render;
 mod settings;
 mod sleep;
@@ -111,8 +112,15 @@ mod smoke_popup_transition;
 mod smoke_protection;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_quit;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_reload;
 #[cfg(feature = "smoke")]
 mod smoke_responsiveness;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_webapp;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_webapp_recovery;
+
 #[cfg(feature = "smoke")]
 mod smoke_settings;
 #[cfg(feature = "smoke")]
@@ -132,6 +140,7 @@ mod space_menu;
 mod space_shortcuts;
 mod split_preview;
 mod ui_events;
+mod webapp_recovery;
 mod window_state;
 
 use app::BrowserApp;

@@ -63,6 +63,23 @@ pub fn install(cx: &mut App) {
             return std::ptr::null_mut();
         }
 
+        if key.as_deref().is_some_and(|key| {
+            crate::reload_shortcuts::shortcut(
+                key,
+                flags.contains(Flags::Command),
+                flags.intersects(Flags::Control | Flags::Option | Flags::Shift),
+            )
+        }) {
+            let app = app.clone();
+            executor
+                .spawn(async move {
+                    let _ = app.update(|cx| cx.dispatch_action(&crate::Reload));
+                })
+                .detach();
+            // Never wait for a frozen page to forward its reload shortcut.
+            return std::ptr::null_mut();
+        }
+
         if let Some(forward) = key.as_deref().and_then(|key| {
             crate::history_shortcuts::shortcut(
                 key,

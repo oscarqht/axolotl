@@ -201,7 +201,16 @@ impl BrowserApp {
                 SplitEdge::Top => y - r.y,
                 SplitEdge::Bottom => r.y + r.height - y,
             };
-            if distance > 28. {
+            // Moving an existing overlay keeps its free-positioning behavior.
+            // Tiled tabs/stacks use the original broad split regions.
+            if self
+                .model
+                .active_space()
+                .floating_panel(drag.source)
+                .is_some()
+                && drag.whole
+                && distance > 28.
+            {
                 return None;
             }
             Some((pane.id, edge, edge.preview(content)))
@@ -254,8 +263,18 @@ impl BrowserApp {
             });
         let (w, h) = old.map_or((560., 420.), |f| (f.bounds.width, f.bounds.height));
         let edge = self.window_edge_target(position, window);
+        if edge.is_none() && old.is_none() {
+            return None;
+        }
         let offset = old
-            .map(|f| f.fitted(area))
+            .map(|f| {
+                self.model
+                    .active_space()
+                    .floating_placements(area)
+                    .into_iter()
+                    .find(|p| p.pane == f.pane)
+                    .map_or_else(|| f.fitted(area), |p| p.panel)
+            })
             .filter(|r| {
                 f32::from(drag.origin.x) >= r.x
                     && f32::from(drag.origin.x) <= r.x + r.width
@@ -278,13 +297,85 @@ impl BrowserApp {
         // Persist the preferred size even in a window smaller than the minimum.
         Some((
             Rect::new(
-                fitted.x,
-                fitted.y,
+                if edge.is_some() { f.bounds.x } else { fitted.x },
+                if edge.is_some() { f.bounds.y } else { fitted.y },
                 w.min(area.width.max(240.)),
                 h.min(area.height.max(160.)),
             ),
             edge,
         ))
+    }
+
+    fn floating_preview_bounds(&self, position: Point<Pixels>, window: &Window) -> Option<Rect> {
+        let (bounds, edge) = self.floating_drop_target(position, window)?;
+        if edge.is_none() {
+            return Some(bounds);
+        }
+        let drag = self.tab_drag?;
+        let mut space = self.model.active_space().clone();
+        let pane = space.floating.iter_mut().find(|f| {
+            f.pane == drag.source
+                && (drag.whole
+                    || space
+                        .panes
+                        .iter()
+                        .find(|p| p.id == drag.source)
+                        .is_some_and(|p| p.tabs.len() == 1))
+        });
+        let id = if let Some(f) = pane {
+            f.bounds = bounds;
+            f.edge = edge;
+            f.pane
+        } else {
+            space.floating.push(workspace_core::FloatingPanel {
+                pane: u64::MAX,
+                bounds,
+                edge,
+                pinned: false,
+            });
+            u64::MAX
+        };
+        let s = window.viewport_size();
+        space
+            .floating_placements(crate::render::panel_content_rect(
+                s.width.into(),
+                s.height.into(),
+            ))
+            .into_iter()
+            .find(|p| p.pane == id)
+            .map(|p| p.panel)
+    }
+
+    fn center_drop_target(
+        &self,
+        position: Point<Pixels>,
+        window: &Window,
+    ) -> Option<(PaneId, Rect)> {
+        let drag = self.tab_drag.filter(|d| d.active)?;
+        if self.window_edge_target(position, window).is_some()
+            || self.floating_drop_target(position, window).is_some()
+        {
+            return None;
+        }
+        let size = window.viewport_size();
+        let geometry = self.model.active_space().layout.geometry(
+            crate::render::panel_content_rect(size.width.into(), size.height.into()),
+            6.,
+            100.,
+        );
+        geometry
+            .panes
+            .into_iter()
+            .find(|p| {
+                let x = f32::from(position.x);
+                let y = f32::from(position.y);
+                (!drag.whole || p.id != drag.source)
+                    && x >= p.bounds.x
+                    && x < p.bounds.x + p.bounds.width
+                    && y >= p.bounds.y
+                    && y < p.bounds.y + p.bounds.height
+            })
+            .map(|p| (p.id, p.bounds))
     }
 
     pub(crate) fn update_split_preview(&mut self, window: &Window) {
@@ -296,7 +387,8 @@ impl BrowserApp {
         let bounds = position.filter(|_| slot.is_none()).and_then(|p| {
             self.split_drop_target(p, window)
                 .map(|(_, _, r)| r)
-                .or_else(|| self.floating_drop_target(p, window).map(|(r, _)| r))
+                .or_else(|| self.center_drop_target(p, window).map(|(_, r)| r))
+                .or_else(|| self.floating_preview_bounds(p, window))
         });
         if let Some(preview) = &self.split_preview {
             let label = position.map_or("Release to float", |p| {
@@ -304,6 +396,8 @@ impl BrowserApp {
                     "Release to dock at window edge"
                 } else if self.split_drop_target(p, window).is_some() {
                     "Release to split"
+                } else if self.center_drop_target(p, window).is_some() {
+                    "Release to merge"
                 } else {
                     "Release to float"
                 }
@@ -354,6 +448,7 @@ impl BrowserApp {
         let target = position.and_then(|p| self.tab_drop_target(p, window));
         let split = position.and_then(|p| self.split_drop_target(p, window));
         let floating = position.and_then(|p| self.floating_drop_target(p, window));
+        let center = position.and_then(|p| self.center_drop_target(p, window));
         if let Some(drag) = self.tab_drag.take() {
             let moved = if !drag.active {
                 false
@@ -364,6 +459,8 @@ impl BrowserApp {
                     self.model.move_pane(drag.source, pane, None)
                 } else if let Some((pane, edge, _)) = split {
                     self.model.move_pane(drag.source, pane, Some(edge))
+                } else if let Some((pane, _)) = center {
+                    self.model.move_pane(drag.source, pane, None)
                 } else if let Some((bounds, edge)) = floating {
                     self.model.float_pane(drag.source, bounds, edge)
                 } else {
@@ -375,6 +472,9 @@ impl BrowserApp {
                 self.model
                     .split_tab(drag.source, drag.tab, pane, edge)
                     .is_some()
+            } else if let Some((pane, _)) = center {
+                let index = self.model.pane(pane).unwrap().tabs.len();
+                self.model.move_tab(drag.source, drag.tab, pane, index)
             } else if let Some((bounds, edge)) = floating {
                 self.model
                     .float_tab(drag.source, drag.tab, bounds, edge)

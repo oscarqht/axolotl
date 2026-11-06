@@ -159,6 +159,7 @@ pub trait BrowserHost {
     fn unload(&self, tab: TabId);
     fn probe_sleep(&self, tab: TabId, callback: Box<dyn Fn(String) + Send>) -> Result<()>;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
+    fn set_panel_radius(&self, tab: TabId, radius: f32) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
     fn raise(&self, tab: TabId) -> Result<()>;
     fn focus(&self, tab: TabId) -> Result<()>;
@@ -858,6 +859,22 @@ impl BrowserHost for WryHost {
                 ids.insert(to);
             }
         }
+        Ok(())
+    }
+
+    fn set_panel_radius(&self, tab: TabId, radius: f32) -> Result<()> {
+        let view = self.get(tab)?;
+        #[cfg(target_os = "macos")]
+        {
+            use wry::WebViewExtMacOS;
+            if let Some(layer) = view.webview().layer()
+                && layer.cornerRadius() != f64::from(radius)
+            {
+                layer.setCornerRadius(f64::from(radius));
+            }
+        }
+        #[cfg(target_os = "windows")]
+        view.set_panel_corner_radius(radius)?;
         Ok(())
     }
 

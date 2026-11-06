@@ -507,6 +507,11 @@ impl BrowserApp {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let pane = self.model.pane(pane_id).expect("layout pane exists");
         let tab = pane.active_tab;
+        let radius = if self.model.active_space().floating_panel(pane_id).is_some() {
+            0.
+        } else {
+            PANEL_CORNER_RADIUS
+        };
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let state = PaneContent::resolve(
             self.sleep.is_sleeping(tab),
@@ -519,7 +524,7 @@ impl BrowserApp {
             .top(px(rect.y - TOP))
             .w(px(rect.width))
             .h(px(rect.height))
-            .rounded(px(PANEL_CORNER_RADIUS))
+            .rounded(px(radius))
             .overflow_hidden()
             .bg(rgb(colors.surface))
             .child(
@@ -529,7 +534,7 @@ impl BrowserApp {
                     .bottom_0()
                     .left_0()
                     .right_0()
-                    .rounded(px(PANEL_CORNER_RADIUS))
+                    .rounded(px(radius))
                     .bg(rgb(colors.page))
                     .child(if state == PaneContent::Sleeping {
                         div()
@@ -538,10 +543,7 @@ impl BrowserApp {
                             .relative()
                             .cursor_pointer()
                             .children(self.sleep.image(tab).map(|image| {
-                                img(image)
-                                    .size_full()
-                                    .rounded(px(PANEL_CORNER_RADIUS))
-                                    .opacity(0.5)
+                                img(image).size_full().rounded(px(radius)).opacity(0.5)
                             }))
                             .when(self.sleep.image(tab).is_none(), |el| {
                                 el.child(div().opacity(0.5).child(format!(

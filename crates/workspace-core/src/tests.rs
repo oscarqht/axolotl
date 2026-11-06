@@ -1065,3 +1065,71 @@ fn closing_the_last_tiled_pane_with_overlays_keeps_valid_focus() {
         .is_some());
     assert_eq!(Workspace::from_json(&w.to_json()).unwrap(), w);
 }
+
+#[test]
+fn docked_chips_follow_the_saved_anchor_and_hover_panels_fit() {
+    let mut w = Workspace::default();
+    let pane = w.focused_pane().id;
+    w.float_pane(
+        pane,
+        Rect::new(500., 610., 420., 300.),
+        Some(SplitEdge::Left),
+    );
+    let a = Rect::new(6., 44., 1000., 740.);
+    let p = w.active_space().floating_placements(a)[0];
+    assert_eq!(p.chip.unwrap(), Rect::new(6., 610., 28., 156.));
+    // The chip keeps the docking anchor while the page shifts up to fit.
+    assert_eq!(p.panel.y, 484.);
+    assert_eq!(p.panel.y + p.panel.height, 784.);
+    assert_eq!(w.active_space().floating[0].bounds.y, 610.);
+    let before = w.to_json();
+    assert_eq!(
+        Workspace::from_json(&before)
+            .unwrap()
+            .active_space()
+            .floating_placements(a)[0]
+            .chip,
+        p.chip
+    );
+}
+
+#[test]
+fn chip_offsets_avoid_collisions_on_the_same_and_adjacent_edges() {
+    let mut w = Workspace::default();
+    let first = w.focused_pane().id;
+    w.float_pane(first, Rect::new(6., 44., 420., 300.), Some(SplitEdge::Left));
+    let second = w.active_space().layout.pane_ids()[0];
+    w.float_pane(
+        second,
+        Rect::new(6., 44., 420., 300.),
+        Some(SplitEdge::Left),
+    );
+    let third = w.active_space().layout.pane_ids()[0];
+    w.float_pane(third, Rect::new(6., 44., 420., 300.), Some(SplitEdge::Top));
+    for area in [
+        Rect::new(6., 44., 1000., 740.),
+        Rect::new(6., 44., 500., 330.),
+    ] {
+        let p = w.active_space().floating_placements(area);
+        assert_eq!(p[0].chip.unwrap().y, 44.);
+        for (i, a) in p.iter().enumerate() {
+            let a = a.chip.unwrap();
+            assert!(
+                a.x >= area.x
+                    && a.y >= area.y
+                    && a.x + a.width <= area.x + area.width
+                    && a.y + a.height <= area.y + area.height
+            );
+            for b in &p[i + 1..] {
+                let b = b.chip.unwrap();
+                assert!(
+                    a.x + a.width <= b.x
+                        || b.x + b.width <= a.x
+                        || a.y + a.height <= b.y
+                        || b.y + b.height <= a.y,
+                    "overlapping chips: {a:?} {b:?}"
+                );
+            }
+        }
+    }
+}

@@ -4,9 +4,9 @@
 body.left #frame,body.right #frame{position:absolute;left:0;top:0;width:100vh;height:100vw;transform-origin:0 0}
 body.left #frame{transform:translateY(100vh) rotate(-90deg)}
 body.right #frame{transform:translateX(100vw) rotate(90deg)}
-#title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}img{width:15px;height:15px}button{border:0;background:transparent;color:inherit;padding:4px;border-radius:5px;cursor:pointer}button:hover{background:#cee5dc}#grip{display:none;text-align:right;width:100%;height:100%;cursor:nwse-resize;background:#edf6f2;border:1px solid #9bb9af;border-radius:0 0 8px 8px;padding-right:4px}
+#title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}img{width:15px;height:15px}button{border:0;background:transparent;color:inherit;padding:4px;border-radius:5px;cursor:pointer}button:hover{background:#cee5dc}#grip{display:none;position:absolute;right:0;bottom:0;width:19px;height:19px;cursor:nwse-resize;background:#edf6f2;clip-path:polygon(100% 0,100% 100%,0 100%)}#grip::after{content:"";position:absolute;right:3px;bottom:3px;width:9px;height:9px;background:currentColor;clip-path:polygon(100% 0,100% 100%,0 100%)}
 @media(prefers-color-scheme:dark){body{color:#d7ede5}#frame,#grip{background:#243c34;border-color:#537569}button:hover{background:#3b5d4f}}
-</style><div id="frame"><span>⠿</span><img id="icon"><span id="title"></span><button id="pin" title="Keep panel open">◇</button><button id="close" title="Close panel">×</button></div><div id="grip">◢</div>
+</style><div id="frame"><span>⠿</span><img id="icon"><span id="title"></span><button id="pin" title="Keep panel open">◇</button><button id="close" title="Close panel">×</button></div><div id="grip"></div>
 <script>
 const frame=document.getElementById('frame'),grip=document.getElementById('grip'),title=document.getElementById('title'),icon=document.getElementById('icon'),pin=document.getElementById('pin'),closeButton=document.getElementById('close');
 let state={}, drag=null;

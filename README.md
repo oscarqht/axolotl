@@ -130,20 +130,21 @@ machine running the executable. See the validation report below for tested scope
   delivery is forwarded only when the engine already has permission and supports
   the constructor. Service-worker and push notifications are not included.
 - Drag a chip to move one tab, or the handle to move the complete stack. Drop on
-  another panel's bar to merge, or within its thin edge target to create a split.
-  Other drops inside the workspace create a floating panel. A blue preview means
-  float, green means split, and purple means dock at a window edge.
-- Floating panels have a draggable title header, a close button, and a bottom
-  resize grip. Drop at any of the four window edges to snap an overlay there;
-  the tiled layout stays unchanged. Edge panels collapse into separate title and
-  favicon chips. Hover a chip to reveal its live page; leaving hides it after a
-  short grace period. **◇ / ◆** toggles keeping a panel open. Menus, address editing,
-  resizing and dragging keep the panel open. One unpinned panel reveals per edge.
-  Drag a chip onto another chip on that edge to reorder it; drag away to float.
-  Return panels to tiled splits or tab stacks using the same explicit targets.
+  a panel's bar or center to merge, or in its broad edge region to create a split.
+  Only workspace-edge drops detach a new floating overlay. An existing overlay
+  can be freely moved by its header or returned to a tiled split at a thin edge
+  target. Green previews mean split, purple means dock, blue means move a float.
+- Floating panels have a draggable title header and a resize triangle over the
+  page's bottom-right corner. Their pages have square inner corners and no resize
+  footer. Dock at any window edge without changing the tiled layout. Chips stay
+  at the docking position, with offsets to avoid overlaps. Left/right chips are
+  vertical. Hover reveals a fitted panel beside the chip; leaving hides it after
+  a short grace period. **◇ / ◆** toggles keeping it open. Menus, address editing,
+  resizing and dragging keep it open. One unpinned panel reveals per edge.
+  Drag a chip onto another chip on that edge to reorder; drag away to float.
 - Floating panels belong to their space. Tabs, preferred positions and sizes,
-  edge placement, chip order and pin state restore after restarting. Unpinned
-  edge panels start collapsed. Window resizing keeps panels and chips reachable.
+  edge anchors, chip order and pin state restore after restarting. Unpinned
+  panels restore collapsed. Window resizing keeps panels and chips reachable.
   Moving retains native page state and back/forward history. Detaching the last
   tiled panel leaves a fresh start panel behind. Escape, loss of window activation,
   or releasing outside the workspace cancels a panel move.

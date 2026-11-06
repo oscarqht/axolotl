@@ -78,6 +78,7 @@ pub async fn run(
 ) -> Result<Vec<&'static str>> {
     eprintln!("Floating smoke: detach native tab");
     let (source, tab, host) = view.update_in(cx, |app, window, cx| {
+        app.floating_test_pointer(point(px(-100.), px(-100.)));
         app.model.add_space("Floating panels", "about:blank");
         let source = app.model.focused_pane().id;
         let tab = app.active_tab();
@@ -101,11 +102,56 @@ pub async fn run(
         )
     })?;
     drag(view, source, "bar", start, point(px(480.), px(280.)), cx).await?;
-    let pane = view
-        .update_in(cx, |app, _, _| {
-            app.model.active_space().floating.first().map(|f| f.pane)
-        })?
-        .ok_or_else(|| anyhow::anyhow!("native tab drop did not detach"))?;
+    let split_pane = view.update_in(cx, |app, _, _| {
+        ensure!(
+            app.model.active_space().floating.is_empty(),
+            "content drop created an overlay instead of a split"
+        );
+        ensure!(
+            app.model.active_space().layout.pane_ids().len() == 2,
+            "content drop didn't split"
+        );
+        Ok::<_, anyhow::Error>(
+            app.model
+                .active_space()
+                .panes
+                .iter()
+                .find(|p| p.active_tab == tab)
+                .unwrap()
+                .id,
+        )
+    })??;
+    let (start, edge) = view.update_in(cx, |app, window, _| {
+        let r = app.bars[&split_pane].bounds;
+        let s = window.viewport_size();
+        let a = crate::render::panel_content_rect(s.width.into(), s.height.into());
+        (
+            point(px(r.x + 15.), px(r.y + 24.)),
+            point(px(a.x + 4.), px(280.)),
+        )
+    })?;
+    drag(view, split_pane, "bar", start, edge, cx).await?;
+    let pane = view.update_in(cx, |app, _, cx| {
+        let pane = app.model.active_space().floating.first().unwrap().pane;
+        app.model.pin_floating(pane);
+        app.reveal_floating(pane);
+        cx.notify();
+        pane
+    })?;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    ensure!(
+        host.panel_clip_state(tab)?["radius"] == 0.,
+        "floating webpage retained rounded inner corners"
+    );
+    let grip_style=chrome_eval(view,pane,"grip","(()=>{const r=grip.getBoundingClientRect();return [r.width,r.height,getComputedStyle(grip).clipPath]})()",cx).await?;
+    ensure!(
+        grip_style[0] == 19.
+            && grip_style[1] == 19.
+            && grip_style[2].as_str().unwrap().starts_with("polygon"),
+        "resize grip is not a corner overlay"
+    );
     ensure!(eval(&host,tab,"!!window.floatingIdentity && document.querySelector('input').value==='Live page retained'",cx).await?==true,"detaching replaced live document");
     eprintln!("Floating smoke: move whole panel {pane}");
     // Move a whole floating panel using its native header.
@@ -139,8 +185,8 @@ pub async fn run(
         view,
         pane,
         "grip",
-        point(px(grip.x + grip.width - 8.), px(grip.y + 7.)),
-        point(px(grip.x + grip.width + 42.), px(grip.y + 47.)),
+        point(px(grip.x + 14.), px(grip.y + 14.)),
+        point(px(grip.x + 64.), px(grip.y + 54.)),
         cx,
     )
     .await?;
@@ -157,6 +203,10 @@ pub async fn run(
         );
         Ok::<_, anyhow::Error>(())
     })??;
+    view.update_in(cx, |app, _, cx| {
+        app.model.pin_floating(pane);
+        cx.notify();
+    })?;
     for edge in [
         SplitEdge::Left,
         SplitEdge::Right,
@@ -187,14 +237,38 @@ pub async fn run(
             cx,
         )
         .await?;
-        view.update_in(cx, |app, _, _| {
+        view.update_in(cx, |app, window, _| {
             ensure!(
                 app.model.active_space().floating_panel(pane).unwrap().edge == Some(edge),
-                "wrong docked edge"
+                "wrong docked edge: expected {edge:?}, actual {:?}, drag {:?}",
+                app.model.active_space().floating_panel(pane).unwrap().edge,
+                app.tab_drag
             );
             ensure!(
                 Workspace::from_json(&app.model.to_json())? == *app.model,
                 "floating session did not round trip"
+            );
+            let s = window.viewport_size();
+            let area = crate::render::panel_content_rect(s.width.into(), s.height.into());
+            let chip = app.floating_test_bounds(pane, "chip");
+            let frame = app.floating_test_bounds(pane, "header");
+            let f = app.model.active_space().floating_panel(pane).unwrap();
+            let vertical = matches!(edge, SplitEdge::Left | SplitEdge::Right);
+            let expected = if vertical {
+                f.bounds.y.clamp(area.y, area.y + area.height - chip.height)
+            } else {
+                f.bounds.x.clamp(area.x, area.x + area.width - chip.width)
+            };
+            ensure!(
+                ((if vertical { chip.y } else { chip.x }) - expected).abs() < 1.,
+                "chip lost its docking anchor"
+            );
+            ensure!(
+                frame.x >= area.x
+                    && frame.y >= area.y
+                    && frame.x + frame.width <= area.x + area.width + 0.1
+                    && frame.y + frame.height <= area.y + area.height + 0.1,
+                "revealed panel extends outside workspace"
             );
             Ok::<_, anyhow::Error>(())
         })??;
@@ -207,6 +281,48 @@ pub async fn run(
                 && chip_size[3].as_f64().unwrap().abs() < 0.1,
             "rotated chip is clipped or has incorrect orientation: {chip_size}"
         );
+        if edge == SplitEdge::Left {
+            let anchor = view.update_in(cx, |app, _, cx| {
+                let b = app
+                    .model
+                    .active_space()
+                    .floating_panel(pane)
+                    .unwrap()
+                    .bounds;
+                app.model.pin_floating(pane);
+                app.reveal_floating(pane);
+                cx.notify();
+                b
+            })?;
+            for _ in 0..3 {
+                pause(cx).await;
+            }
+            let g = view.update_in(cx, |app, _, _| app.floating_test_bounds(pane, "grip"))?;
+            drag(
+                view,
+                pane,
+                "grip",
+                point(px(g.x + 14.), px(g.y + 14.)),
+                point(px(g.x + 26.), px(g.y + 24.)),
+                cx,
+            )
+            .await?;
+            view.update_in(cx, |app, _, cx| {
+                let b = app
+                    .model
+                    .active_space()
+                    .floating_panel(pane)
+                    .unwrap()
+                    .bounds;
+                ensure!(
+                    b.x == anchor.x && b.y == anchor.y,
+                    "resizing moved the docking anchor"
+                );
+                app.model.pin_floating(pane);
+                cx.notify();
+                Ok::<_, anyhow::Error>(())
+            })??;
+        }
         // Allow leave-to-hide to expire, then invoke the chip's own hover handler.
         for _ in 0..5 {
             pause(cx).await;
@@ -346,6 +462,10 @@ pub async fn run(
         Ok::<_, anyhow::Error>(())
     })??;
     eprintln!("Floating smoke: merge row");
+    ensure!(
+        host.panel_clip_state(tab)?["radius"] == f64::from(crate::render::PANEL_CORNER_RADIUS),
+        "tiled page radius wasn't restored"
+    );
     // Merge the complete panel through a native tab-row destination.
     let (start, end) = view.update_in(cx, |app, _, _| {
         let a = app.bars[&pane].bounds;
@@ -403,7 +523,10 @@ pub async fn run(
         let r = app.bars[&whole].bounds;
         point(px(r.x + 15.), px(r.y + 24.))
     })?;
-    drag(view, whole, "bar", start, point(px(650.), px(350.)), cx).await?;
+    let end = view.update_in(cx, |_, window, _| {
+        point(window.viewport_size().width - px(10.), px(350.))
+    })?;
+    drag(view, whole, "bar", start, end, cx).await?;
     view.update_in(cx, |app, _, _| {
         ensure!(
             app.model.active_space().floating_panel(whole).is_some(),

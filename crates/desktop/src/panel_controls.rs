@@ -285,6 +285,20 @@ impl BrowserApp {
             }
             self.report(result);
             if self.host.has_view(id) {
+                let floating = self
+                    .model
+                    .active_space()
+                    .floating
+                    .iter()
+                    .any(|f| self.model.pane(f.pane).is_some_and(|p| p.active_tab == id));
+                self.report(self.host.set_panel_radius(
+                    id,
+                    if floating {
+                        0.
+                    } else {
+                        crate::render::PANEL_CORNER_RADIUS
+                    },
+                ));
                 self.report(self.host.show(id, true));
             }
         }

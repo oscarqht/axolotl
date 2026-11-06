@@ -1,7 +1,7 @@
 //! Browser workspace state, independent of a rendering toolkit or native web engine.
 mod floating;
 mod layout;
-pub use floating::FloatingPanel;
+pub use floating::{FloatingPanel, FloatingPlacement};
 mod model;
 mod navigation;
 mod snapshot;

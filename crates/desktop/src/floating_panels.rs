@@ -111,7 +111,9 @@ pub struct FloatingPanels {
     pub revealed: HashSet<PaneId>,
     front: Option<PaneId>,
     outside: HashMap<PaneId, Instant>,
-    resize: Option<(PaneId, Rect)>,
+    #[cfg(feature = "smoke")]
+    test_pointer: Option<Point<Pixels>>,
+    resize: Option<(PaneId, Rect, Rect)>,
     // Hold the source coordinate system until pointer capture ends.
     drag_origin: Option<(PaneId, Rect)>,
 }
@@ -126,7 +128,7 @@ fn area(window: &Window) -> Rect {
 
 impl BrowserApp {
     pub(crate) fn cancel_floating_interaction(&mut self) {
-        if let Some((id, bounds)) = self.floating_panels.resize.take() {
+        if let Some((id, bounds, _)) = self.floating_panels.resize.take() {
             self.model.resize_floating(id, bounds);
         }
         self.floating_panels.drag_origin = None;
@@ -135,15 +137,16 @@ impl BrowserApp {
         let area = area(window);
         let space = self.model.active_space();
         let mut geometry = space.layout.geometry(area, 6., 100.);
+        let placements = space.floating_placements(area);
         let mut floating: Vec<_> = space.floating.iter().collect();
         floating.sort_by_key(|f| Some(f.pane) == self.floating_panels.front);
         for f in floating {
             if f.edge.is_none() || f.pinned || self.floating_panels.revealed.contains(&f.pane) {
-                let mut r = f.fitted(area);
+                let mut r = placements.iter().find(|p| p.pane == f.pane).unwrap().panel;
                 r.x += 1.;
                 r.width = (r.width - 2.).max(1.);
                 r.y += 30.;
-                r.height = (r.height - 44.).max(1.);
+                r.height = (r.height - 31.).max(1.);
                 geometry.panes.push(PaneRect {
                     id: f.pane,
                     bounds: r,
@@ -161,58 +164,14 @@ impl BrowserApp {
         self.floating_panels
             .outside
             .retain(|id, _| ids.contains(id));
-        let mut slots = [0usize; 4];
         let area = area(window);
+        let placements = self.model.active_space().floating_placements(area);
         for f in floating {
             let open =
                 f.edge.is_none() || f.pinned || self.floating_panels.revealed.contains(&f.pane);
-            let r = f.fitted(area);
-            let chip = if let Some(edge) = f.edge {
-                let index = match edge {
-                    SplitEdge::Left => 0,
-                    SplitEdge::Right => 1,
-                    SplitEdge::Top => 2,
-                    SplitEdge::Bottom => 3,
-                };
-                let slot = slots[index];
-                slots[index] += 1;
-                // Wrap chips into rows/columns instead of losing them off-screen.
-                let vertical = index < 2;
-                let length = if vertical {
-                    (area.height - 64.).max(32.)
-                } else {
-                    (area.width - 320.).max(164.)
-                };
-                let chip_length = if vertical {
-                    (area.height - 64.).clamp(28., 156.)
-                } else {
-                    156.
-                };
-                let stride = chip_length + 8.;
-                let count = (length / stride).floor().max(1.) as usize;
-                let offset = (slot % count) as f32 * stride;
-                let lane = (slot / count) as f32 * if vertical { 32. } else { 30. };
-                match edge {
-                    SplitEdge::Left => {
-                        Rect::new(area.x + lane, area.y + 32. + offset, 28., chip_length)
-                    }
-                    SplitEdge::Right => Rect::new(
-                        area.x + area.width - 28. - lane,
-                        area.y + 32. + offset,
-                        28.,
-                        chip_length,
-                    ),
-                    SplitEdge::Top => Rect::new(area.x + 160. + offset, area.y + lane, 156., 28.),
-                    SplitEdge::Bottom => Rect::new(
-                        area.x + 160. + offset,
-                        area.y + area.height - 28. - lane,
-                        156.,
-                        28.,
-                    ),
-                }
-            } else {
-                Rect::default()
-            };
+            let placement = placements.iter().find(|p| p.pane == f.pane).unwrap();
+            let r = placement.panel;
+            let chip = placement.chip.unwrap_or_default();
             let title = self
                 .model
                 .pane(f.pane)
@@ -267,7 +226,7 @@ impl BrowserApp {
                     f.edge.is_some(),
                 )?;
                 chrome.grip.place(
-                    Rect::new(r.x, r.y + r.height - 14., r.width, 14.),
+                    Rect::new(r.x + r.width - 20., r.y + r.height - 20., 19., 19.),
                     json!({"grip":true}),
                     open,
                 )?;
@@ -408,6 +367,21 @@ impl BrowserApp {
                         let items = &self.model.active_space().floating;
                         let from = items.iter().position(|f| f.pane == pane).unwrap();
                         let to = items.iter().position(|f| f.pane == target).unwrap();
+                        let a = items[from].bounds;
+                        let b = items[to].bounds;
+                        let vertical =
+                            matches!(source_edge, Some(SplitEdge::Left | SplitEdge::Right));
+                        let mut source_bounds = a;
+                        let mut target_bounds = b;
+                        if vertical {
+                            source_bounds.y = b.y;
+                            target_bounds.y = a.y;
+                        } else {
+                            source_bounds.x = b.x;
+                            target_bounds.x = a.x;
+                        }
+                        self.model.resize_floating(pane, source_bounds);
+                        self.model.resize_floating(target, target_bounds);
                         self.model
                             .reorder_floating(pane, to + usize::from(to > from));
                         self.cancel_tab_drag(cx);
@@ -420,14 +394,22 @@ impl BrowserApp {
                     let r = self
                         .model
                         .active_space()
+                        .floating_placements(area(window))
+                        .into_iter()
+                        .find(|p| p.pane == pane)
+                        .unwrap()
+                        .panel;
+                    let original = self
+                        .model
+                        .active_space()
                         .floating_panel(pane)
                         .unwrap()
-                        .fitted(area(window));
-                    self.floating_panels.resize = Some((pane, r));
+                        .bounds;
+                    self.floating_panels.resize = Some((pane, original, r));
                 }
                 "resize" | "resize-end" => {
-                    if let Some((id, mut r)) =
-                        self.floating_panels.resize.filter(|(id, _)| *id == pane)
+                    if let Some((id, original, mut r)) =
+                        self.floating_panels.resize.filter(|(id, _, _)| *id == pane)
                     {
                         let f = self.model.active_space().floating_panel(id).unwrap();
                         let dx = event["dx"].as_f64().unwrap_or(0.) as f32;
@@ -444,6 +426,10 @@ impl BrowserApp {
                         };
                         r.width = r.width.clamp(240., area(window).width.max(240.));
                         r.height = r.height.clamp(160., area(window).height.max(160.));
+                        if f.edge.is_some() {
+                            r.x = original.x;
+                            r.y = original.y;
+                        }
                         self.model.resize_floating(id, r);
                     }
                     if event["type"] == "resize-end" {
@@ -492,9 +478,15 @@ impl BrowserApp {
                 }
             }
         }
+        // Queued AppKit test events do not move the physical OS pointer.
+        #[cfg(feature = "smoke")]
+        if let Some(test_pointer) = self.floating_panels.test_pointer {
+            pointer = test_pointer;
+        }
         let area = area(window);
         let now = Instant::now();
         let mut hide = vec![];
+        let placements = self.model.active_space().floating_placements(area);
         for id in &self.floating_panels.revealed {
             let Some(f) = self.model.active_space().floating_panel(*id) else {
                 continue;
@@ -508,7 +500,10 @@ impl BrowserApp {
                     .get(id)
                     .is_some_and(|b| b.menu_open || b.history_open);
             if busy
-                || contains(f.fitted(area), pointer.x.into(), pointer.y.into())
+                || placements
+                    .iter()
+                    .find(|p| p.pane == *id)
+                    .is_some_and(|p| contains(p.panel, pointer.x.into(), pointer.y.into()))
                 || self
                     .floating_panels
                     .chrome
@@ -532,6 +527,9 @@ impl BrowserApp {
 
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 impl BrowserApp {
+    pub(crate) fn floating_test_pointer(&mut self, position: Point<Pixels>) {
+        self.floating_panels.test_pointer = Some(position);
+    }
     pub(crate) fn floating_test_mouse(
         &self,
         pane: PaneId,

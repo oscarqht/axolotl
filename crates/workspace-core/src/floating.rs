@@ -172,3 +172,140 @@ pub(crate) fn valid_bounds(r: Rect) -> bool {
         && (240. ..=4096.).contains(&r.width)
         && (160. ..=4096.).contains(&r.height)
 }
+
+/// Resolved runtime bounds keep edge chips near their saved docking anchor.
+#[derive(Clone, Copy, Debug)]
+pub struct FloatingPlacement {
+    pub pane: PaneId,
+    pub panel: Rect,
+    pub chip: Option<Rect>,
+}
+
+impl Space {
+    pub fn floating_placements(&self, area: Rect) -> Vec<FloatingPlacement> {
+        let mut placed: Vec<FloatingPlacement> = Vec::new();
+        for f in &self.floating {
+            let mut panel = f.fitted(area);
+            let chip = f.edge.map(|edge| {
+                let vertical = matches!(edge, SplitEdge::Left | SplitEdge::Right);
+                let start = if vertical { area.y } else { area.x };
+                let available = if vertical { area.height } else { area.width };
+                let length = available.clamp(1., 156.);
+                let thickness = if vertical { area.width } else { area.height }.clamp(1., 28.);
+                let end = start + (available - length).max(0.);
+                let preferred = if vertical { f.bounds.y } else { f.bounds.x }.clamp(start, end);
+                let mut answer = None;
+                // Normally a single edge lane suffices; overflow wraps inward.
+                for lane in 0..=self.floating.len() {
+                    let inset = lane as f32 * (thickness + 4.);
+                    if inset + thickness > if vertical { area.width } else { area.height } {
+                        break;
+                    }
+                    let rect = |position| match edge {
+                        SplitEdge::Left => Rect::new(area.x + inset, position, thickness, length),
+                        SplitEdge::Right => Rect::new(
+                            area.x + area.width - thickness - inset,
+                            position,
+                            thickness,
+                            length,
+                        ),
+                        SplitEdge::Top => Rect::new(position, area.y + inset, length, thickness),
+                        SplitEdge::Bottom => Rect::new(
+                            position,
+                            area.y + area.height - thickness - inset,
+                            length,
+                            thickness,
+                        ),
+                    };
+                    let mut candidates = vec![preferred, start, end];
+                    for r in placed.iter().filter_map(|p| p.chip) {
+                        let (a, b) = if vertical {
+                            (r.y, r.y + r.height)
+                        } else {
+                            (r.x, r.x + r.width)
+                        };
+                        candidates.push((a - length - 4.).clamp(start, end));
+                        candidates.push((b + 4.).clamp(start, end));
+                    }
+                    candidates.sort_by(|a, b| {
+                        (a - preferred)
+                            .abs()
+                            .total_cmp(&(b - preferred).abs())
+                            .then(a.total_cmp(b))
+                    });
+                    if let Some(r) = candidates.into_iter().map(rect).find(|r| {
+                        placed
+                            .iter()
+                            .filter_map(|p| p.chip)
+                            .all(|other| !overlaps(*r, other, 3.))
+                    }) {
+                        answer = Some(r);
+                        break;
+                    }
+                }
+                let chip = answer.unwrap_or_else(|| match edge {
+                    SplitEdge::Left => Rect::new(area.x, preferred, thickness, length),
+                    SplitEdge::Right => Rect::new(
+                        area.x + area.width - thickness,
+                        preferred,
+                        thickness,
+                        length,
+                    ),
+                    SplitEdge::Top => Rect::new(preferred, area.y, length, thickness),
+                    SplitEdge::Bottom => Rect::new(
+                        preferred,
+                        area.y + area.height - thickness,
+                        length,
+                        thickness,
+                    ),
+                });
+                // Keep the persistent chip outside the revealed page and controls.
+                let mut content = area;
+                match edge {
+                    SplitEdge::Left => {
+                        let inset =
+                            (chip.x - area.x + chip.width + 4.).min((area.width - 1.).max(0.));
+                        content.x += inset;
+                        content.width -= inset;
+                    }
+                    SplitEdge::Right => {
+                        content.width = (chip.x - area.x - 4.).max(1.);
+                    }
+                    SplitEdge::Top => {
+                        let inset =
+                            (chip.y - area.y + chip.height + 4.).min((area.height - 1.).max(0.));
+                        content.y += inset;
+                        content.height -= inset;
+                    }
+                    SplitEdge::Bottom => {
+                        content.height = (chip.y - area.y - 4.).max(1.);
+                    }
+                }
+                panel = f.fitted(content);
+                if vertical {
+                    panel.y = chip
+                        .y
+                        .clamp(area.y, area.y + (area.height - panel.height).max(0.));
+                } else {
+                    panel.x = chip
+                        .x
+                        .clamp(area.x, area.x + (area.width - panel.width).max(0.));
+                }
+                chip
+            });
+            placed.push(FloatingPlacement {
+                pane: f.pane,
+                panel,
+                chip,
+            });
+        }
+        placed
+    }
+}
+
+fn overlaps(a: Rect, b: Rect, gap: f32) -> bool {
+    a.x < b.x + b.width + gap
+        && a.x + a.width + gap > b.x
+        && a.y < b.y + b.height + gap
+        && a.y + a.height + gap > b.y
+}

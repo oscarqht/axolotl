@@ -164,8 +164,7 @@ starts, selecting the window path suitable for WebView2 child HWNDs. Windows
 requires the WebView2 Runtime; compilation alone does not confirm that it is
 installed or that child views render correctly. macOS builds need full Xcode,
 with command-line tools; GPUI runtime shaders avoid requiring the separate Metal
-compiler in this configuration. The CI workflow defines checks for both native build targets
-on their respective runners; it does not perform desktop interaction tests.
+compiler in this configuration.
 
 ## Validation and performance
 

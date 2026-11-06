@@ -491,16 +491,16 @@ impl BrowserApp {
                 UI::WindowsAndMessaging::GetCursorPos,
             };
             use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-            if let Ok(h) = window.window_handle() {
-                if let RawWindowHandle::Win32(h) = h.as_raw() {
-                    unsafe {
-                        let mut p = POINT::default();
-                        if GetCursorPos(&mut p).is_ok()
-                            && ScreenToClient(HWND(h.hwnd.get() as _), &mut p).as_bool()
-                        {
-                            let scale = window.scale_factor();
-                            pointer = point(px(p.x as f32 / scale), px(p.y as f32 / scale));
-                        }
+            if let Ok(h) = window.window_handle()
+                && let RawWindowHandle::Win32(h) = h.as_raw()
+            {
+                unsafe {
+                    let mut p = POINT::default();
+                    if GetCursorPos(&mut p).is_ok()
+                        && ScreenToClient(HWND(h.hwnd.get() as _), &mut p).as_bool()
+                    {
+                        let scale = window.scale_factor();
+                        pointer = point(px(p.x as f32 / scale), px(p.y as f32 / scale));
                     }
                 }
             }

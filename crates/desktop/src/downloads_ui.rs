@@ -3,6 +3,7 @@ use crate::{
     app::BrowserApp,
     native_webview::{BuildNativeChild, NativeWebView},
 };
+use anyhow::Context as _;
 use gpui::*;
 use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
@@ -111,7 +112,7 @@ impl BrowserApp {
                         popup
                             .view
                             .as_ref()
-                            .map(|view| view.focus().map_err(Into::into))
+                            .map(|view| view.focus().context("focusing downloads popup"))
                             .unwrap_or(Ok(()))
                     });
                     if let Some(result) = result {

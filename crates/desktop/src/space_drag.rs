@@ -48,6 +48,7 @@ impl BrowserApp {
         if !drag.active && f32::from(delta.x).powi(2) + f32::from(delta.y).powi(2) >= 25. {
             drag.active = true;
             self.suppress_space_click = true;
+            self.space_tooltip = None;
             self.close_space_menu(cx);
             // Escape must reach GPUI even when a native page previously had focus.
             self.report(self.host.focus_parent(self.active_tab()));
@@ -56,33 +57,49 @@ impl BrowserApp {
         cx.notify();
     }
 
+    fn space_drag_group(&self) -> Option<(&ScrollHandle, usize, usize)> {
+        let drag = self.space_drag?;
+        let pinned = self.model.spaces.iter().find(|s| s.id == drag.id)?.pinned;
+        let boundary = self.model.spaces.iter().take_while(|s| s.pinned).count();
+        Some(if pinned {
+            (&self.pinned_space_scroll, 0, boundary)
+        } else {
+            (
+                &self.space_scroll,
+                boundary,
+                self.model.spaces.len() - boundary,
+            )
+        })
+    }
+
     fn space_drop_slot(&self, position: Point<Pixels>) -> Option<usize> {
-        if !self.space_scroll.bounds().contains(&position) {
+        let (scroll, start, count) = self.space_drag_group()?;
+        if !scroll.bounds().contains(&position) {
             return None;
         }
-        let offset = self.space_scroll.offset().x;
         Some(
-            (0..self.model.spaces.len())
-                .filter(|&index| {
-                    self.space_scroll
-                        .bounds_for_item(index)
-                        .is_some_and(|bounds| position.x > bounds.center().x + offset)
-                })
-                .count(),
+            start
+                + (0..count)
+                    .filter(|&i| {
+                        scroll
+                            .bounds_for_item(i)
+                            .is_some_and(|b| position.x > b.center().x + scroll.offset().x)
+                    })
+                    .count(),
         )
     }
 
     pub fn space_drop_indicator(&self) -> Option<(Pixels, Pixels, Pixels)> {
         let drag = self.space_drag.filter(|drag| drag.active)?;
         let slot = self.space_drop_slot(drag.position)?;
-        let strip = self.space_scroll.bounds();
-        let x = if slot == self.model.spaces.len() {
-            self.space_scroll
-                .bounds_for_item(slot.checked_sub(1)?)?
-                .right()
+        let (scroll, start, count) = self.space_drag_group()?;
+        let slot = slot - start;
+        let strip = scroll.bounds();
+        let x = if slot == count {
+            scroll.bounds_for_item(slot.checked_sub(1)?)?.right()
         } else {
-            self.space_scroll.bounds_for_item(slot)?.left() - px(2.)
-        } + self.space_scroll.offset().x;
+            scroll.bounds_for_item(slot)?.left() - px(2.)
+        } + scroll.offset().x;
         Some((
             x.max(strip.left()).min(strip.right() - px(3.)),
             strip.top(),
@@ -95,6 +112,14 @@ impl BrowserApp {
         let Some(drag) = self.space_drag.filter(|drag| drag.active) else {
             return;
         };
+        if self
+            .model
+            .spaces
+            .iter()
+            .any(|s| s.id == drag.id && s.pinned)
+        {
+            return;
+        }
         let bounds = self.space_scroll.bounds();
         if !bounds.contains(&drag.position) {
             return;

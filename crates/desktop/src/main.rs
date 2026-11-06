@@ -138,6 +138,7 @@ mod smoke_x_oauth;
 mod space_drag;
 mod space_menu;
 mod space_shortcuts;
+mod space_tooltip;
 mod split_preview;
 mod ui_events;
 mod webapp_recovery;

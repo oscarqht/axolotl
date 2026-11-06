@@ -239,6 +239,7 @@ impl BrowserApp {
             TabTarget::Space(id) => ("space", id),
             TabTarget::Page(_, id) => ("page", id),
         };
+        let pinned_space = matches!(target, TabTarget::Space(id) if self.model.spaces.iter().any(|s| s.id == id && s.pinned));
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let editing = self.editing == Some(target);
         let selected_space = active && matches!(target, TabTarget::Space(_));
@@ -260,7 +261,13 @@ impl BrowserApp {
         div()
             .id((kind, id))
             .h(px(HEADER_CONTROL_HEIGHT))
-            .w(px(if editing { 320. } else { TAB_WIDTH }))
+            .w(px(if editing {
+                320.
+            } else if pinned_space {
+                HEADER_CONTROL_HEIGHT
+            } else {
+                TAB_WIDTH
+            }))
             .flex_shrink_0()
             .flex()
             .items_center()
@@ -300,6 +307,14 @@ impl BrowserApp {
                 }),
             )
             .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                if pinned_space {
+                    if *hovered {
+                        this.hover_space_title(Some(id), window.mouse_position());
+                    } else {
+                        this.leave_space_title(id);
+                    }
+                    return;
+                }
                 if !*hovered {
                     this.hover_sleep(None, window.mouse_position(), window, cx);
                     return;
@@ -376,6 +391,7 @@ impl BrowserApp {
                     .overflow_hidden()
                     .cursor_pointer()
                     .when(sleeping, |title| title.opacity(0.5))
+                    .when(pinned_space, |title| title.px_0().justify_center())
                     .children(
                         match target {
                             TabTarget::Space(id) => self
@@ -383,7 +399,8 @@ impl BrowserApp {
                                 .spaces
                                 .iter()
                                 .find(|s| s.id == id)
-                                .and_then(|s| s.icon.as_ref()),
+                                .and_then(|s| s.icon.as_ref())
+                                .filter(|_| !pinned_space),
                             TabTarget::Page(_, _) => None,
                         }
                         .map(|icon| div().flex_shrink_0().mr_1().child(icon.clone())),
@@ -394,7 +411,16 @@ impl BrowserApp {
                             .when(selected_space, |title| {
                                 title.font_weight(FontWeight::SEMIBOLD)
                             })
-                            .child(if title.is_empty() {
+                            .child(if pinned_space {
+                                self.model
+                                    .spaces
+                                    .iter()
+                                    .find(|s| s.id == id)
+                                    .and_then(|s| s.icon.clone())
+                                    .unwrap_or_else(|| {
+                                        title.chars().next().unwrap_or('N').to_string()
+                                    })
+                            } else if title.is_empty() {
                                 "New tab".to_owned()
                             } else {
                                 title.to_owned()
@@ -425,7 +451,7 @@ impl BrowserApp {
                     }))
                     .into_any_element()
             })
-            .when(notifications > 0, |tab| {
+            .when(notifications > 0 && !pinned_space, |tab| {
                 tab.child(
                     div()
                         .id(("notification-badge", id))
@@ -458,44 +484,48 @@ impl BrowserApp {
                         })),
                 )
             })
-            .child(
-                div()
-                    .id((
-                        if kind == "space" {
-                            "space-close"
-                        } else {
-                            "page-close"
-                        },
-                        id,
-                    ))
-                    .w(px(28.))
-                    .h(px(28.))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .when(
-                        !matches!(target, TabTarget::Space(_)) || self.model.spaces.len() > 1,
-                        |button| button.cursor_pointer().hover(|s| s.bg(rgb(colors.hover))),
-                    )
-                    .text_color(rgb(colors.muted))
-                    .opacity(
-                        if matches!(target, TabTarget::Space(_)) && self.model.spaces.len() == 1 {
-                            0.35
-                        } else {
-                            1.
-                        },
-                    )
-                    .child("×")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        cx.stop_propagation();
-                        if matches!(target, TabTarget::Space(_)) && this.model.spaces.len() == 1 {
-                            return;
-                        }
-                        this.tab_action(target, TabAction::Close, window, cx);
-                    })),
-            )
+            .when(!pinned_space, |tab| {
+                tab.child(
+                    div()
+                        .id((
+                            if kind == "space" {
+                                "space-close"
+                            } else {
+                                "page-close"
+                            },
+                            id,
+                        ))
+                        .w(px(28.))
+                        .h(px(28.))
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_md()
+                        .when(
+                            !matches!(target, TabTarget::Space(_)) || self.model.spaces.len() > 1,
+                            |button| button.cursor_pointer().hover(|s| s.bg(rgb(colors.hover))),
+                        )
+                        .text_color(rgb(colors.muted))
+                        .opacity(
+                            if matches!(target, TabTarget::Space(_)) && self.model.spaces.len() == 1
+                            {
+                                0.35
+                            } else {
+                                1.
+                            },
+                        )
+                        .child("×")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            cx.stop_propagation();
+                            if matches!(target, TabTarget::Space(_)) && this.model.spaces.len() == 1
+                            {
+                                return;
+                            }
+                            this.tab_action(target, TabAction::Close, window, cx);
+                        })),
+                )
+            })
             .into_any_element()
     }
 
@@ -645,10 +675,38 @@ impl Render for BrowserApp {
             .iter()
             .map(|p| self.pane(p.id, p.bounds, cx))
             .collect::<Vec<_>>();
+        let pinned_spaces = self
+            .model
+            .spaces
+            .iter()
+            .filter(|s| s.pinned)
+            .map(|space| {
+                self.compact_tab(
+                    TabTarget::Space(space.id),
+                    space.display_title(),
+                    space.id == self.model.active_space,
+                    cx,
+                )
+            })
+            .collect::<Vec<_>>();
+        let pinned_space_width: f32 = self
+            .model
+            .spaces
+            .iter()
+            .filter(|s| s.pinned)
+            .map(|s| {
+                if self.editing == Some(TabTarget::Space(s.id)) {
+                    324.
+                } else {
+                    HEADER_CONTROL_HEIGHT + 4.
+                }
+            })
+            .sum();
         let spaces = self
             .model
             .spaces
             .iter()
+            .filter(|s| !s.pinned)
             .map(|space| {
                 self.compact_tab(
                     TabTarget::Space(space.id),
@@ -841,18 +899,31 @@ impl Render for BrowserApp {
                     )
                     .child(
                         div()
+                            .id("pinned-spaces")
+                            .track_scroll(&self.pinned_space_scroll)
+                            .flex_shrink_0()
+                            .flex()
+                            .gap_1()
+                            .children(pinned_spaces),
+                    )
+                    .child(
+                        div()
                             .id("spaces")
                             .track_scroll(&self.space_scroll)
                             .when(cfg!(target_os = "windows"), |spaces| {
                                 // Reserve caption buttons, gaps, and an empty drag target.
-                                spaces.max_w(px(
-                                    (f32::from(viewport.width) - 262. - pin_width).max(0.)
-                                ))
+                                spaces.max_w(px((f32::from(viewport.width)
+                                    - 262.
+                                    - pin_width
+                                    - pinned_space_width)
+                                    .max(0.)))
                             })
                             .when(!cfg!(target_os = "windows"), |spaces| {
-                                spaces.max_w(px(
-                                    (f32::from(viewport.width) - 246. - pin_width).max(0.)
-                                ))
+                                spaces.max_w(px((f32::from(viewport.width)
+                                    - 246.
+                                    - pin_width
+                                    - pinned_space_width)
+                                    .max(0.)))
                             })
                             .min_w_0()
                             .flex()

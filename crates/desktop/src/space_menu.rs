@@ -29,6 +29,7 @@ impl BrowserApp {
         if !self.model.spaces.iter().any(|s| s.id == space) {
             return;
         }
+        self.space_tooltip = None;
         self.close_downloads(window, cx);
         self.dismiss_pin(window, cx);
         self.cancel_edit(window, cx);
@@ -60,6 +61,7 @@ impl BrowserApp {
                     "title": space.custom_title.as_deref().unwrap_or(""),
                     "placeholder": space.display_title(),
                     "icon": space.icon,
+                    "pinned": space.pinned,
                     "ink": format!("#{:06x}", colors.ink),
                     "surface": format!("#{:06x}", colors.surface),
                     "hover": format!("#{:06x}", colors.hover),
@@ -125,6 +127,20 @@ impl BrowserApp {
                     if let Some(view) = &menu.view {
                         self.report(view.focus().context("focusing space menu"));
                     }
+                }
+                "toggle-pin" => {
+                    let id = menu.space;
+                    let pinned = self
+                        .model
+                        .spaces
+                        .iter()
+                        .find(|s| s.id == id)
+                        .is_some_and(|s| s.pinned);
+                    self.model.set_space_pinned(id, !pinned);
+                    self.space_menu = None;
+                    self.reveal_focused();
+                    self.focus.focus(window);
+                    cx.notify();
                 }
                 "sleep" => {
                     let space = menu.space;

@@ -1182,3 +1182,38 @@ fn chip_offsets_avoid_collisions_on_the_same_and_adjacent_edges() {
         }
     }
 }
+
+#[test]
+fn pinned_spaces_partition_reorder_and_restore_without_changing_selection() {
+    let mut w = Workspace::default();
+    let a = w.spaces[0].id;
+    let b = w.add_space("B", "about:blank");
+    let c = w.add_space("C", "about:blank");
+    let d = w.add_space("D", "about:blank");
+    let order = |w: &Workspace| w.spaces.iter().map(|s| s.id).collect::<Vec<_>>();
+    w.set_space_details(b, "Books", Some("📚"));
+    assert!(w.set_space_pinned(b, true));
+    assert!(w.set_space_pinned(c, true));
+    assert_eq!(order(&w), [b, c, a, d]);
+    assert_eq!(w.active_space, d);
+    assert!(!w.set_space_pinned(b, true));
+    w.move_space(b, usize::MAX);
+    assert_eq!(order(&w), [c, b, a, d]);
+    w.move_space(d, 0);
+    assert_eq!(order(&w), [c, b, d, a]);
+    assert!(w.spaces[..2].iter().all(|s| s.pinned));
+    assert!(w.spaces[2..].iter().all(|s| !s.pinned));
+    assert_eq!(Workspace::from_json(&w.to_json()).unwrap(), w);
+    w.set_space_pinned(c, false);
+    assert_eq!(order(&w), [b, c, d, a]);
+    assert_eq!(w.spaces[0].icon.as_deref(), Some("📚"));
+    assert_eq!(w.spaces[0].display_title(), "Books");
+    assert_eq!(w.active_space, d);
+    let mut old: serde_json::Value = serde_json::from_str(&w.to_json()).unwrap();
+    for space in old["spaces"].as_array_mut().unwrap() {
+        space.as_object_mut().unwrap().remove("pinned");
+    }
+    let legacy = Workspace::from_json(&old.to_string()).unwrap();
+    assert!(legacy.spaces.iter().all(|s| !s.pinned));
+    assert_eq!(order(&legacy), order(&w));
+}

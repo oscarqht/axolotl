@@ -127,7 +127,9 @@ pub struct BrowserApp {
     pub editing: Option<TabTarget>,
     pub select_address: bool,
     pub moving_window: bool,
+    pub space_tooltip: Option<crate::space_tooltip::SpaceTooltip>,
     pub space_scroll: ScrollHandle,
+    pub pinned_space_scroll: ScrollHandle,
     pub dragging: Option<Divider>,
     pub space_drag: Option<crate::space_drag::SpaceDrag>,
     pub suppress_space_click: bool,
@@ -235,6 +237,7 @@ impl BrowserApp {
                 this.downloads_popup = None;
                 this.dismiss_history();
                 this.space_menu = None;
+                this.space_tooltip = None;
                 this.dismiss_pin(window, cx);
                 this.cancel_tab_drag(cx);
                 this.cancel_space_drag(cx);
@@ -325,7 +328,9 @@ impl BrowserApp {
             editing: None,
             select_address: false,
             moving_window: false,
+            space_tooltip: None,
             space_scroll: ScrollHandle::new(),
+            pinned_space_scroll: ScrollHandle::new(),
             dragging: None,
             space_drag: None,
             suppress_space_click: false,
@@ -410,6 +415,7 @@ impl BrowserApp {
             .model
             .spaces
             .iter()
+            .filter(|s| !s.pinned)
             .position(|s| s.id == self.model.active_space)
         {
             self.space_scroll.scroll_to_item(index);
@@ -713,6 +719,7 @@ impl BrowserApp {
         self.poll_link_popup(window, cx);
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
+        self.poll_space_tooltip(window, cx);
         self.poll_bars(window, cx);
         self.poll_floating_panels(window, cx);
         self.poll_sleep(window, cx);

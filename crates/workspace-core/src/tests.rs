@@ -136,7 +136,58 @@ fn closing_tabs_selects_neighbor_and_preserves_nonempty_pane() {
 }
 
 #[test]
-fn closing_final_pane_tab_keeps_space_and_invalid_closes_are_atomic() {
+fn closing_last_space_tab_uses_close_space_selection_and_preserves_survivors() {
+    for closed_index in 0..3 {
+        let mut w = Workspace::new("https://example.com/first");
+        w.add_tab("https://example.com/first-active");
+        w.add_space("Middle", "https://example.com/middle");
+        w.add_space("Last", "https://example.com/last");
+        w.split_focused(Axis::Horizontal, "https://example.com/panel");
+        let closing = w.spaces[closed_index].id;
+        w.switch_space(closing);
+        // Retain multiple tabs and panels in survivors, but only one tab in the closing space.
+        let pane = w.focused_pane().id;
+        let others: Vec<_> = w
+            .active_space()
+            .panes
+            .iter()
+            .filter(|p| p.id != pane)
+            .map(|p| p.id)
+            .collect();
+        for other in others {
+            assert!(w.close_pane(other));
+        }
+        while w.focused_pane().tabs.len() > 1 {
+            assert!(w.close_tab(pane, w.focused_pane().active_tab));
+        }
+        let tab = w.focused_pane().active_tab;
+        let mut expected = w.clone();
+        assert!(expected.close_space(closing));
+        assert!(w.close_tab(pane, tab));
+        assert_eq!(w, expected);
+        assert_invariants(&w);
+    }
+}
+
+#[test]
+fn closing_panel_tab_keeps_space_while_another_panel_has_tabs() {
+    let mut w = Workspace::new("https://example.com/survivor");
+    let survivor = w.spaces[0].clone();
+    let space = w.add_space("Split", "https://example.com/main");
+    let original = w.focused_pane().id;
+    let panel = w.split_focused(Axis::Horizontal, "https://example.com/panel");
+    let tab = w.focused_pane().active_tab;
+    assert!(w.close_tab(panel, tab));
+    assert_eq!(w.spaces.len(), 2);
+    assert_eq!(w.active_space, space);
+    assert_eq!(w.focused_pane().id, original);
+    assert_eq!(w.active_space().layout, Layout::Pane(original));
+    assert_eq!(w.spaces[0], survivor);
+    assert_invariants(&w);
+}
+
+#[test]
+fn closing_final_pane_tab_closes_space_and_invalid_closes_are_atomic() {
     let mut w = Workspace::default();
     let home = w.active_space;
     let home_pane = w.focused_pane().id;
@@ -155,17 +206,15 @@ fn closing_final_pane_tab_keeps_space_and_invalid_closes_are_atomic() {
         assert_eq!(w.spaces, before);
     }
     assert!(w.close_tab(pane, tab));
-    assert_eq!(w.active_space, other);
-    assert_eq!(w.active_space().layout, Layout::Pane(pane));
-    assert_eq!(w.focused_pane().id, pane);
-    assert_ne!(w.focused_pane().active_tab, tab);
-    assert_eq!(w.focused_pane().active_tab().url, "about:blank");
-    assert_eq!(w.focused_pane().active_tab().title, "");
+    assert_eq!(w.active_space, home);
+    assert_eq!(w.spaces.len(), 1);
+    assert!(w.spaces.iter().all(|s| s.id != other));
+    assert!(w.pane(pane).is_none());
     assert!(w.tab(tab).is_none());
-    assert_eq!(
-        w.spaces.iter().find(|s| s.id == home),
-        before.iter().find(|s| s.id == home)
-    );
+    assert_eq!(w.spaces[0], before[0]);
+    let before = w.clone();
+    assert!(!w.close_tab(pane, tab));
+    assert_eq!(w, before);
     assert_invariants(&w);
 }
 

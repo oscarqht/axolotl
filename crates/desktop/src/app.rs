@@ -529,8 +529,9 @@ impl BrowserApp {
         cx.notify();
     }
     pub(crate) fn close_tab(&mut self, pane: PaneId, tab: TabId) {
-        let replaces_last =
-            self.model.active_space().panes.len() == 1 && self.model.focused_pane().tabs.len() == 1;
+        let replaces_last = self.model.spaces.len() == 1
+            && self.model.active_space().panes.len() == 1
+            && self.model.focused_pane().tabs.len() == 1;
         if self.model.close_tab(pane, tab) && replaces_last {
             let replacement = self.active_tab();
             self.model.tab_mut(replacement).unwrap().url = self.preferences.homepage_url.clone();

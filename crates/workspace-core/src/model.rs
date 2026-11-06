@@ -554,7 +554,8 @@ impl Workspace {
         Some(id)
     }
 
-    /// Empty panes collapse; the final pane receives a fresh blank tab.
+    /// Empty panes collapse; empty spaces close unless this is the final space.
+    /// The final pane of the final space receives a fresh blank tab.
     pub fn close_tab(&mut self, pane: PaneId, tab: TabId) -> bool {
         let Some(pane_ref) = self.active_space().pane(pane) else {
             return false;
@@ -564,6 +565,9 @@ impl Workspace {
         };
         if pane_ref.tabs.len() == 1 && self.active_space().panes.len() > 1 {
             return self.close_pane(pane);
+        }
+        if pane_ref.tabs.len() == 1 && self.spaces.len() > 1 {
+            return self.close_space(self.active_space);
         }
         let replacement = (pane_ref.tabs.len() == 1).then(|| self.allocate());
         let pane = self

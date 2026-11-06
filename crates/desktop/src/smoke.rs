@@ -181,6 +181,12 @@ async fn run(
         cx.activate(true);
         (app.host.clone(), app.active_tab())
     })?;
+    if std::env::args().any(|arg| arg == "--smoke-close-empty-space") {
+        view.update_in(cx, |app, _, _| check_close_empty_space(app))??;
+        return Ok(vec![
+            "closing final tab removes space without changing surviving tabs or URLs; final space uses configured homepage",
+        ]);
+    }
     if std::env::args().any(|arg| arg == "--smoke-sleep-session") {
         return crate::smoke_sleep::session(view, cx).await;
     }
@@ -737,6 +743,10 @@ async fn run(
     })??;
     pause(cx).await;
     checks.push("targeted sibling, split and close actions; final tab and space guards; switching cancels edits");
+    view.update_in(cx, |app, _, _| check_close_empty_space(app))??;
+    checks.push(
+        "last-tab space removal preserves surviving tabs and URLs; final-space homepage fallback",
+    );
     // Route CloseTab through the GPUI action used by Cmd+W, with actual native views.
     let (original, right, bottom, closed, extra) = view.update_in(cx, |app, window, cx| {
         app.model = workspace_core::Workspace::default().into();
@@ -1212,4 +1222,56 @@ async fn run(
 
     checks.extend(crate::smoke_panels::run(view, &host, moved, destination, cx).await?);
     Ok(checks)
+}
+
+/// Exercise the desktop wrapper as well as the model with a non-default homepage.
+fn check_close_empty_space(app: &mut BrowserApp) -> Result<()> {
+    let saved_model = app.model.clone();
+    let saved_homepage = app.preferences.homepage_url.clone();
+    let result = (|| -> Result<()> {
+        app.preferences.homepage_url = "https://example.com/configured-home".into();
+        app.model = workspace_core::Workspace::new("https://example.com/survivor").into();
+        app.model.add_tab("https://example.com/active-survivor");
+        let survivor = app.model.active_space().clone();
+        let closing = app.model.add_space("Close me", "about:blank");
+        let pane = app.model.focused_pane().id;
+        let tab = app.active_tab();
+        app.close_tab(pane, u64::MAX);
+        ensure!(
+            app.model.active_space == closing,
+            "Invalid close removed space"
+        );
+        app.close_tab(pane, tab);
+        ensure!(app.model.spaces.len() == 1, "Empty space retained");
+        ensure!(
+            app.model.active_space() == &survivor,
+            "Surviving space tabs or URLs changed"
+        );
+        app.close_tab(pane, tab);
+        ensure!(
+            app.model.active_space() == &survivor,
+            "Stale close changed survivor"
+        );
+        let pane = app.model.focused_pane().id;
+        let tab = app.active_tab();
+        app.close_tab(pane, tab);
+        ensure!(
+            app.model.focused_pane().active_tab().url == "https://example.com/survivor",
+            "Ordinary close changed remaining URL"
+        );
+        let last = app.active_tab();
+        app.close_tab(pane, last);
+        ensure!(
+            app.model.spaces.len() == 1 && app.active_tab() != last,
+            "Final space did not retain a new tab"
+        );
+        ensure!(
+            app.model.focused_pane().active_tab().url == app.preferences.homepage_url,
+            "Final space ignored configured homepage"
+        );
+        Ok(())
+    })();
+    app.model = saved_model;
+    app.preferences.homepage_url = saved_homepage;
+    result
 }

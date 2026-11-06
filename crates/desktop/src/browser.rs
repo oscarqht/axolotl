@@ -290,7 +290,7 @@ impl WryHost {
         let point = webview.convertPoint_toView(point, None);
         for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
             let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-                kind, point, flags, 0., window.windowNumber(), None, 0, 1, 1.,
+                kind, point, flags, objc2_foundation::NSProcessInfo::processInfo().systemUptime(), window.windowNumber(), None, 0, 1, 1.,
             ).context("create native click event")?;
             // NSWindow hit testing delivers a genuine WebKit input event, not a
             // JavaScript dispatchEvent (which the bridge intentionally rejects).

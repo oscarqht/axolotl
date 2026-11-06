@@ -18,12 +18,12 @@ use workspace_core::Workspace;
 // foreground work. This token exists only for this opt-in benchmark, in both
 // baseline and improved builds; normal application sleep policy is untouched.
 #[cfg(target_os = "macos")]
-struct BenchmarkActivity(
+pub(crate) struct BenchmarkActivity(
     objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>,
 );
 #[cfg(target_os = "macos")]
 impl BenchmarkActivity {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
         Self(
             NSProcessInfo::processInfo().beginActivityWithOptions_reason(

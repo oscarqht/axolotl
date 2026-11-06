@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+sha2 = { version = "0.10", optional = true }
 async-channel = "2"
 futures-lite = "2"
 workspace-core = { path = "../workspace-core" }
@@ -23,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
 
 [features]
-smoke = []
+smoke = ["dep:sha2"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

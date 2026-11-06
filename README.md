@@ -407,6 +407,9 @@ This checks actual native documents and host operations programmatically. It
 does **not** synthesize OS mouse or keyboard input. The smoke test explicitly
 draws frames because occluded windows can skip display callbacks. See the
 [validation report](docs/validation.md) for results and outstanding manual checks.
+Repeatable native action, webpage, resource and battery benchmarks are documented
+in [docs/benchmarks.md](docs/benchmarks.md).
+
 A macOS/Windows build-and-unit-test workflow is provided in
 [`.github/workflows/check.yml`](.github/workflows/check.yml); defining it does not
 mean either remote CI job has been run.

@@ -243,6 +243,9 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-responsiveness") {
         return crate::smoke_responsiveness::run(view, cx).await;
     }
+    if std::env::args().any(|arg| arg == "--smoke-benchmark") {
+        return crate::benchmark::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-performance") {
         return crate::smoke_performance::run(view, cx).await;
     }

@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>Axolotl benchmark</title>
+<link rel="stylesheet" href="/style.css"><img src="/image.svg" width="256" height="128" alt="Fixture">
+<button id="response">Respond</button><input id="editor" aria-label="Benchmark input"><output id="result"></output><div class="grid" id="grid"></div>
+<script>
+'use strict';
+window.bench={version:1,ready:false,documentId:Date.now()+':'+Math.random(),frames:[],events:[],longTasks:[]};
+const heavy=new URL(location.href).pathname.includes('heavy');
+const fragment=document.createDocumentFragment();
+for(let i=0;i<(heavy?2000:40);i++){const cell=document.createElement('div');cell.className='cell';cell.textContent='Benchmark cell '+i;fragment.append(cell)}
+grid.append(fragment);
+bench.supported=PerformanceObserver.supportedEntryTypes||[];
+for(const [type,key] of [['event','events'],['longtask','longTasks']]){
+ if(bench.supported.includes(type))try{new PerformanceObserver(list=>bench[key].push(...list.getEntries().map(e=>({name:e.name,duration:e.duration,interactionId:e.interactionId||0})))).observe({type,buffered:true,durationThreshold:16})}catch{}
+}
+response.onclick=e=>{result.value='response:'+performance.now();bench.clicked={trusted:e.isTrusted,at:performance.now()}};
+editor.oninput=()=>{result.value=editor.value;bench.input=editor.value};
+bench.dom=()=>{bench.domPhase=!(bench.domPhase||false);const start=performance.now();for(let i=0;i<grid.children.length;i++){grid.children[i].style.padding=((i%2===0)===bench.domPhase?9:8)+'px'}const height=grid.offsetHeight;return {duration:performance.now()-start,height,nodes:grid.children.length}};
+bench.compute=()=>{const start=performance.now();let sum=0;for(let i=1;i<=5000000;i++)sum+=(i%97)*(i%31);return {duration:performance.now()-start,checksum:sum}};
+bench.loop=()=>new Promise(resolve=>{const start=performance.now();setTimeout(()=>resolve(performance.now()-start),0)});
+bench.framesStart=()=>{bench.frames=[];bench.last=0;bench.until=performance.now()+1200;requestAnimationFrame(function frame(t){if(bench.last)bench.frames.push(t-bench.last);bench.last=t;if(t<bench.until)requestAnimationFrame(frame)})};
+bench.navigation=()=>{const n=performance.getEntriesByType('navigation')[0];return {ready:bench.ready,documentId:bench.documentId,href:location.href,ttfb:n?n.responseStart-n.requestStart:null,domContentLoaded:n?n.domContentLoadedEventEnd-n.startTime:null,load:n?n.loadEventEnd-n.startTime:null,resourceCount:performance.getEntriesByType('resource').length,transferBytes:performance.getEntriesByType('resource').reduce((s,r)=>s+r.transferSize,0),paints:performance.getEntriesByType('paint').map(p=>({name:p.name,time:p.startTime}))}};
+addEventListener('load',()=>{bench.ready=true;document.title='Axolotl benchmark ready'});
+</script>

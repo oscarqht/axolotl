@@ -1,0 +1,8 @@
+AXOLOTL_BENCH {"type":"quality","comparable":false,"foreground_activation_failed":true}
+AXOLOTL_BENCH {"type":"run_start","native_sha256":"376da77aa177e1a54001fd99c9c77c4f89410257e4a187039c89444eb3dde453","suite_version":1,"session_size":"small","state":{"viewport":[1280.0,861.0],"scale_factor":2.0,"active":false,"pid":10605,"protection":true},"app_nap":"natural"}
+AXOLOTL_BENCH {"type":"phase_start","id":"energy.idle"}
+AXOLOTL_BENCH {"type":"phase_end","id":"energy.idle","workload_seconds":3.148158792,"iterations":3,"inactive_ticks":4}
+AXOLOTL_BENCH {"type":"phase_start","id":"energy.active"}
+AXOLOTL_BENCH {"type":"phase_end","id":"energy.active","workload_seconds":3.404819708,"iterations":3,"inactive_ticks":4}
+AXOLOTL_BENCH {"type":"run_end","status":"passed"}
+AXOLOTL_SMOKE {"result":"passed","checks":["versioned native actions/webpage/energy benchmark completed with validated postconditions"],"elapsed_ms":15598,"kind":"programmatic native smoke; OS mouse/keyboard not simulated"}

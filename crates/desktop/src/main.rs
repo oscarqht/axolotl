@@ -1,5 +1,15 @@
 mod app;
 mod app_database;
+#[cfg(feature = "smoke")]
+mod benchmark;
+#[cfg(feature = "smoke")]
+mod benchmark_actions;
+#[cfg(feature = "smoke")]
+mod benchmark_extra_actions;
+#[cfg(feature = "smoke")]
+mod benchmark_fixture;
+#[cfg(feature = "smoke")]
+mod benchmark_web;
 mod browser;
 #[cfg(target_os = "macos")]
 mod browser_identity;

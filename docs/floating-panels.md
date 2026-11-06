@@ -8,9 +8,11 @@ header, or returned to a tiled split using its 28-point edge target. Tab bars
 remain merge destinations. The last tiled pane leaves a fresh start pane when
 detached. Moving keeps native tab IDs, documents and navigation histories.
 
-Floating pages have square inner corners. The page fills the panel below its
-header, and a small resize triangle overlays its bottom-right corner. There is
-no resize footer. Moving back into a tiled pane restores its usual corner mask.
+Floating pages meet the header with square top corners. Their outer bottom
+corners follow the rounded panel outline. A two-point frame inset protects every
+border from the native webpage, and GPUI fallback content uses the same bottom
+corner mask. A small resize triangle overlays the page's bottom-right corner;
+there is no resize footer. Moving back to a tiled pane restores its usual mask.
 
 Each docked panel has a title/favicon chip anchored at its saved docking position.
 Left and right chips are vertical; top and bottom chips are horizontal. If chips
@@ -65,10 +67,9 @@ at their recorded runtime bounds; it excludes the GPUI spaces header. It is usef
 when desktop/window capture is unavailable. It is a native view capture, not an
 OS desktop screenshot.
 
-Validation for the current behavior: 115 Rust tests passed and one existing test
+Validation for the current behavior: 121 Rust tests passed and one existing test
 is ignored. The native check covers split-first content drops, edge-only
-creation, anchored chip positions, docked resize anchors, square page masks and
+creation, anchored chip positions, docked resize anchors, square header joins, rounded outer bottom masks and
 the overlay resize triangle. Separate native processes verify SQLite restart
-restoration. This branch requires the installed Rust 1.99.1 toolchain; the older
-local Rust 1.91.1 cannot build the repository's `AtomicI64::try_update` use.
+restoration. These checks used the installed Rust 1.99.1 toolchain.
 Windows native behavior has not been run in this macOS environment.

@@ -141,10 +141,28 @@ pub async fn run(
     for _ in 0..3 {
         pause(cx).await;
     }
+    let clip = host.panel_clip_state(tab)?;
     ensure!(
-        host.panel_clip_state(tab)?["radius"] == 0.,
-        "floating webpage retained rounded inner corners"
+        clip["radius"] == f64::from(crate::floating_panels::PAGE_RADIUS)
+            && clip["corners"] == if clip["flipped"] == true { 12 } else { 3 },
+        "floating page must have square top joins and rounded outer bottom corners: {clip}"
     );
+    let border=chrome_eval(view,pane,"header","(()=>{const s=getComputedStyle(document.body);return [s.borderLeftWidth,s.borderRightWidth,s.borderBottomWidth,s.borderBottomLeftRadius]})()",cx).await?;
+    ensure!(
+        border == serde_json::json!(["2px", "2px", "2px", "10px"]),
+        "floating outline is incomplete: {border}"
+    );
+    view.update_in(cx, |app, _, _| {
+        let frame = app.floating_test_bounds(pane, "header");
+        let content = app.host.panel_clip_state(tab)?;
+        let left = content["x"].as_f64().unwrap();
+        let right = left + content["width"].as_f64().unwrap();
+        ensure!(
+            left >= f64::from(frame.x) + 1.5 && right <= f64::from(frame.x + frame.width) - 1.5,
+            "native page covers the floating frame border: {content}"
+        );
+        Ok::<_, anyhow::Error>(())
+    })??;
     let grip_style=chrome_eval(view,pane,"grip","(()=>{const r=grip.getBoundingClientRect();return [r.width,r.height,getComputedStyle(grip).clipPath]})()",cx).await?;
     ensure!(
         grip_style[0] == 19.
@@ -463,7 +481,8 @@ pub async fn run(
     })??;
     eprintln!("Floating smoke: merge row");
     ensure!(
-        host.panel_clip_state(tab)?["radius"] == f64::from(crate::render::PANEL_CORNER_RADIUS),
+        host.panel_clip_state(tab)?["radius"] == f64::from(crate::render::PANEL_CORNER_RADIUS)
+            && host.panel_clip_state(tab)?["corners"] == 15,
         "tiled page radius wasn't restored"
     );
     // Merge the complete panel through a native tab-row destination.

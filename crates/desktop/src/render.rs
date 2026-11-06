@@ -512,6 +512,11 @@ impl BrowserApp {
         } else {
             PANEL_CORNER_RADIUS
         };
+        let bottom_radius = if radius == 0. {
+            crate::floating_panels::PAGE_RADIUS
+        } else {
+            radius
+        };
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let state = PaneContent::resolve(
             self.sleep.is_sleeping(tab),
@@ -525,6 +530,8 @@ impl BrowserApp {
             .w(px(rect.width))
             .h(px(rect.height))
             .rounded(px(radius))
+            .rounded_bl(px(bottom_radius))
+            .rounded_br(px(bottom_radius))
             .overflow_hidden()
             .bg(rgb(colors.surface))
             .child(
@@ -535,6 +542,8 @@ impl BrowserApp {
                     .left_0()
                     .right_0()
                     .rounded(px(radius))
+                    .rounded_bl(px(bottom_radius))
+                    .rounded_br(px(bottom_radius))
                     .bg(rgb(colors.page))
                     .child(if state == PaneContent::Sleeping {
                         div()
@@ -543,7 +552,12 @@ impl BrowserApp {
                             .relative()
                             .cursor_pointer()
                             .children(self.sleep.image(tab).map(|image| {
-                                img(image).size_full().rounded(px(radius)).opacity(0.5)
+                                img(image)
+                                    .size_full()
+                                    .rounded(px(radius))
+                                    .rounded_bl(px(bottom_radius))
+                                    .rounded_br(px(bottom_radius))
+                                    .opacity(0.5)
                             }))
                             .when(self.sleep.image(tab).is_none(), |el| {
                                 el.child(div().opacity(0.5).child(format!(

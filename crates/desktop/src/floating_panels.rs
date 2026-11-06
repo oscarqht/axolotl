@@ -13,6 +13,9 @@ use std::{
 };
 use workspace_core::{Geometry, PaneId, PaneRect, Rect, SplitEdge};
 
+pub(crate) const FRAME_INSET: f32 = 2.;
+pub(crate) const PAGE_RADIUS: f32 = 8.;
+
 struct Surface {
     view: NativeWebView,
     events: Receiver<Value>,
@@ -143,10 +146,10 @@ impl BrowserApp {
         for f in floating {
             if f.edge.is_none() || f.pinned || self.floating_panels.revealed.contains(&f.pane) {
                 let mut r = placements.iter().find(|p| p.pane == f.pane).unwrap().panel;
-                r.x += 1.;
-                r.width = (r.width - 2.).max(1.);
+                r.x += FRAME_INSET;
+                r.width = (r.width - 2. * FRAME_INSET).max(1.);
                 r.y += 30.;
-                r.height = (r.height - 31.).max(1.);
+                r.height = (r.height - 30. - FRAME_INSET).max(1.);
                 geometry.panes.push(PaneRect {
                     id: f.pane,
                     bounds: r,
@@ -226,7 +229,7 @@ impl BrowserApp {
                     f.edge.is_some(),
                 )?;
                 chrome.grip.place(
-                    Rect::new(r.x + r.width - 20., r.y + r.height - 20., 19., 19.),
+                    Rect::new(r.x + r.width - 21., r.y + r.height - 21., 19., 19.),
                     json!({"grip":true}),
                     open,
                 )?;

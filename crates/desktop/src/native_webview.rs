@@ -66,14 +66,18 @@ mod windows_view {
     #[derive(Default)]
     struct PanelClip {
         radius: Cell<Option<f32>>,
-        geometry: Cell<Option<(i32, i32, i32)>>,
+        geometry: Cell<Option<(i32, i32, i32, bool)>>,
+        bottom_only: Cell<bool>,
     }
 
     impl PanelClip {
         fn apply(&self, view: &wry::WebView) -> Result<()> {
             use windows::Win32::{
                 Foundation::{HWND, RECT},
-                Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn},
+                Graphics::Gdi::{
+                    CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, ERROR, RGN_OR,
+                    SetWindowRgn,
+                },
                 UI::{HiDpi::GetDpiForWindow, WindowsAndMessaging::GetClientRect},
             };
             use wry::WebViewExtWindows;
@@ -89,7 +93,7 @@ mod windows_view {
                 GetClientRect(container, &mut rect)?;
                 let diameter =
                     (radius * 2. * GetDpiForWindow(container) as f32 / 96.).round() as i32;
-                let geometry = (rect.right, rect.bottom, diameter);
+                let geometry = (rect.right, rect.bottom, diameter, self.bottom_only.get());
                 if self.geometry.get() == Some(geometry) {
                     return Ok(());
                 }
@@ -97,6 +101,20 @@ mod windows_view {
                     CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, diameter, diameter);
                 if region.is_invalid() {
                     return Err(anyhow!("Creating browser panel corner region"));
+                }
+                if self.bottom_only.get() {
+                    let top =
+                        CreateRectRgn(0, 0, rect.right + 1, (diameter / 2 + 1).min(rect.bottom));
+                    if top.is_invalid() {
+                        let _ = DeleteObject(region.into());
+                        return Err(anyhow!("Creating square panel top region"));
+                    }
+                    let combined = CombineRgn(region, region, top, RGN_OR);
+                    let _ = DeleteObject(top.into());
+                    if combined == ERROR {
+                        let _ = DeleteObject(region.into());
+                        return Err(anyhow!("Combining panel corner regions"));
+                    }
                 }
                 // Windows owns the region after success; release it only on failure.
                 if SetWindowRgn(container, Some(region), true) == 0 {
@@ -278,8 +296,12 @@ mod windows_view {
             Ok(())
         }
         pub fn set_panel_corner_radius(&self, radius: f32) -> Result<()> {
+            self.set_panel_corner_shape(radius, false)
+        }
+        pub fn set_panel_corner_shape(&self, radius: f32, bottom_only: bool) -> Result<()> {
             let clip = self.0.borrow().panel_clip.clone();
             clip.radius.set(Some(radius));
+            clip.bottom_only.set(bottom_only);
             self.call(move |view| {
                 clip.apply(view)
                     .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))
@@ -299,8 +321,8 @@ mod windows_view {
             use windows::Win32::{
                 Foundation::{HWND, RECT},
                 Graphics::Gdi::{
-                    CreateRectRgn, CreateRoundRectRgn, DeleteObject, ERROR, EqualRgn, GetWindowRgn,
-                    PtInRegion,
+                    CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, ERROR, EqualRgn,
+                    GetWindowRgn, PtInRegion, RGN_OR,
                 },
                 UI::{HiDpi::GetDpiForWindow, WindowsAndMessaging::GetClientRect},
             };
@@ -335,10 +357,20 @@ mod windows_view {
                     }
                 });
                 let center = PtInRegion(region, rect.right / 2, rect.bottom / 2).as_bool();
-                let radius = crate::render::PANEL_CORNER_RADIUS;
+                let clip = self.0.borrow().panel_clip.clone();
+                let radius = clip
+                    .radius
+                    .get()
+                    .unwrap_or(crate::render::PANEL_CORNER_RADIUS);
                 let diameter = (f64::from(radius) * 2. * scale).round() as i32;
                 let expected =
                     CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, diameter, diameter);
+                if clip.bottom_only.get() {
+                    let top =
+                        CreateRectRgn(0, 0, rect.right + 1, (diameter / 2 + 1).min(rect.bottom));
+                    CombineRgn(expected, expected, top, RGN_OR);
+                    let _ = DeleteObject(top.into());
+                }
                 let matches_radius = clips && EqualRgn(region, expected).as_bool();
                 let _ = DeleteObject(expected.into());
                 let _ = DeleteObject(region.into());

@@ -291,13 +291,14 @@ impl BrowserApp {
                     .floating
                     .iter()
                     .any(|f| self.model.pane(f.pane).is_some_and(|p| p.active_tab == id));
-                self.report(self.host.set_panel_radius(
+                self.report(self.host.set_panel_corners(
                     id,
                     if floating {
-                        0.
+                        crate::floating_panels::PAGE_RADIUS
                     } else {
                         crate::render::PANEL_CORNER_RADIUS
                     },
+                    floating,
                 ));
                 self.report(self.host.show(id, true));
             }

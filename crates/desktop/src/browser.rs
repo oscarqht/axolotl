@@ -159,7 +159,7 @@ pub trait BrowserHost {
     fn unload(&self, tab: TabId);
     fn probe_sleep(&self, tab: TabId, callback: Box<dyn Fn(String) + Send>) -> Result<()>;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
-    fn set_panel_radius(&self, tab: TabId, radius: f32) -> Result<()>;
+    fn set_panel_corners(&self, tab: TabId, radius: f32, bottom_only: bool) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
     fn raise(&self, tab: TabId) -> Result<()>;
     fn focus(&self, tab: TabId) -> Result<()>;
@@ -862,19 +862,32 @@ impl BrowserHost for WryHost {
         Ok(())
     }
 
-    fn set_panel_radius(&self, tab: TabId, radius: f32) -> Result<()> {
+    fn set_panel_corners(&self, tab: TabId, radius: f32, bottom_only: bool) -> Result<()> {
         let view = self.get(tab)?;
         #[cfg(target_os = "macos")]
         {
             use wry::WebViewExtMacOS;
-            if let Some(layer) = view.webview().layer()
-                && layer.cornerRadius() != f64::from(radius)
-            {
-                layer.setCornerRadius(f64::from(radius));
+            if let Some(layer) = view.webview().layer() {
+                use objc2_quartz_core::CACornerMask;
+                let corners = if bottom_only {
+                    if view.webview().isFlipped() {
+                        CACornerMask::LayerMinXMaxYCorner | CACornerMask::LayerMaxXMaxYCorner
+                    } else {
+                        CACornerMask::LayerMinXMinYCorner | CACornerMask::LayerMaxXMinYCorner
+                    }
+                } else {
+                    CACornerMask::all()
+                };
+                if layer.cornerRadius() != f64::from(radius) {
+                    layer.setCornerRadius(f64::from(radius));
+                }
+                if layer.maskedCorners() != corners {
+                    layer.setMaskedCorners(corners);
+                }
             }
         }
         #[cfg(target_os = "windows")]
-        view.set_panel_corner_radius(radius)?;
+        view.set_panel_corner_shape(radius, bottom_only)?;
         Ok(())
     }
 
@@ -893,6 +906,9 @@ impl BrowserHost for WryHost {
         let frame = native.frame();
         Ok(serde_json::json!({
             "radius": layer.cornerRadius(),
+            "flipped": native.isFlipped(),
+            "x": frame.origin.x,
+            "y": frame.origin.y,
             "clips": layer.masksToBounds(),
             "corners": layer.maskedCorners().0,
             "width": frame.size.width,

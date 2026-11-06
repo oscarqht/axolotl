@@ -683,21 +683,11 @@ impl Render for BrowserApp {
                     window.start_window_move();
                 }
                 if let Some(divider) = &this.dragging {
-                    let (position, start, length) = match divider.axis {
-                        Axis::Horizontal => (
-                            f32::from(event.position.x),
-                            divider.container.x,
-                            divider.container.width,
-                        ),
-                        Axis::Vertical => (
-                            f32::from(event.position.y),
-                            divider.container.y,
-                            divider.container.height,
-                        ),
-                    };
                     this.host.request_redraw();
-                    this.model
-                        .resize_split(divider.id, (position - start - 3.) / (length - 6.).max(1.));
+                    this.model.resize_split(
+                        divider.id,
+                        divider.drag_ratio(event.position.x.into(), event.position.y.into()),
+                    );
                     cx.notify();
                 }
             }))

@@ -103,6 +103,8 @@ mod smoke_space_menu;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_space_shortcuts;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_split_snap;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_x_oauth;
 mod space_drag;
 mod space_menu;

@@ -221,6 +221,11 @@ Native UI performance measurements and methodology: [performance report](docs/pe
 
 ## Checks
 
+Split separators snap within 10 logical pixels of 25%, 33⅓%, 50%, 66⅔%, and
+75% of their immediate parent panel. Drag farther away to resize freely; releasing
+keeps the current position. Nested splits use their own parent bounds, and existing
+pane-size limits take priority over snap stops.
+
 ```sh
 node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs
 cargo fmt --all -- --check
@@ -276,6 +281,10 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
 # Windows/macOS four-corner native clipping through splits, resizing and panel moves
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-corners
 # Add --smoke-hold-corners to pause each colored layout for visual inspection.
+
+# macOS separator snapping through queued AppKit mouse events (offline native window)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-split-snap
+# Add --smoke-hold-split-snap to hold the final colored nested layout for a screenshot.
 
 # Focused native check for content width, panel cap, and overflow fades
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizing

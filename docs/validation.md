@@ -1,3 +1,30 @@
+# Split separator snapping
+
+Run on 2026-11-06 on macOS in `bro-snap-split-separators`.
+
+Separators snap by their center to 25%, 33⅓%, 50%, 66⅔%, and 75% of their
+immediate parent bounds within 10 logical pixels. Outside the threshold resizing
+remains free; release keeps the last size. Existing ratio and recursive pane-size
+limits still take priority.
+
+- The `--smoke-split-snap` native drag checks cover both axes at root and nested
+  levels, every stop, entry at ±10px, exit at ±11px, release, movement after
+  release, and edge drags against the existing pane/ratio limits. They queue
+  AppKit mouse events through the real native window and GPUI handlers; physical
+  OS mouse input is not synthesized. The colored final nested layout can be held
+  with `--smoke-hold-split-snap` for screenshots.
+- All 108 Rust tests passed; one existing manual benchmark is ignored. Core
+  coverage includes nonstandard gutters, undersized/recursive layouts, and the
+  exact 10px boundary at nested thirds with float-rounding differences.
+- Formatting and whitespace checks passed. Strict Clippy reports two existing
+  `collapsible_if` warnings in pinned-tab drag handling in `render.rs`, both
+  unchanged from HEAD. Clippy passes with only that lint allowed.
+- Windows native dragging was not run; the snapping geometry is platform neutral.
+- Visual proof uses an actual native NSView bitmap showing the 50% outer split
+  and nested 75% stop. GPUI's GPU chrome and some WebKit surfaces are absent from
+  this capture. Full-window capture failed through both `screencapture` and
+  ScreenCaptureKit; the latter reported audio/video capture failure (-3811).
+
 # Copy current URL shortcut
 
 Run on 2026-11-05 on macOS in `bro-copy-current-tab-url`.

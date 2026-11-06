@@ -231,7 +231,7 @@ impl BrowserApp {
                 // The retained page may have had square corners in a floating panel.
                 // Clip the native page itself, not just the shield behind it.
                 self.host
-                    .set_panel_radius(id, crate::render::PANEL_CORNER_RADIUS)?;
+                    .set_panel_corners(id, crate::render::PANEL_CORNER_RADIUS, false)?;
                 self.host.place(
                     id,
                     Bounds {

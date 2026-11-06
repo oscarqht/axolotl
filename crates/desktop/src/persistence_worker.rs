@@ -234,7 +234,7 @@ impl Store {
     }
     pub fn reserve_history_id(&self) -> Result<i64> {
         self.next_history_id
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
             .map_err(|_| anyhow!("History visit IDs exhausted"))
     }
     pub fn history(&self, sql: &str, params: Vec<rusqlite::types::Value>) -> Result<()> {

@@ -109,9 +109,9 @@ mod windows_view {
                         let _ = DeleteObject(region.into());
                         return Err(anyhow!("Creating square panel top region"));
                     }
-                    let combined = CombineRgn(region, region, top, RGN_OR);
+                    let combined = CombineRgn(Some(region), Some(region), Some(top), RGN_OR);
                     let _ = DeleteObject(top.into());
-                    if combined == ERROR {
+                    if combined.0 == ERROR {
                         let _ = DeleteObject(region.into());
                         return Err(anyhow!("Combining panel corner regions"));
                     }
@@ -368,7 +368,7 @@ mod windows_view {
                 if clip.bottom_only.get() {
                     let top =
                         CreateRectRgn(0, 0, rect.right + 1, (diameter / 2 + 1).min(rect.bottom));
-                    CombineRgn(expected, expected, top, RGN_OR);
+                    CombineRgn(Some(expected), Some(expected), Some(top), RGN_OR);
                     let _ = DeleteObject(top.into());
                 }
                 let matches_radius = clips && EqualRgn(region, expected).as_bool();

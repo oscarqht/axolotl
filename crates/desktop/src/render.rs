@@ -214,6 +214,7 @@ impl BrowserApp {
         };
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let editing = self.editing == Some(target);
+        let selected_space = active && matches!(target, TabTarget::Space(_));
         let sleeping = match target {
             TabTarget::Space(id) => self
                 .model
@@ -237,13 +238,15 @@ impl BrowserApp {
             .flex()
             .items_center()
             .rounded_md()
-            .bg(rgb(if active {
+            .bg(rgb(if selected_space {
+                colors.selected_space
+            } else if active {
                 colors.active_tab
             } else {
                 colors.surface
             }))
             .border_1()
-            .border_color(rgb(if editing {
+            .border_color(rgb(if editing || selected_space {
                 colors.accent
             } else {
                 colors.border
@@ -358,11 +361,18 @@ impl BrowserApp {
                         }
                         .map(|icon| div().flex_shrink_0().mr_1().child(icon.clone())),
                     )
-                    .child(div().truncate().child(if title.is_empty() {
-                        "New tab".to_owned()
-                    } else {
-                        title.to_owned()
-                    }))
+                    .child(
+                        div()
+                            .truncate()
+                            .when(selected_space, |title| {
+                                title.font_weight(FontWeight::SEMIBOLD)
+                            })
+                            .child(if title.is_empty() {
+                                "New tab".to_owned()
+                            } else {
+                                title.to_owned()
+                            }),
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, _, _| {

@@ -133,7 +133,8 @@ impl BrowserApp {
         };
         let anchor = (w - right - strip + index as f32 * 34. + 30.).min(w - 4.);
         let width = pin.width.min((w - 8.).max(1.));
-        let height = pin.height.min((h - 8.).max(1.));
+        // Keep the external 18px resize grip reachable below the flush page.
+        let height = pin.height.min((h - 26.).max(1.));
         Some(Rect::new(
             self.pins
                 .resize_origin_x
@@ -204,8 +205,8 @@ impl BrowserApp {
                 self.host.place(
                     id,
                     Bounds {
-                        origin: point(px(r.x + 6.), px(r.y + 6.)),
-                        size: size(px((r.width - 12.).max(1.)), px((r.height - 22.).max(1.))),
+                        origin: point(px(r.x), px(r.y)),
+                        size: size(px(r.width), px(r.height)),
                     },
                 )?;
                 self.host.raise(id)?;

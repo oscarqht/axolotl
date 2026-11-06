@@ -267,8 +267,41 @@ pub async fn run(
         );
         Ok::<_, anyhow::Error>(())
     })??;
+    #[cfg(target_os = "macos")]
+    {
+        for dark in [true, false] {
+            host.set_test_appearance(first, Some(dark))?;
+            pause(cx).await;
+            view.update_in(cx, |_, _, cx| {
+                use gpui_component::ActiveTheme;
+                let colors = crate::chrome_theme::ChromeColors::current(cx);
+                ensure!(
+                    cx.theme().is_dark() == dark,
+                    "theme did not follow native appearance"
+                );
+                ensure!(
+                    colors.selected_space == if dark { 0x244c43 } else { 0xd4eee4 }
+                        && colors.selected_space != colors.surface
+                        && colors.accent != colors.border,
+                    "selected-space fill and border are not distinct in the current theme"
+                );
+                Ok::<_, anyhow::Error>(())
+            })??;
+        }
+        host.set_test_appearance(first, None)?;
+        pause(cx).await;
+    }
     let before_resize = view.update_in(cx, |app, window, _| app.pin_rect(window).unwrap())?;
-    ensure!(popup_read(view, "(()=>{const r=grip.getBoundingClientRect(),f=frame.getBoundingClientRect();return r.right<=f.right&&f.right-r.right<5&&r.bottom<=f.bottom&&f.bottom-r.bottom<5&&getComputedStyle(grip).cursor==='nwse-resize'})()", cx).await? == true, "resize grip is not in bottom-right corner");
+    let page_size = eval(&host, first, "({width:innerWidth,height:innerHeight})", cx).await?;
+    ensure!(
+        (page_size["width"].as_f64().unwrap_or_default() - f64::from(before_resize.width)).abs()
+            < 1.
+            && (page_size["height"].as_f64().unwrap_or_default() - f64::from(before_resize.height))
+                .abs()
+                < 1.,
+        "pinned page does not fill its frame: {page_size}, {before_resize:?}"
+    );
+    ensure!(popup_read(view, "(()=>{const r=grip.getBoundingClientRect(),f=frame.getBoundingClientRect();return r.right<=f.right&&f.right-r.right<5&&r.top>=f.bottom&&r.top-f.bottom<5&&r.bottom<=innerHeight&&getComputedStyle(grip).cursor==='nwse-resize'})()", cx).await? == true, "external resize grip is not reachable below the bottom-right corner");
     popup_action(view, "grip.setPointerCapture=()=>{};grip.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,clientX:100,clientY:100}));grip.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:1,clientX:120,clientY:70}));grip.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1}))", cx).await?;
     view.update_in(cx, |app,window,_| {
         let after=app.pin_rect(window).unwrap();
@@ -383,6 +416,6 @@ pub async fn run(
     host.forward(first)?;
     crate::smoke::wait_title(&host, first, "Pin second", cx).await?;
     Ok(vec![
-        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
+        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; flush page bounds; external bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
     ])
 }

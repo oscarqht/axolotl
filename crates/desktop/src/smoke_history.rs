@@ -189,6 +189,57 @@ pub(crate) async fn run(
         popup_eval(view, "window.historyPopupIdentity", cx).await? == "retained",
         "typing recreated the native suggestion popup"
     );
+    // Check synchronously, before the debounce can finish: popup identity alone
+    // does not catch a retained native child being hidden between keystrokes.
+    view.update_in(cx, |app, _, cx| {
+        app.queue_history_search(TabTarget::Space(space), "no-history-match-xyz", cx);
+        ensure!(
+            app.history_matches.len() == 1,
+            "Pending search cleared main results"
+        );
+        ensure!(
+            app.history_popup.is_some(),
+            "Pending search dropped main popup"
+        );
+        anyhow::Ok(())
+    })??;
+    pause(cx).await;
+    pause(cx).await;
+    ensure!(
+        view.update_in(cx, |app, _, _| app.history_matches.is_empty())?,
+        "Completed unmatched query retained main results"
+    );
+    for query in ["", "   ", "dismiss"] {
+        view.update_in(cx, |app, _, cx| {
+            app.queue_history_search(TabTarget::Space(space), "late history", cx)
+        })?;
+        pause(cx).await;
+        pause(cx).await;
+        view.update_in(cx, |app, _, cx| {
+            app.queue_history_search(TabTarget::Space(space), "history", cx);
+            if query == "dismiss" {
+                app.dismiss_history();
+            } else {
+                app.queue_history_search(TabTarget::Space(space), query, cx);
+            }
+            ensure!(
+                app.history_matches.is_empty() && app.history_popup.is_none(),
+                "Clearing or dismissal retained main suggestions"
+            );
+            anyhow::Ok(())
+        })??;
+        pause(cx).await;
+        pause(cx).await;
+        ensure!(
+            view.update_in(cx, |app, _, _| app.history_matches.is_empty())?,
+            "Cancelled search restored main suggestions"
+        );
+    }
+    view.update_in(cx, |app, _, cx| {
+        app.queue_history_search(TabTarget::Space(space), "late history", cx)
+    })?;
+    pause(cx).await;
+    pause(cx).await;
     if std::env::args().any(|a| a == "--smoke-hold-history") {
         eprintln!("History preview: main suggestions");
         for _ in 0..100 {
@@ -263,11 +314,14 @@ pub(crate) async fn run(
     bar_eval(view,pane,"(()=>{const input=document.querySelector('input');input.value='seed';input.dispatchEvent(new Event('input',{bubbles:true}));return true})()",cx).await?;
     pause(cx).await;
     pause(cx).await;
+    let floating = bar_eval(view, pane,
+        "({count:historyItems.length,query:historyQuery,value:historyInput?.value,connected:historyInput?.isConnected,focused:document.activeElement===historyInput})", cx).await?;
     ensure!(
-        bar_eval(view, pane, "historyItems.length", cx).await? == 8,
-        "Floating history must cap at eight unique results"
+        floating["count"] == 8,
+        "Floating history must cap at eight unique results: {floating}"
     );
-    bar_eval(view,pane,"(()=>{const input=document.querySelector('input');input.value='History';input.dispatchEvent(new Event('input',{bubbles:true}));return true})()",cx).await?;
+    ensure!(bar_eval(view,pane,"(()=>{const input=document.querySelector('input');const row=document.querySelector('#history button');input.value='History';input.dispatchEvent(new Event('input',{bubbles:true}));return !document.querySelector('#history').hidden && historyItems.length===8 && document.querySelector('#history button')===row})()",cx).await? == true,
+        "Typing hid or rebuilt floating suggestions before replacement results");
     for _ in 0..3 {
         pause(cx).await;
     }

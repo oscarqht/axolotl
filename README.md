@@ -257,7 +257,7 @@ keeps the current position. Nested splits use their own parent bounds, and exist
 pane-size limits take priority over snap stops.
 
 ```sh
-node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs
+node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs scripts/test-history-suggestions.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

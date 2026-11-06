@@ -43,19 +43,16 @@ impl BrowserApp {
         query: &str,
         cx: &mut Context<Self>,
     ) {
-        // Retain the native suggestion surface while typing. Recreating it for
-        // each debounced result would move WebKit construction onto every key.
+        // Cancel the previous request, but keep its displayed results while a
+        // nonempty query loads so the native surface never closes between keys.
         self.history_generation = self.history_generation.wrapping_add(1);
         self.history_search = None;
-        self.history_matches.clear();
-        self.history_selected = None;
-        cx.notify();
-        let Some(searcher) = self.browsing_history.as_ref().map(|db| db.searcher()) else {
-            return;
-        };
-        if query.trim().is_empty() {
+        if query.trim().is_empty() || self.browsing_history.is_none() {
+            self.dismiss_history();
+            cx.notify();
             return;
         }
+        let searcher = self.browsing_history.as_ref().unwrap().searcher();
         let query = query.to_owned();
         let generation = self.history_generation;
         self.history_search = Some(cx.spawn(async move |view, cx| {
@@ -76,6 +73,7 @@ impl BrowserApp {
                     Ok(items) => match target {
                         crate::app::TabTarget::Space(_) => {
                             this.history_matches = items;
+                            this.history_selected = None;
                             cx.notify();
                         }
                         crate::app::TabTarget::Page(pane, _) => {

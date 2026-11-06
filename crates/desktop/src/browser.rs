@@ -120,6 +120,8 @@ pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_scroll(&self, tab: TabId, x: f64, y: f64, dx: i32, dy: i32) -> Result<()>;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click_at(&self, tab: TabId, x: f64, y: f64, modified: bool) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_option_click(&self, tab: TabId) -> Result<()>;
@@ -782,6 +784,10 @@ impl BrowserHost for WryHost {
             app.postEvent_atStart(&event, false);
         }
         Ok(())
+    }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_scroll(&self, tab: TabId, x: f64, y: f64, dx: i32, dy: i32) -> Result<()> {
+        crate::smoke_horizontal_scroll::scroll_view(self.get(tab)?.as_ref(), x, y, dx, dy)
     }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_click(&self, tab: TabId, modified: bool) -> Result<()> {

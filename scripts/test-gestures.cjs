@@ -9,18 +9,28 @@ const source = readFileSync(join(__dirname, '../crates/desktop/assets/input-brid
   .replaceAll('__LINK_MODIFIER__', 'event.metaKey && !event.ctrlKey')
   .replace('__GESTURES__', readFileSync(join(__dirname, '../crates/desktop/assets/gestures.js'), 'utf8'));
 
-function bridge() {
+class Element {
+  constructor({ left = 0, width = 200, content = 600, overflow = 'auto', direction = 'ltr' } = {}) {
+    Object.assign(this, { scrollLeft: left, clientWidth: width, scrollWidth: content,
+      style: { overflowX: overflow, direction } });
+  }
+}
+function bridge(root = new Element({ content: 200 })) {
   const listeners = {}, messages = [];
   const window = {
     ipc: { postMessage: value => messages.push(value) },
     addEventListener: (type, listener, options) => { listeners[type] = { listener, options }; },
   };
-  vm.runInNewContext(source, { window, innerWidth: 800 });
+  let now = 0;
+  vm.runInNewContext(source, { window, innerWidth: 800, Element,
+    document: { scrollingElement: root }, getComputedStyle: node => node.style,
+    performance: { now: () => now } });
   return {
     messages,
+    idle() { now += 301; },
     fire(type, options = {}) {
       const event = { isTrusted: true, ctrlKey: false, deltaMode: 0, deltaX: 0, deltaY: 0,
-        touches: [], preventDefault() { this.prevented = true; },
+        touches: [], composedPath: () => [root], preventDefault() { this.prevented = true; },
         stopImmediatePropagation() { this.stopped = true; }, ...options };
       listeners[type].listener(event);
       return event;
@@ -97,5 +107,89 @@ test('vertical, diagonal, zero, pinch and synthetic wheel input remain untouched
     assert.equal(e.prevented, undefined);
     assert.equal(e.stopped, undefined);
   }
+  assert.deepEqual(b.messages, []);
+});
+
+
+test('wheel leaves root and nested horizontal scrolling to the page in both directions', () => {
+  for (const rootScroll of [true, false]) {
+    const scroller = new Element({ left: 100 });
+    const b = bridge(rootScroll ? scroller : undefined);
+    for (const deltaX of [80, -80]) {
+      const e = b.fire('wheel', { deltaX, composedPath: () => [scroller] });
+      assert.equal(e.prevented, undefined);
+      assert.equal(e.stopped, undefined);
+    }
+    assert.deepEqual(b.messages, []);
+  }
+});
+
+test('wheel navigates only at the directional edge, checking outer scrollers too', () => {
+  const inner = new Element({ left: 400 });
+  const outer = new Element({ left: 50 });
+  const b = bridge(outer);
+  assert.equal(b.fire('wheel', { deltaX: 80, composedPath: () => [inner] }).prevented, undefined);
+  outer.scrollLeft = 400;
+  b.idle();
+  assert.equal(b.fire('wheel', { deltaX: 80, composedPath: () => [inner] }).prevented, true);
+  b.idle();
+  assert.equal(b.fire('wheel', { deltaX: -80, composedPath: () => [inner] }).prevented, undefined);
+  inner.scrollLeft = outer.scrollLeft = 0;
+  b.idle();
+  assert.equal(b.fire('wheel', { deltaX: -80, composedPath: () => [inner] }).prevented, true);
+});
+
+test('scrolling wheel momentum cannot navigate when it reaches an edge', () => {
+  const root = new Element({ left: 350 });
+  const b = bridge(root);
+  b.fire('wheel', { deltaX: 80 });
+  root.scrollLeft = 400;
+  assert.equal(b.fire('wheel', { deltaX: 80 }).prevented, undefined);
+  assert.deepEqual(b.messages, []);
+  b.idle();
+  assert.equal(b.fire('wheel', { deltaX: 80 }).prevented, true);
+});
+
+test('RTL negative scroll offsets, shadow paths and hidden overflow are handled', () => {
+  const rtl = new Element({ left: -100, direction: 'rtl' });
+  const b = bridge();
+  for (const deltaX of [-80, 80]) {
+    assert.equal(b.fire('wheel', { deltaX, composedPath: () => [rtl, {}] }).prevented, undefined);
+  }
+  rtl.scrollLeft = -400;
+  b.idle();
+  assert.equal(b.fire('wheel', { deltaX: -80, composedPath: () => [rtl] }).prevented, true);
+  rtl.scrollLeft = 0;
+  b.idle();
+  assert.equal(b.fire('wheel', { deltaX: 80, composedPath: () => [rtl] }).prevented, true);
+  b.idle();
+  const hidden = new Element({ left: 100, overflow: 'hidden' });
+  assert.equal(b.fire('wheel', { deltaX: 80, composedPath: () => [hidden] }).prevented, true);
+});
+
+test('touch scrolls both directions and stays with the page until the next gesture', () => {
+  for (const dx of [-80, 80]) {
+    const inner = new Element({ left: 100 });
+    const b = bridge();
+    b.fire('touchstart', { touches: point(100), composedPath: () => [inner] });
+    assert.equal(b.fire('touchmove', { touches: point(100 + dx) }).prevented, undefined);
+    inner.scrollLeft = dx < 0 ? 400 : 0;
+    assert.equal(b.fire('touchmove', { touches: point(100 + dx * 2) }).prevented, undefined);
+    assert.deepEqual(b.messages, []);
+    b.fire('touchend');
+    b.fire('touchstart', { touches: point(100), composedPath: () => [inner] });
+    assert.equal(b.fire('touchmove', { touches: point(100 + dx) }).prevented, true);
+    assert.deepEqual(b.messages, ['test-nonce:' + (dx < 0 ? 'history-forward' : 'history-back')]);
+  }
+});
+
+test('document root with visible overflow scrolls, including small initial touch moves', () => {
+  const root = new Element({ left: 100, overflow: 'visible' });
+  const b = bridge(root);
+  assert.equal(b.fire('wheel', { deltaX: -80, composedPath: () => [] }).prevented, undefined);
+  b.fire('touchstart', { touches: point(100) });
+  assert.equal(b.fire('touchmove', { touches: point(104) }).prevented, undefined);
+  root.scrollLeft = 0;
+  assert.equal(b.fire('touchmove', { touches: point(180) }).prevented, undefined);
   assert.deepEqual(b.messages, []);
 });

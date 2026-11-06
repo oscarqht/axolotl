@@ -160,9 +160,12 @@ machine running the executable. See the validation report below for tested scope
 - Deliberate horizontal swipes across page content navigate that page's web
   history: swipe right to go back and left to go forward. Trackpad direction
   follows the system scrolling settings. At either end of history, swiping does
-  nothing; it never switches tabs. History navigation takes priority over page
-  horizontal scrolling; vertical scrolling remains normal. Trackpad momentum
-  navigates once per gesture. Floating-bar swipes still select the next tab on a
+  nothing; it never switches tabs. Pages and nested areas scroll horizontally
+  when they have room in the gesture direction. A fresh swipe at a scroll
+  boundary navigates history only when no ancestor can scroll further that way.
+  Scrolling touch drags and trackpad momentum stay with the page until the
+  gesture ends (300 ms idle for wheel input). Vertical scrolling remains normal.
+  History navigation fires once per gesture. Floating-bar swipes still select the next tab on a
   left swipe and the previous tab on a right swipe, wrapping at both ends;
   dragging a chip/handle takes priority over touch swiping.
 - Closing the final tab in a panel removes that panel when other panels remain;

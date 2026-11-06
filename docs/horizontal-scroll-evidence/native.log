@@ -1,0 +1,6 @@
+Axolotl: initializing platform
+Axolotl: platform launched
+Protection: compiling 106302 WebKit rules
+Axolotl: window created
+Protection: WebKit compilation completed in 5.853774167s: ready
+AXOLOTL_SMOKE {"result":"passed","checks":["AppKit wheel: root, nested, shadow DOM and RTL scroll both ways; vertical scrolling; authenticated back/forward at boundaries; trusted page handlers receive scrolling input; floating-bar wheel still switches tabs without changing history"],"elapsed_ms":24813,"kind":"programmatic native smoke; OS mouse/keyboard not simulated"}

@@ -1,3 +1,14 @@
+# Restored horizontal page scrolling
+
+2026-11-06, `bro-restore-horizontal-scrolling`: horizontal wheel/trackpad and touch
+input now stays with root/nested content that can scroll in the gesture direction.
+A fresh gesture at a directional boundary retains history navigation. Scroll
+momentum/touch drags stay with the page until the gesture ends. Vertical scrolling
+and floating-bar gestures retain their existing behavior.
+
+See [native evidence and repeatable checks](horizontal-scroll-evidence/README.md)
+for the actual WKWebView acceptance flow, screenshot, and coverage limitations.
+
 # Page-only swipe history navigation
 
 Run on 2026-11-06 in `bro-page-swipe-history` on macOS.

@@ -13,7 +13,8 @@ Drop targets are explicit:
 - Other content drops float, with a blue preview.
 
 Window-edge overlays keep the tiled layout unchanged. Each has a title/favicon
-chip; corner space is reserved so chips on adjacent edges remain accessible.
+chip. Left and right chips rotate vertically along their edges; top and bottom
+chips stay horizontal. Corner space is reserved so chips on adjacent edges remain accessible.
 Hover reveals the page, and leaving both chip and panel hides it after a 400 ms
 grace period. One unpinned panel reveals per edge. The diamond button pins the
 panel open. Address editing, menus, dragging and resizing keep it open. Dragging

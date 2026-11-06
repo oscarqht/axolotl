@@ -183,17 +183,24 @@ impl BrowserApp {
                 } else {
                     (area.width - 320.).max(164.)
                 };
-                let stride = if vertical { 32. } else { 164. };
+                let chip_length = if vertical {
+                    (area.height - 64.).clamp(28., 156.)
+                } else {
+                    156.
+                };
+                let stride = chip_length + 8.;
                 let count = (length / stride).floor().max(1.) as usize;
                 let offset = (slot % count) as f32 * stride;
-                let lane = (slot / count) as f32 * if vertical { 160. } else { 30. };
+                let lane = (slot / count) as f32 * if vertical { 32. } else { 30. };
                 match edge {
-                    SplitEdge::Left => Rect::new(area.x + lane, area.y + 32. + offset, 156., 28.),
+                    SplitEdge::Left => {
+                        Rect::new(area.x + lane, area.y + 32. + offset, 28., chip_length)
+                    }
                     SplitEdge::Right => Rect::new(
-                        area.x + area.width - 156. - lane,
+                        area.x + area.width - 28. - lane,
                         area.y + 32. + offset,
-                        156.,
                         28.,
+                        chip_length,
                     ),
                     SplitEdge::Top => Rect::new(area.x + 160. + offset, area.y + lane, 156., 28.),
                     SplitEdge::Bottom => Rect::new(
@@ -256,7 +263,7 @@ impl BrowserApp {
                     .map_or(chip, |(_, r)| r);
                 chrome.chip.place(
                     chip,
-                    json!({"title":title,"icon":icon,"edge":null,"pinned":f.pinned,"grip":false}),
+                    json!({"title":title,"icon":icon,"edge":null,"chipSide":f.edge,"pinned":f.pinned,"grip":false}),
                     f.edge.is_some(),
                 )?;
                 chrome.grip.place(

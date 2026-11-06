@@ -198,6 +198,15 @@ pub async fn run(
             );
             Ok::<_, anyhow::Error>(())
         })??;
+        let chip_size=chrome_eval(view,pane,"chip","(()=>{const r=frame.getBoundingClientRect();return [r.width,r.height,r.x,r.y,innerWidth,innerHeight]})()",cx).await?;
+        let vertical = matches!(edge, SplitEdge::Left | SplitEdge::Right);
+        ensure!(
+            chip_size[0].as_f64().unwrap() == if vertical { 28. } else { 156. }
+                && chip_size[1].as_f64().unwrap() == if vertical { 156. } else { 28. }
+                && chip_size[2].as_f64().unwrap().abs() < 0.1
+                && chip_size[3].as_f64().unwrap().abs() < 0.1,
+            "rotated chip is clipped or has incorrect orientation: {chip_size}"
+        );
         // Allow leave-to-hide to expire, then invoke the chip's own hover handler.
         for _ in 0..5 {
             pause(cx).await;
@@ -239,31 +248,53 @@ pub async fn run(
         cx.notify();
         other
     })?;
-    for _ in 0..4 {
-        pause(cx).await;
-    }
-    let (a, b) = view.update_in(cx, |app, _, _| {
-        (
-            app.floating_test_bounds(pane, "chip"),
-            app.floating_test_bounds(other, "chip"),
+    for edge in [SplitEdge::Left, SplitEdge::Right, SplitEdge::Bottom] {
+        view.update_in(cx, |app, _, cx| {
+            let a = app
+                .model
+                .active_space()
+                .floating_panel(pane)
+                .unwrap()
+                .bounds;
+            let b = app
+                .model
+                .active_space()
+                .floating_panel(other)
+                .unwrap()
+                .bounds;
+            app.model.float_pane(pane, a, Some(edge));
+            app.model.float_pane(other, b, Some(edge));
+            app.model.reorder_floating(pane, 0);
+            cx.notify();
+        })?;
+        for _ in 0..4 {
+            pause(cx).await;
+        }
+        let (a, b) = view.update_in(cx, |app, _, _| {
+            (
+                app.floating_test_bounds(pane, "chip"),
+                app.floating_test_bounds(other, "chip"),
+            )
+        })?;
+        let vertical = matches!(edge, SplitEdge::Left | SplitEdge::Right);
+        let (dx, dy) = if vertical { (14., 45.) } else { (35., 14.) };
+        drag(
+            view,
+            other,
+            "chip",
+            point(px(b.x + dx), px(b.y + dy)),
+            point(px(a.x + dx), px(a.y + dy)),
+            cx,
         )
-    })?;
-    drag(
-        view,
-        other,
-        "chip",
-        point(px(b.x + 35.), px(b.y + 14.)),
-        point(px(a.x + 35.), px(a.y + 14.)),
-        cx,
-    )
-    .await?;
-    view.update_in(cx, |app, _, _| {
-        ensure!(
-            app.model.active_space().floating[0].pane == other,
-            "chip reorder failed"
-        );
-        Ok::<_, anyhow::Error>(())
-    })??;
+        .await?;
+        view.update_in(cx, |app, _, _| {
+            ensure!(
+                app.model.active_space().floating[0].pane == other,
+                "chip reorder failed at {edge:?}"
+            );
+            Ok::<_, anyhow::Error>(())
+        })??;
+    }
     eprintln!("Floating smoke: return split");
     // Return panel into a tiled split via its explicit edge target away from window edges.
     // Build a known two-leaf tiled tree by splitting the existing tiled pane.

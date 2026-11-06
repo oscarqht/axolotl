@@ -7,8 +7,8 @@ use std::{cell::RefCell, sync::mpsc::Receiver};
 use workspace_core::Rect;
 use wry::{NewWindowResponse, WebViewBuilder};
 
-/// Room above the bar for six menu items, three dividers, padding and gap.
-pub const MENU_HEIGHT: f32 = 304.;
+/// Room above the bar for tab actions, dividers, padding and gap.
+pub const MENU_HEIGHT: f32 = 332.;
 pub const MENU_WIDTH: f32 = 200.;
 
 pub struct FloatingBar {

@@ -229,6 +229,11 @@ async fn run(
     }
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
 
+    if std::env::args().any(|arg| arg == "--smoke-tab-menu") {
+        let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
+        return Ok(vec![crate::smoke_menu::run(view, pane, cx).await?]);
+    }
+
     #[cfg(target_os = "windows")]
     if std::env::args().any(|arg| arg == "--smoke-windows-controls") {
         return crate::smoke_panels::check_windows_controls(view, cx).await;
@@ -267,6 +272,18 @@ async fn run(
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-google-popup") {
         return crate::smoke_google_popup::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-webapp-stability") {
+        return crate::smoke_webapp::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-webapp-recovery") {
+        return crate::smoke_webapp_recovery::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-reload") {
+        return crate::smoke_reload::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-history-shortcuts") {

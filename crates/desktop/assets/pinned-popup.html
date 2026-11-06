@@ -43,6 +43,7 @@ window.updatePins=s=>{
  const key=JSON.stringify([s.menu,s.unpin,s.keepAlive,s.pins]);if(key===menuKey)return;menuKey=key;editing=false;menu.classList.remove('editing');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Pinned tabs');menu.replaceChildren();
  if(!s.menu)return;
  if(s.unpin){
+  addItem('Recover Tab…',()=>send('recover'));
   addItem('Sleep Tab',()=>send('sleep'));
   const keepAlive=addItem(s.keepAlive?'✓ Keep Alive':'Keep Alive',()=>send('keep-alive'));keepAlive.setAttribute('role','menuitemcheckbox');keepAlive.setAttribute('aria-checked',String(s.keepAlive));
   addItem('Unpin to focused pane',()=>send('unpin'));addItem('Edit icon…',editIcon)

@@ -138,6 +138,7 @@ pub struct BrowserApp {
     /// Native context menu/editor for the right-clicked space.
     pub space_menu: Option<crate::space_menu::SpaceMenu>,
     pub status: String,
+    pub(crate) recovery_prompt: bool,
     pub(crate) persistence_error: Option<String>,
     pub last_url_probe: Instant,
     /// Last history probe per tab: (can go back, can go forward).
@@ -260,6 +261,7 @@ impl BrowserApp {
         Self::install_space_shortcuts(window, cx);
         Self::install_page_tools(cx);
         Self::install_history_shortcuts(cx);
+        Self::install_reload_shortcut(cx);
         #[cfg(target_os = "macos")]
         Self::install_copy_url(cx);
         let preferences = crate::preferences::Preferences::restore();
@@ -334,6 +336,7 @@ impl BrowserApp {
             space_menu: None,
             pins: Default::default(),
             status: String::new(),
+            recovery_prompt: false,
             persistence_error: None,
             last_url_probe: Instant::now(),
             history: HashMap::new(),
@@ -567,6 +570,10 @@ impl BrowserApp {
         if self.settings.is_some() {
             return;
         }
+        if matches!(command, Command::Reload) {
+            self.reload_page();
+            return;
+        }
         if matches!(command, Command::Back | Command::Forward) {
             self.navigate_history(matches!(command, Command::Forward));
             cx.notify();
@@ -576,10 +583,6 @@ impl BrowserApp {
             match command {
                 Command::CloseTab => {
                     self.dismiss_link_popup(window, cx);
-                    return;
-                }
-                Command::Reload => {
-                    self.report(self.host.reload(crate::link_popup::POPUP_TAB));
                     return;
                 }
                 _ => self.close_link_popup(window, cx),
@@ -617,7 +620,7 @@ impl BrowserApp {
                 self.close_tab(pane, self.active_tab());
                 self.sync_address(window, cx);
             }
-            Command::Reload => self.report(self.host.reload(self.active_tab())),
+            Command::Reload => unreachable!("reload handled above"),
             Command::Back | Command::Forward => unreachable!("history handled above"),
             #[cfg(feature = "smoke")]
             Command::Split(axis) => {

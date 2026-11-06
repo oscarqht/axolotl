@@ -1,4 +1,19 @@
-# Split separator snapping
+# 50-pixel snap range follow-up
+
+On 2026-11-06, increased the separator snap range from 10 to 50 logical pixels.
+Overlapping ranges select the nearest stop. Updated core and native regression
+expectations and the README to match.
+
+- All 44 core tests passed, including inclusive ±50px boundaries, free movement
+  beyond the range, both axes, nested geometry, and overlapping ranges.
+- Formatting and whitespace checks passed. Workspace Clippy passed with the
+  existing `collapsible_if` lint allowed.
+- Native queued-event verification was inconclusive: two runs observed separator
+  centers inconsistent with the submitted pointer positions (1047 vs 302 and
+  1183.9297 vs 353). Neither run is counted as passing 50px native verification.
+  The native panel capture below was produced during the initial implementation.
+
+# Initial 10-pixel split separator snapping
 
 Run on 2026-11-06 on macOS in `bro-snap-split-separators`.
 

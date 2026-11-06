@@ -235,7 +235,7 @@ Native UI performance measurements and methodology: [performance report](docs/pe
 
 ## Checks
 
-Split separators snap within 10 logical pixels of 25%, 33⅓%, 50%, 66⅔%, and
+Split separators snap within 50 logical pixels of 25%, 33⅓%, 50%, 66⅔%, and
 75% of their immediate parent panel. Drag farther away to resize freely; releasing
 keeps the current position. Nested splits use their own parent bounds, and existing
 pane-size limits take priority over snap stops.

@@ -4,19 +4,17 @@
 :root{color-scheme:light dark;--ink:light-dark(#20252c,#eef0f5);--surface:light-dark(#fff,#252a33);--border:light-dark(#d5d8df,#515865);--hover:light-dark(#eef0f5,#3d4554)}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font:13px -apple-system,Segoe UI,sans-serif;color:var(--ink)}
 #frame{position:absolute;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 5px 22px #0005}
-#grip{position:absolute;bottom:-19px;right:0;width:26px;height:18px;padding:1px 3px;border:0;border-radius:0 0 5px 5px;background:var(--surface);color:light-dark(#89919e,#a0a9b8);cursor:nwse-resize;touch-action:none;user-select:none;display:flex;align-items:center;justify-content:flex-end;transition:background .12s,color .12s}
-#grip:hover,#grip:focus-visible{background:var(--hover);color:var(--ink)}#grip svg{width:14px;height:14px;pointer-events:none}#grip:active{background:var(--hover)}
 #menu{position:absolute;right:8px;top:4px;width:250px;max-width:calc(100vw - 16px);max-height:calc(100vh - 8px);overflow:auto;padding:5px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 4px 16px #0004}#menu.editing{width:320px}
 button{border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer}button:hover,button:focus-visible{background:var(--hover);outline:2px solid var(--border)}.menu-item{width:100%;display:flex;gap:10px;align-items:center;padding:9px;text-align:left}img{width:16px;height:16px}.pin-emoji{width:16px;font-size:18px}.pin-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 form{margin:0;padding:7px}h2{font-size:14px;margin:0 0 14px}label{display:block;margin-bottom:7px}input{width:100%;min-width:0;padding:7px;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:4px;font:inherit}small{display:block;margin-top:7px;font-size:11px;opacity:.7}
 .fields{display:flex;gap:8px;align-items:center}#icon{flex-shrink:0;width:38px;height:34px;padding:4px;text-align:center;border:1px solid var(--border);font-size:20px}#icon.empty{font-size:18px}.actions{display:flex;justify-content:flex-end;margin-top:12px}#save{padding:8px 12px;background:var(--hover);border:1px solid var(--border)}
 #picker{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}.picker-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.picker-heading label{margin:0}#clear{padding:4px 8px}#emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(32px,1fr));max-height:180px;overflow:auto;margin-top:8px;gap:2px}#emojis button{padding:4px 0;height:34px;text-align:center;font-size:22px}#emojis button[aria-pressed=true]{background:var(--hover)}#empty{padding:10px 0;margin:0;opacity:.7}[hidden]{display:none!important}
 </style>
-<div id="frame" hidden><button id="grip" title="Drag to resize popup" aria-label="Resize popup"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 12 12 4M8 12 12 8M12 12h0"/></svg></button></div>
+<div id="frame" hidden></div>
 <div id="menu" hidden role="menu" aria-label="Pinned tabs"></div>
 <script>
-const frame=document.querySelector('#frame'),menu=document.querySelector('#menu'),grip=document.querySelector('#grip');
-let state={},resize=null,editing=false,icon=null,menuKey='';
+const frame=document.querySelector('#frame'),menu=document.querySelector('#menu');
+let state={},editing=false,icon=null,menuKey='';
 const send=(type,extra={})=>window.ipc.postMessage(JSON.stringify({type,...extra,generation:state.generation}));
 function updateIcon(){const button=menu.querySelector('#icon');button.textContent=icon||'☺';button.classList.toggle('empty',!icon);button.setAttribute('aria-label',icon?'Change pinned tab icon '+icon:'Choose pinned tab icon (using favicon)')}
 function closePicker(){const picker=menu.querySelector('#picker'),button=menu.querySelector('#icon');picker.hidden=true;button.setAttribute('aria-expanded','false');button.focus()}
@@ -39,7 +37,7 @@ function editIcon(){
 function addItem(label,action){const b=document.createElement('button');b.className='menu-item';b.textContent=label;b.setAttribute('role','menuitem');b.onclick=action;menu.append(b);return b}
 window.updatePins=s=>{
  const previous=state;state=s;frame.hidden=!s.rect;menu.hidden=!s.menu;
- if(previous.generation!==s.generation){resize=null;editing=false;menuKey='';}
+ if(previous.generation!==s.generation){editing=false;menuKey='';}
  if(s.rect)Object.assign(frame.style,{left:s.rect.x+'px',top:s.rect.y+'px',width:s.rect.width+'px',height:s.rect.height+'px'});
  if(editing&&s.menu&&previous.unpin===s.unpin)return;
  const key=JSON.stringify([s.menu,s.unpin,s.keepAlive,s.pins]);if(key===menuKey)return;menuKey=key;editing=false;menu.classList.remove('editing');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Pinned tabs');menu.replaceChildren();
@@ -54,8 +52,7 @@ window.updatePins=s=>{
  b.append(label);b.onmouseenter=e=>send('sleep-hover',{id:pin.id,value:true,x:e.clientX,y:e.clientY});b.onmouseleave=()=>send('sleep-hover',{id:pin.id,value:false});b.oncontextmenu=e=>{e.preventDefault();send('context',{id:pin.id})};
  }
 };
-document.onpointerdown=e=>{if(e.target===grip){resize={x:e.clientX,y:e.clientY,w:state.rect.width,h:state.rect.height};send('resize-start');grip.setPointerCapture(e.pointerId);e.preventDefault()}else if(!menu.contains(e.target))send('dismiss')};
-grip.onpointermove=e=>{if(resize)send('resize',{width:Math.max(240,resize.w+e.clientX-resize.x),height:Math.max(160,resize.h+e.clientY-resize.y)})};grip.onpointerup=grip.onlostpointercapture=()=>resize=null;
+document.onpointerdown=e=>{if(!menu.contains(e.target))send('dismiss')};
 document.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();send('dismiss')}else if(editing&&e.key==='Enter'&&!e.isComposing&&e.target.tagName!=='BUTTON'){e.preventDefault();menu.querySelector('form').requestSubmit()}else if(e.key==='Tab'&&state.menu){const items=[...menu.querySelectorAll('button,input')].filter(el=>el.getClientRects().length),first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}};
 document.oncontextmenu=e=>e.preventDefault();send('ready');
 </script>

@@ -1,5 +1,5 @@
 //! Window-wide pinned pages. The native shield is behind the raised, retained page;
-//! it catches outside clicks and provides a resize grip without framing the page in an iframe.
+//! it catches outside clicks. A small corner overlay keeps resizing above the live page.
 use crate::{
     app::BrowserApp,
     native_webview::{BuildNativeChild, NativeWebView},
@@ -14,6 +14,7 @@ pub struct PinnedUi {
     pub open: Option<TabId>,
     pub menu: Option<Option<TabId>>,
     surface: Option<NativeWebView>,
+    grip: Option<NativeWebView>,
     events: Option<Receiver<Value>>,
     state: String,
     generation: u64,
@@ -80,6 +81,9 @@ impl BrowserApp {
         for bar in self.bars.values() {
             let _ = bar.raise();
         }
+        if let Some(grip) = &self.pins.grip {
+            let _ = grip.set_visible(false);
+        }
         self.pins.menu = None;
         if let Some(surface) = &self.pins.surface {
             let _ = surface.set_visible(false);
@@ -133,8 +137,7 @@ impl BrowserApp {
         };
         let anchor = (w - right - strip + index as f32 * 34. + 30.).min(w - 4.);
         let width = pin.width.min((w - 8.).max(1.));
-        // Keep the external 18px resize grip reachable below the flush page.
-        let height = pin.height.min((h - 26.).max(1.));
+        let height = pin.height.min((h - 8.).max(1.));
         Some(Rect::new(
             self.pins
                 .resize_origin_x
@@ -154,6 +157,21 @@ impl BrowserApp {
         let result = (|| -> anyhow::Result<()> {
             if self.pins.surface.is_none() {
                 let (sender, events) = crate::ui_events::channel();
+                let grip_sender = sender.clone();
+                let grip = crate::browser::with_inline_html(
+                    WebViewBuilder::new()
+                        .with_transparent(true)
+                        .with_focused(false)
+                        .with_visible(false)
+                        .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
+                        .with_ipc_handler(move |request| {
+                            if let Ok(event) = serde_json::from_str(request.body()) {
+                                let _ = grip_sender.send(event);
+                            }
+                        }),
+                    include_str!("../assets/pinned-resize.html"),
+                )
+                .build_native_child(window, cx)?;
                 let view = crate::browser::with_inline_html(
                     WebViewBuilder::new()
                         .with_transparent(true)
@@ -171,6 +189,7 @@ impl BrowserApp {
                     include_str!("../assets/pinned-popup.html"),
                 )
                 .build_native_child(window, cx)?;
+                self.pins.grip = Some(grip);
                 self.pins.surface = Some(view);
                 self.pins.events = Some(events);
             }
@@ -199,8 +218,15 @@ impl BrowserApp {
             // Also push on ready: initialization can finish after the first evaluation.
             if state != self.pins.state {
                 view.evaluate_script(&format!("window.updatePins?.({state})"))?;
+                self.pins
+                    .grip
+                    .as_ref()
+                    .unwrap()
+                    .evaluate_script(&format!("window.updatePins?.({state})"))?;
                 self.pins.state = state;
             }
+            let grip = self.pins.grip.as_ref().unwrap();
+            grip.set_visible(rect.is_some())?;
             if let (Some(id), Some(r)) = (self.pins.open, rect) {
                 self.host.place(
                     id,
@@ -210,6 +236,11 @@ impl BrowserApp {
                     },
                 )?;
                 self.host.raise(id)?;
+                grip.set_bounds(crate::browser::native_bounds(Bounds {
+                    origin: point(px(r.x + r.width - 27.), px(r.y + r.height - 19.)),
+                    size: size(px(26.), px(18.)),
+                }))?;
+                crate::native_webview::raise(grip)?;
                 if self.pins.focus_page {
                     self.host.focus(id)?;
                     self.pins.focus_page = false;
@@ -243,6 +274,12 @@ impl BrowserApp {
                     {
                         let _ = view
                             .evaluate_script(&format!("window.updatePins({})", self.pins.state));
+                        if let Some(grip) = &self.pins.grip {
+                            let _ = grip.evaluate_script(&format!(
+                                "window.updatePins({})",
+                                self.pins.state
+                            ));
+                        }
                         if self.pins.menu.is_some() {
                             let _ = view.focus();
                         }
@@ -337,6 +374,75 @@ use wry::WebViewBuilder;
 
 #[cfg(feature = "smoke")]
 impl PinnedUi {
+    #[cfg(target_os = "macos")]
+    pub(crate) fn snapshot(&self, path: &str) {
+        crate::floating_panels::snapshot_surface(
+            self.surface.as_ref().unwrap(),
+            format!("{path}.shield.png"),
+        );
+        crate::floating_panels::snapshot_surface(
+            self.grip.as_ref().unwrap(),
+            format!("{path}.grip.png"),
+        );
+    }
+    #[cfg(target_os = "macos")]
+    pub(crate) fn check_grip(&self, rect: Rect) -> anyhow::Result<()> {
+        let bounds = self.grip.as_ref().unwrap().bounds()?;
+        let position = bounds.position.to_logical::<f64>(1.);
+        let size = bounds.size.to_logical::<f64>(1.);
+        anyhow::ensure!(
+            (position.x - f64::from(rect.x + rect.width - 27.)).abs() < 1.
+                && (position.y - f64::from(rect.y + rect.height - 19.)).abs() < 1.
+                && size.width == 26.
+                && size.height == 18.,
+            "resize overlay is not inside the bottom-right corner: {bounds:?}, {rect:?}"
+        );
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    pub(crate) fn grip_mouse(
+        &self,
+        kind: objc2_app_kit::NSEventType,
+        x: f64,
+        y: f64,
+    ) -> anyhow::Result<()> {
+        use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+        use objc2_foundation::NSPoint;
+        use wry::WebViewExtMacOS;
+        let grip = self.grip.as_ref().unwrap();
+        let window = grip.ns_window();
+        let root = window.contentView().unwrap();
+        let point = NSPoint::new(
+            x,
+            if root.isFlipped() {
+                y
+            } else {
+                root.frame().size.height - y
+            },
+        );
+        if kind == NSEventType::LeftMouseDown {
+            window.makeKeyWindow();
+            grip.focus()?;
+            let target = root
+                .hitTest(point)
+                .ok_or_else(|| anyhow::anyhow!("grip not hit-testable"))?;
+            anyhow::ensure!(
+                target.isDescendantOf(&grip.webview()),
+                "page intercepts internal resize grip"
+            );
+        }
+        let location = root.convertPoint_toView(point, None);
+        let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+            kind, location, NSEventModifierFlags::empty(), objc2_foundation::NSProcessInfo::processInfo().systemUptime(), window.windowNumber(), None, 0, 1, 1.,
+        ).ok_or_else(|| anyhow::anyhow!("create native resize event"))?;
+        match kind {
+            NSEventType::LeftMouseDown => grip.webview().mouseDown(&event),
+            NSEventType::LeftMouseDragged => grip.webview().mouseDragged(&event),
+            NSEventType::LeftMouseUp => grip.webview().mouseUp(&event),
+            _ => window.sendEvent(&event),
+        }
+        Ok(())
+    }
     pub(crate) fn read(
         &self,
         script: &str,
@@ -348,8 +454,8 @@ impl PinnedUi {
             .evaluate_script_with_callback(script, callback)?;
         Ok(())
     }
-    pub(crate) fn evaluate(&self, script: &str) -> anyhow::Result<()> {
-        self.surface
+    pub(crate) fn evaluate(&self, grip: bool, script: &str) -> anyhow::Result<()> {
+        (if grip { &self.grip } else { &self.surface })
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Popup surface missing"))?
             .evaluate_script(script)?;

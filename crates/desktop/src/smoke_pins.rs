@@ -12,7 +12,7 @@ async fn popup_action(
     cx: &mut AsyncWindowContext,
 ) -> Result<()> {
     // Actions may dismiss the popup; check the resulting state after IPC.
-    view.update_in(cx, |app, _, _| app.pins.evaluate(script))??;
+    view.update_in(cx, |app, _, _| app.pins.evaluate(false, script))??;
     pause(cx).await;
     Ok(())
 }
@@ -291,6 +291,26 @@ pub async fn run(
         host.set_test_appearance(first, None)?;
         pause(cx).await;
     }
+    #[cfg(target_os = "macos")]
+    if let Some(path) =
+        std::env::args().find_map(|a| a.strip_prefix("--smoke-pins-snapshot=").map(str::to_owned))
+    {
+        host.save_test_snapshot(first, &format!("{path}.page.png"))?;
+        let rect = view.update_in(cx, |app, window, _| {
+            app.pins.snapshot(&path);
+            app.pin_rect(window).unwrap()
+        })?;
+        std::fs::write(format!("{path}.json"), serde_json::to_string(&rect)?)?;
+        for _ in 0..50 {
+            if ["shield", "page", "grip"]
+                .iter()
+                .all(|s| std::path::Path::new(&format!("{path}.{s}.png")).exists())
+            {
+                break;
+            }
+            pause(cx).await;
+        }
+    }
     let before_resize = view.update_in(cx, |app, window, _| app.pin_rect(window).unwrap())?;
     let page_size = eval(&host, first, "({width:innerWidth,height:innerHeight})", cx).await?;
     ensure!(
@@ -301,8 +321,47 @@ pub async fn run(
                 < 1.,
         "pinned page does not fill its frame: {page_size}, {before_resize:?}"
     );
-    ensure!(popup_read(view, "(()=>{const r=grip.getBoundingClientRect(),f=frame.getBoundingClientRect();return r.right<=f.right&&f.right-r.right<5&&r.top>=f.bottom&&r.top-f.bottom<5&&r.bottom<=innerHeight&&getComputedStyle(grip).cursor==='nwse-resize'})()", cx).await? == true, "external resize grip is not reachable below the bottom-right corner");
-    popup_action(view, "grip.setPointerCapture=()=>{};grip.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,clientX:100,clientY:100}));grip.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:1,clientX:120,clientY:70}));grip.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1}))", cx).await?;
+    #[cfg(target_os = "macos")]
+    {
+        host.test_click_at(first, 40., 18., false)?;
+        pause(cx).await;
+        ensure!(
+            eval(
+                &host,
+                first,
+                "document.activeElement===document.querySelector('input')",
+                cx
+            )
+            .await?
+                == true,
+            "resize overlay intercepted page interaction"
+        );
+    }
+    // The corner is a separate native child above the page, not an external footer.
+    #[cfg(target_os = "macos")]
+    view.update_in(cx, |app, window, _| {
+        app.pins.check_grip(app.pin_rect(window).unwrap())
+    })??;
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSEventType;
+        let x = f64::from(before_resize.x + before_resize.width - 10.);
+        let y = f64::from(before_resize.y + before_resize.height - 8.);
+        for (kind, dx, dy) in [
+            (NSEventType::LeftMouseDown, 0., 0.),
+            (NSEventType::LeftMouseDragged, 10., -15.),
+            (NSEventType::LeftMouseDragged, 20., -30.),
+            (NSEventType::LeftMouseUp, 20., -30.),
+        ] {
+            view.update_in(cx, |app, _, _| app.pins.grip_mouse(kind, x + dx, y + dy))??;
+            pause(cx).await;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        view.update_in(cx, |app, _, _| app.pins.evaluate(true, "grip.setPointerCapture=()=>undefined;grip.dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,screenX:100,screenY:100}));grip.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,screenX:120,screenY:70}));grip.dispatchEvent(new PointerEvent('pointerup',{pointerId:1}))"))??;
+        pause(cx).await;
+    }
     view.update_in(cx, |app,window,_| {
         let after=app.pin_rect(window).unwrap();
         ensure!((after.x-before_resize.x).abs()<1. && (after.width-before_resize.width-20.).abs()<1. && (after.height-before_resize.height+30.).abs()<1., "bottom-right resizing moved origin or used wrong deltas: {before_resize:?} -> {after:?}");
@@ -378,12 +437,13 @@ pub async fn run(
     })??;
     pause(cx).await;
     pause(cx).await;
-    popup_action(
-        view,
-        "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
-        cx,
-    )
-    .await?;
+    // Escape also dismisses when the corner surface owns keyboard focus.
+    view.update_in(cx, |app, _, _| {
+        app.pins.evaluate(
+            true,
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
+        )
+    })??;
     pause(cx).await;
     view.update_in(cx, |app, window, cx| {
         ensure!(app.pins.open.is_none(), "Escape did not dismiss");
@@ -416,6 +476,6 @@ pub async fn run(
     host.forward(first)?;
     crate::smoke::wait_title(&host, first, "Pin second", cx).await?;
     Ok(vec![
-        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; flush page bounds; external bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
+        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; flush page bounds; internal native bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
     ])
 }

@@ -662,19 +662,18 @@ impl Render for BrowserApp {
                 }),
             )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                if let Some((id, origin, active)) = this.pins.drag {
-                    if active
+                if let Some((id, origin, active)) = this.pins.drag
+                    && (active
                         || (f32::from(event.position.x - origin.x).abs()
                             + f32::from(event.position.y - origin.y).abs())
-                            > 5.
-                    {
-                        if !active {
-                            this.dismiss_pin(window, cx);
-                        }
-                        this.pins.drag = Some((id, origin, true));
-                        this.pins.suppress_click = true;
-                        cx.notify();
+                            > 5.)
+                {
+                    if !active {
+                        this.dismiss_pin(window, cx);
                     }
+                    this.pins.drag = Some((id, origin, true));
+                    this.pins.suppress_click = true;
+                    cx.notify();
                 }
                 this.update_tab_drag(event, window, cx);
                 this.update_space_drag(event, window, cx);
@@ -694,22 +693,22 @@ impl Render for BrowserApp {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, window, cx| {
-                    if let Some((id, _, active)) = this.pins.drag.take() {
-                        if active && this.pin_drop_target(event.position, window) {
-                            let w = f32::from(window.viewport_size().width);
-                            let (_, strip) =
-                                crate::pinned_tabs::header_layout(w, this.model.pinned_tabs.len());
-                            let right = if cfg!(target_os = "windows") {
-                                210.
-                            } else {
-                                76.
-                            };
-                            let slot = ((f32::from(event.position.x) - (w - right - strip) + 17.)
-                                / 34.)
-                                .max(0.) as usize;
-                            this.model.move_pin(id, slot);
-                            cx.notify();
-                        }
+                    if let Some((id, _, active)) = this.pins.drag.take()
+                        && active
+                        && this.pin_drop_target(event.position, window)
+                    {
+                        let w = f32::from(window.viewport_size().width);
+                        let (_, strip) =
+                            crate::pinned_tabs::header_layout(w, this.model.pinned_tabs.len());
+                        let right = if cfg!(target_os = "windows") {
+                            210.
+                        } else {
+                            76.
+                        };
+                        let slot = ((f32::from(event.position.x) - (w - right - strip) + 17.) / 34.)
+                            .max(0.) as usize;
+                        this.model.move_pin(id, slot);
+                        cx.notify();
                     }
                     this.finish_tab_drag(Some(event.position), window, cx);
                     this.finish_space_drag(Some(event.position), cx);

@@ -34,6 +34,7 @@ mod macos_titlebar;
 #[cfg(target_os = "macos")]
 mod native_popup_tabs;
 mod native_webview;
+mod page_tools;
 mod panel_controls;
 mod persistence;
 mod persistence_worker;
@@ -79,6 +80,8 @@ mod smoke_menu;
 mod smoke_notifications;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_oauth;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_page_tools;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
 #[cfg(feature = "smoke")]
@@ -175,6 +178,20 @@ fn main() {
         } else {
             "ctrl"
         };
+        for (key, operation) in [
+            ("=", page_tools::Operation::ZoomIn),
+            ("shift-=", page_tools::Operation::ZoomIn),
+            ("+", page_tools::Operation::ZoomIn),
+            ("-", page_tools::Operation::ZoomOut),
+            ("0", page_tools::Operation::ZoomReset),
+            ("f", page_tools::Operation::Find),
+        ] {
+            cx.bind_keys([KeyBinding::new(
+                &format!("{modifier}-{key}"),
+                page_tools::PageTool { operation },
+                None,
+            )]);
+        }
         cx.bind_keys([
             KeyBinding::new(&format!("{modifier}-q"), Quit, None),
             KeyBinding::new(&format!("{modifier}-l"), Address, None),

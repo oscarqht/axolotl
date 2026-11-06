@@ -266,6 +266,10 @@ async fn run(
         return crate::smoke_google_popup::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-page-tools") {
+        return crate::smoke_page_tools::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-keyboard") {
         return crate::smoke_keyboard::run(view, cx).await;
     }

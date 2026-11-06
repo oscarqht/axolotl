@@ -29,7 +29,7 @@ function bridge(mac = true) {
     listeners.click(event);
     return event;
   }
-  return { click, messages, listeners };
+  return { click, messages, listeners, window };
 }
 
 test('trusted Cmd+click resolves a nested link and cancels native navigation/popup exactly once', () => {
@@ -158,5 +158,33 @@ test('trusted Escape reaches the shell without swallowing ordinary page behavior
   assert.deepEqual(b.messages, ['secret:escape']);
   key(b, { key: 'Escape', metaKey: false, shiftKey: false, isTrusted: false });
   key(b, { key: 'Escape', metaKey: false, shiftKey: true });
-  assert.equal(b.messages.length, 1);
+  // Preserve the existing modified-Escape forwarding as well.
+  assert.equal(b.messages.length, 2);
+});
+
+
+test('page zoom and find reserve only the correct platform shortcuts', () => {
+  for (const mac of [true, false]) {
+    for (const [keyName, shiftKey, command] of [['=',false,'zoom-in'], ['+',true,'zoom-in'], ['-',false,'zoom-out'], ['0',false,'zoom-reset'], ['f',false,'find-page']]) {
+      for (const overrides of [null, {isTrusted:false}, {altKey:true}, {metaKey:!mac,ctrlKey:mac}, {metaKey:true,ctrlKey:true}]) {
+        const b = bridge(mac);
+        const event = key(b, {key:keyName, shiftKey, metaKey:mac, ctrlKey:!mac, ...overrides});
+        assert.deepEqual(b.messages, overrides === null ? ['secret:' + command] : []);
+        assert.equal(Boolean(event.prevented), overrides === null);
+      }
+    }
+    const b = bridge(mac);
+    key(b, {key:'f',shiftKey:true,metaKey:mac,ctrlKey:!mac});
+    assert.deepEqual(b.messages, []);
+  }
+});
+
+test('Escape closes find before dismissing a pinned page or preview', () => {
+  const b = bridge();
+  let closed = 0;
+  b.window.__axolotlCloseFind = () => { closed++; return true; };
+  const event = key(b, {key:'Escape',metaKey:false,shiftKey:false});
+  assert.equal(closed, 1);
+  assert.equal(event.prevented, true);
+  assert.deepEqual(b.messages, []);
 });

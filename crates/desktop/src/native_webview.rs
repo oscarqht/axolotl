@@ -558,6 +558,64 @@ mod windows_view {
                 Ok(())
             })
         }
+        pub fn zoom(&self, factor: f64) -> Result<()> {
+            self.call(move |view| view.zoom(factor))
+        }
+        pub fn install_page_shortcuts(
+            &self,
+            callback: impl Fn(&'static str) + 'static,
+        ) -> Result<()> {
+            self.call(move |view| {
+                use webview2_com::{
+                    AcceleratorKeyPressedEventHandler, Microsoft::Web::WebView2::Win32::*,
+                };
+                use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
+                use wry::WebViewExtWindows;
+                unsafe {
+                    view.controller()
+                        .add_AcceleratorKeyPressed(
+                            &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
+                                let Some(args) = args else {
+                                    return Ok(());
+                                };
+                                let mut kind = COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN;
+                                let mut key = 0;
+                                args.KeyEventKind(&mut kind)?;
+                                args.VirtualKey(&mut key)?;
+                                if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN {
+                                    return Ok(());
+                                }
+                                let down = |vk| GetKeyState(vk) < 0;
+                                let text = match key {
+                                    0xBB | 0x6B => "=",
+                                    0xBD | 0x6D => "-",
+                                    0x30 | 0x60 => "0",
+                                    0x46 => "f",
+                                    _ => "",
+                                };
+                                if let Some(operation) = crate::page_tools::shortcut(
+                                    text,
+                                    down(0x11),
+                                    down(0x10),
+                                    down(0x12) || down(0x5B) || down(0x5C),
+                                ) {
+                                    args.SetHandled(true)?;
+                                    callback(match operation {
+                                        crate::page_tools::Operation::ZoomIn => "zoom-in",
+                                        crate::page_tools::Operation::ZoomOut => "zoom-out",
+                                        crate::page_tools::Operation::ZoomReset => "zoom-reset",
+                                        crate::page_tools::Operation::Find => "find-page",
+                                    });
+                                }
+                                Ok(())
+                            })),
+                            &mut 0,
+                        )
+                        .map_err(webview2_com::Error::from)?;
+                }
+                Ok(())
+            })
+        }
         pub fn reload(&self) -> Result<()> {
             self.call(|view| view.reload())
         }

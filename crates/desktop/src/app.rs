@@ -258,6 +258,7 @@ impl BrowserApp {
         })
         .detach();
         Self::install_space_shortcuts(window, cx);
+        Self::install_page_tools(cx);
         #[cfg(target_os = "macos")]
         Self::install_copy_url(cx);
         let preferences = crate::preferences::Preferences::restore();
@@ -760,6 +761,13 @@ impl BrowserApp {
             };
             #[cfg(target_os = "macos")]
             if self.handle_native_popup_event(&event, &mut popup_ids, window, cx) {
+                continue;
+            }
+            // Route by the originating native page before pin/preview handlers.
+            if let BrowserEvent::Shortcut(tab, key) = &event
+                && let Some(operation) = crate::page_tools::Operation::from_command(key)
+            {
+                self.report(self.host.page_tool(*tab, operation));
                 continue;
             }
             if self.handle_popup_event(&event, window, cx) {

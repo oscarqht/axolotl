@@ -199,8 +199,16 @@ See [default-browser setup and checks](docs/settings.md#default-browser-and-exte
 | Option+click (macOS) | Open a link in a temporary window-centered preview |
 | Cmd/Ctrl+W | Close the focused tab |
 | Cmd/Ctrl+R | Reload the focused tab |
+| Cmd/Ctrl+Plus or Equals / Minus | Zoom the focused page in / out (saved per hostname) |
+| Cmd/Ctrl+0 | Reset website zoom to 100% |
+| Cmd/Ctrl+F | Find in the focused page; Enter / Shift+Enter for next / previous, Escape to close |
 | Alt+Left / Alt+Right | Back / forward (when delivered to the shell) |
 | F6 | Cycle pane focus when delivered to the GPUI shell |
+
+Page zoom is shared across schemes and ports on the same hostname, but not subdomains,
+and survives app restarts. Find is case-insensitive plain text with match highlighting
+and a current/total count. Both tools also target open pins and link previews.
+See [page zoom and find](docs/page-tools.md) for details and verification.
 
 Cmd+number uses the current space order after dragging spaces. Cmd+9 selects
 the ninth space; numbers without a corresponding space leave the current view unchanged.

@@ -63,6 +63,24 @@ pub fn install(cx: &mut App) {
             return std::ptr::null_mut();
         }
 
+        if let Some(operation) = key.as_deref().and_then(|key| {
+            crate::page_tools::shortcut(
+                key,
+                flags.contains(Flags::Command),
+                flags.contains(Flags::Shift),
+                flags.intersects(Flags::Control | Flags::Option),
+            )
+        }) {
+            let app = app.clone();
+            executor
+                .spawn(async move {
+                    let _ = app.update(|cx| {
+                        cx.dispatch_action(&crate::page_tools::PageTool { operation })
+                    });
+                })
+                .detach();
+            return std::ptr::null_mut();
+        }
         if let Some(index) = key.as_deref().and_then(|key| space_index(key, flags)) {
             let app = app.clone();
             executor

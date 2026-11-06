@@ -219,13 +219,13 @@ pub async fn run(
         Ok(())
     })??;
     let focus_before = view.update_in(cx, |app, _, _| {
-        let focused = app.host.has_native_focus(app.active_tab());
+        let focused = app.host.focused_page();
         app.hover_space_title(
             Some(original[0].id),
             point(fixed.right() - px(15.), px(19.)),
         );
         focused
-    })??;
+    })?;
     for _ in 0..10 {
         pause(cx).await;
     }
@@ -238,7 +238,7 @@ pub async fn run(
             .ok_or_else(|| anyhow::anyhow!("Hover title missing"))?;
         ensure!(tooltip.presented, "Native title tooltip was not presented");
         ensure!(
-            app.host.has_native_focus(app.active_tab())? == focus_before,
+            app.host.focused_page() == focus_before,
             "Tooltip stole page focus"
         );
         tooltip.evaluate(

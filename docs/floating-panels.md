@@ -62,6 +62,18 @@ For a workspace image that includes transparent native controls, use:
 python3 scripts/capture-floating-panels.py target/debug/axolotl /tmp/floating.png
 ```
 
+To verify outer-corner transparency against a contrasting live background:
+
+```sh
+python3 scripts/capture-floating-panels.py target/debug/axolotl /tmp/floating.png --contrast-corners
+```
+
+This also saves `/tmp/floating-corners.png` with unretouched enlarged corner crops.
+The regression checks the native frame's alpha outside each curve, then compares
+all four combined corners with the captured backdrop (allowing one 8-bit level
+for native color-profile dithering). The frame uses both HTML and native rounded
+clips, with no rectangular viewport-clipped shadow.
+
 This requires Pillow. It captures native views and combines transparent surfaces
 at their recorded runtime bounds; it excludes the GPUI spaces header. It is useful
 when desktop/window capture is unavailable. It is a native view capture, not an

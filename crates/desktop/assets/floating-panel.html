@@ -1,6 +1,6 @@
 <!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font:12px -apple-system,Segoe UI,sans-serif;color:#213b36;background:transparent;user-select:none}
-#frame{height:100%;display:flex;align-items:center;gap:7px;padding:0 9px;background:#edf6f2;border:1px solid #9bb9af;border-radius:9px;cursor:grab;box-shadow:0 2px 7px #153d301a}body.panel{border:2px solid #9bb9af;border-radius:10px;box-shadow:0 4px 16px #173c3226}body.panel #frame{height:28px;border:0;border-radius:8px 8px 0 0;box-shadow:none}
+#frame{height:100%;display:flex;align-items:center;gap:7px;padding:0 9px;background:#edf6f2;border:1px solid #9bb9af;border-radius:9px;cursor:grab;box-shadow:0 2px 7px #153d301a}body.panel{border:2px solid #9bb9af;border-radius:10px;box-shadow:none;clip-path:inset(0 round 10px)}body.panel #frame{height:28px;border:0;border-radius:8px 8px 0 0;box-shadow:none}
 body.left #frame,body.right #frame{position:absolute;left:0;top:0;width:100vh;height:100vw;transform-origin:0 0}
 body.left #frame{transform:translateY(100vh) rotate(-90deg)}
 body.right #frame{transform:translateX(100vw) rotate(90deg)}

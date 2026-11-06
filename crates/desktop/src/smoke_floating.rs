@@ -101,7 +101,12 @@ pub async fn run(
             px(r.y + chip[1].as_f64().unwrap() as f32),
         )
     })?;
-    drag(view, source, "bar", start, point(px(480.), px(280.)), cx).await?;
+    let split_target = view.update_in(cx, |_, window, _| {
+        let s = window.viewport_size();
+        let r = crate::render::panel_content_rect(s.width.into(), s.height.into());
+        point(px(r.x + r.width * 0.2), px(r.y + r.height * 0.5))
+    })?;
+    drag(view, source, "bar", start, split_target, cx).await?;
     let split_pane = view.update_in(cx, |app, _, _| {
         ensure!(
             app.model.active_space().floating.is_empty(),
@@ -680,6 +685,11 @@ pub(crate) fn session_probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut 
                 if ready {break;}
             }
             for _ in 0..6{pause(cx).await;}
+            if std::env::args().any(|a|a=="--smoke-contrast-corners") {
+                let (host,tab)=view.update_in(cx,|app,_,_|{let pane=app.model.active_space().layout.pane_ids()[0];(app.host.clone(),app.model.pane(pane).unwrap().active_tab)})?;
+                eval(&host,tab,"document.documentElement.style.background='#442664';document.body.style.background='#442664';for(const el of document.body.children)el.style.visibility='hidden';true",cx).await?;
+                for _ in 0..3{pause(cx).await;}
+            }
             if let Some(path)=std::env::args().find_map(|a|a.strip_prefix("--smoke-floating-snapshot=").map(str::to_owned)) {
                 view.update_in(cx,|app,_,_|app.floating_snapshot(&path))??;
                 for _ in 0..50 {

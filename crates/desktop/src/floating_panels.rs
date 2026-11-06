@@ -88,6 +88,30 @@ impl Surface {
             }))?;
             self.bounds = bounds;
         }
+        if state["panel"] == true {
+            // The native surface, including its backing background, must share
+            // the same outer clip as the HTML frame.
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_quartz_core::CACornerMask;
+                use wry::WebViewExtMacOS;
+                let native = self.view.webview();
+                native.setWantsLayer(true);
+                if let Some(layer) = native.layer() {
+                    if layer.cornerRadius() != 10. {
+                        layer.setCornerRadius(10.);
+                    }
+                    if layer.maskedCorners() != CACornerMask::all() {
+                        layer.setMaskedCorners(CACornerMask::all());
+                    }
+                    if !layer.masksToBounds() {
+                        layer.setMasksToBounds(true);
+                    }
+                }
+            }
+            #[cfg(target_os = "windows")]
+            self.view.set_panel_corner_radius(10.)?;
+        }
         let state = state.to_string();
         if state != self.state {
             self.view
@@ -592,18 +616,43 @@ impl BrowserApp {
             .ns_window()
             .contentView()
             .ok_or_else(|| anyhow::anyhow!("no native content view"))?;
-        let bitmap = root
-            .bitmapImageRepForCachingDisplayInRect(root.bounds())
-            .ok_or_else(|| anyhow::anyhow!("no native bitmap"))?;
-        root.cacheDisplayInRect_toBitmapImageRep(root.bounds(), &bitmap);
-        let png = unsafe {
-            bitmap.representationUsingType_properties(
-                NSBitmapImageFileType::PNG,
-                &NSDictionary::new(),
-            )
+        // Exclude transparent controls from the cache: AppKit can otherwise
+        // include stale backing pixels and then paint them again in the WebKit
+        // snapshots below. Capture each surface exactly once.
+        for c in self.floating_panels.chrome.values() {
+            for surface in [&c.header, &c.grip, &c.chip] {
+                surface.view.set_visible(false)?;
+            }
         }
-        .ok_or_else(|| anyhow::anyhow!("no native png"))?;
-        std::fs::write(path, png.to_vec())?;
+        for bar in self.bars.values() {
+            bar.capture_visible(false)?;
+        }
+        let captured = (|| -> Result<Vec<u8>> {
+            let bitmap = root
+                .bitmapImageRepForCachingDisplayInRect(root.bounds())
+                .ok_or_else(|| anyhow::anyhow!("no native bitmap"))?;
+            root.cacheDisplayInRect_toBitmapImageRep(root.bounds(), &bitmap);
+            let png = unsafe {
+                bitmap.representationUsingType_properties(
+                    NSBitmapImageFileType::PNG,
+                    &NSDictionary::new(),
+                )
+            }
+            .ok_or_else(|| anyhow::anyhow!("no native png"))?;
+            Ok(png.to_vec())
+        })();
+        for bar in self.bars.values() {
+            bar.capture_visible(true)?;
+        }
+        for f in &self.model.active_space().floating {
+            let c = &self.floating_panels.chrome[&f.pane];
+            let open =
+                f.edge.is_none() || f.pinned || self.floating_panels.revealed.contains(&f.pane);
+            c.header.view.set_visible(open)?;
+            c.grip.view.set_visible(open)?;
+            c.chip.view.set_visible(f.edge.is_some())?;
+        }
+        std::fs::write(path, captured?)?;
         // Transparent WKWebView layers are omitted by NSView's cache renderer.
         // Capture their actual native surfaces separately at their live bounds.
         let mut surfaces = Vec::new();

@@ -198,6 +198,11 @@ impl FloatingBar {
         self.view.test_frontmost()
     }
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    pub(crate) fn capture_visible(&self, visible: bool) -> Result<()> {
+        self.view.set_visible(visible)?;
+        Ok(())
+    }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     pub(crate) fn native_snapshot(&self, path: String) {
         crate::floating_panels::snapshot_surface(&self.view, path);
     }

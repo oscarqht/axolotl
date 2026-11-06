@@ -10,7 +10,9 @@ detached. Moving keeps native tab IDs, documents and navigation histories.
 
 Floating pages meet the header with square top corners. Their outer bottom
 corners follow the rounded panel outline. A two-point frame inset protects every
-border from the native webpage, and GPUI fallback content uses the same bottom
+border from the native webpage. Native floating pages use those window bounds
+directly, avoiding independent canvas rounding that can cover the right border.
+GPUI fallback content uses the same bottom
 corner mask. A small resize triangle overlays the page's bottom-right corner;
 there is no resize footer. Moving back to a tiled pane restores its usual mask.
 

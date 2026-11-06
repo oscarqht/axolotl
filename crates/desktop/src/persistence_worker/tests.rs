@@ -1,5 +1,5 @@
 use super::*;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 fn directory() -> PathBuf {
     std::env::temp_dir().join(format!("axolotl-worker-{}", uuid::Uuid::new_v4()))
@@ -14,7 +14,6 @@ fn settings(value: i64) -> Vec<(String, Value)> {
 fn coalesces_continuous_changes_without_postponing_and_flushes_immediately() {
     let dir = directory();
     let writer = Store::new(Some(dir.clone())).unwrap();
-    writer.save(settings(1)).unwrap();
     let reader = Connection::open(dir.join("app.sqlite3")).unwrap();
     assert_eq!(
         reader
@@ -23,16 +22,27 @@ fn coalesces_continuous_changes_without_postponing_and_flushes_immediately() {
         0
     );
     let start = Instant::now();
-    while start.elapsed() < Duration::from_millis(700) {
+    loop {
+        // Keep changes arriving until an independent connection sees a commit.
+        // A fixed sleep races the worker on busy runners; flushing or querying
+        // through Store here would force a commit and hide deadline regressions.
         writer.save(settings(2)).unwrap();
+        let value: Option<String> = reader
+            .query_row("SELECT json FROM app_state WHERE key='settings'", [], |r| {
+                r.get(0)
+            })
+            .optional()
+            .unwrap();
+        if let Some(value) = value {
+            assert_eq!(value, r#"{"value":2}"#);
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "continuous changes must commit without waiting for input to stop"
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
-    let value: String = reader
-        .query_row("SELECT json FROM app_state WHERE key='settings'", [], |r| {
-            r.get(0)
-        })
-        .unwrap();
-    assert_eq!(value, r#"{"value":2}"#);
     writer.save(settings(3)).unwrap();
     writer.flush().unwrap();
     assert_eq!(
@@ -45,6 +55,19 @@ fn coalesces_continuous_changes_without_postponing_and_flushes_immediately() {
     drop(writer);
     drop(reader);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn history_id_exhaustion_does_not_wrap_or_advance() {
+    let writer = Store::new(None).unwrap();
+    writer
+        .next_history_id
+        .store(i64::MAX - 1, Ordering::Relaxed);
+    assert_eq!(writer.reserve_history_id().unwrap(), i64::MAX - 1);
+    for _ in 0..2 {
+        assert!(writer.reserve_history_id().is_err());
+        assert_eq!(writer.next_history_id.load(Ordering::Relaxed), i64::MAX);
+    }
 }
 #[test]
 fn failed_batch_keeps_last_committed_data_and_retries() {

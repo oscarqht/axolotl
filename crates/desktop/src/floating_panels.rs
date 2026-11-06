@@ -580,6 +580,20 @@ impl BrowserApp {
             _ => c.header.bounds,
         }
     }
+    pub(crate) fn floating_test_native_frame(&self, pane: PaneId) -> Rect {
+        use wry::WebViewExtMacOS;
+        let frame = self.floating_panels.chrome[&pane]
+            .header
+            .view
+            .webview()
+            .frame();
+        Rect::new(
+            frame.origin.x as f32,
+            frame.origin.y as f32,
+            frame.size.width as f32,
+            frame.size.height as f32,
+        )
+    }
     pub(crate) fn floating_test_eval(
         &self,
         pane: PaneId,

@@ -517,6 +517,13 @@ impl BrowserApp {
         } else {
             radius
         };
+        // Floating chrome is positioned directly in window coordinates. Using
+        // the rounded canvas layout for its native page can grow the right edge
+        // by a point, covering half of the two-point frame border.
+        let floating_bounds = (radius == 0.).then(|| Bounds {
+            origin: point(px(rect.x), px(rect.y)),
+            size: size(px(rect.width), px(rect.height)),
+        });
         let page = self.host.has_view(tab).then(|| self.host.clone());
         let state = PaneContent::resolve(
             self.sleep.is_sleeping(tab),
@@ -606,7 +613,8 @@ impl BrowserApp {
                         canvas(
                             move |bounds, _, _| {
                                 if let Some(page) = &page
-                                    && let Err(error) = page.place(tab, bounds)
+                                    && let Err(error) =
+                                        page.place(tab, floating_bounds.unwrap_or(bounds))
                                 {
                                     eprintln!("Webview bounds: {error}");
                                 }

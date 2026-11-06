@@ -158,12 +158,13 @@ pub async fn run(
         "floating outline is incomplete: {border}"
     );
     view.update_in(cx, |app, _, _| {
-        let frame = app.floating_test_bounds(pane, "header");
+        let frame = app.floating_test_native_frame(pane);
         let content = app.host.panel_clip_state(tab)?;
         let left = content["x"].as_f64().unwrap();
         let right = left + content["width"].as_f64().unwrap();
         ensure!(
-            left >= f64::from(frame.x) + 1.5 && right <= f64::from(frame.x + frame.width) - 1.5,
+            (left - f64::from(frame.x) - 2.).abs() < 0.01
+                && (f64::from(frame.x + frame.width) - right - 2.).abs() < 0.01,
             "native page covers the floating frame border: {content}"
         );
         Ok::<_, anyhow::Error>(())
@@ -666,7 +667,7 @@ pub(crate) fn session_probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut 
                     let tiled=app.model.focused_pane().id;
                     for (i,edge) in [Some(SplitEdge::Left),Some(SplitEdge::Right),Some(SplitEdge::Top),Some(SplitEdge::Bottom),Some(SplitEdge::Left),None].into_iter().enumerate(){
                         app.model.focus_pane(tiled);let tab=app.model.add_tab("about:blank");app.model.set_custom_title(tab,&format!("Restored panel {i}"));
-                        let pane=app.model.float_tab(tiled,tab,Rect::new(170.+i as f32*13.,100.+i as f32*11.,350.+i as f32*9.,260.+i as f32*7.),edge).unwrap();
+                        let pane=app.model.float_tab(tiled,tab,Rect::new(170.+i as f32*13.,100.+i as f32*11.,350.6+i as f32*9.,260.6+i as f32*7.),edge).unwrap();
                         if i==1 {app.model.pin_floating(pane);}
                     }
                     let last=app.model.active_space().floating.last().unwrap().pane;
@@ -706,6 +707,15 @@ pub(crate) fn session_probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut 
                     let expected=f.edge.is_none()||f.pinned;
                     let actual=app.host.is_visible(app.model.pane(f.pane).unwrap().active_tab);
                     ensure!(actual==expected,"restored visibility incorrect for {}: expected {}, actual {}, has_view {}, sleeping {}, geometry {:?}",f.pane,expected,actual,app.host.has_view(app.model.pane(f.pane).unwrap().active_tab),app.sleep.is_sleeping(app.model.pane(f.pane).unwrap().active_tab),app.model.active_space().floating);
+                    if actual {
+                        let frame=app.floating_test_native_frame(f.pane);
+                        let native=app.host.panel_clip_state(app.model.pane(f.pane).unwrap().active_tab)?;
+                        let left=native["x"].as_f64().unwrap()-f64::from(frame.x);
+                        let right=f64::from(frame.x+frame.width)-native["x"].as_f64().unwrap()-native["width"].as_f64().unwrap();
+                        let bottom=native["y"].as_f64().unwrap()-f64::from(frame.y);
+                        ensure!((left-2.).abs()<0.01&&(right-2.).abs()<0.01&&(bottom-2.).abs()<0.01,
+                            "uneven native floating border: left {left}, right {right}, bottom {bottom}; frame {frame:?}, page {native}");
+                    }
                     Ok(serde_json::json!({"pane":f.pane,"visible":actual}))
                 }).collect::<Result<Vec<_>>>()?;
                 Ok(serde_json::json!({"workspace":serde_json::from_str::<serde_json::Value>(&app.model.to_json())?,"shown":shown}))

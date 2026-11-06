@@ -43,11 +43,7 @@ async fn check(
             .iter()
             .map(|pane| pane.bounds.y + pane.bounds.height)
             .fold(f32::NEG_INFINITY, f32::max);
-        let header_bottom = if cfg!(target_os = "windows") {
-            (crate::render::TOP + 30.) / 2.
-        } else {
-            crate::render::TOP
-        };
+        let header_bottom = (crate::render::TOP + crate::render::HEADER_CONTROL_HEIGHT) / 2.;
         ensure!(
             (left - 6.).abs() < 1.
                 && (top - header_bottom - 6.).abs() < 1.
@@ -69,6 +65,20 @@ async fn check(
                     && (state["height"].as_f64().unwrap() - f64::from(pane.bounds.height)).abs()
                         < 1.,
                 "{stage}: native bounds differ from panel: {state}"
+            );
+            #[cfg(target_os = "macos")]
+            // GPUI pixel snapping followed by Wry's integer conversion can shift
+            // a fractional origin by one logical pixel, including AppKit's Y flip.
+            ensure!(
+                (state["x"].as_f64().unwrap() - f64::from(pane.bounds.x)).abs() <= 1.
+                    && (state["y"].as_f64().unwrap()
+                        - f64::from(
+                            f32::from(viewport.height) - pane.bounds.y - pane.bounds.height,
+                        ))
+                    .abs()
+                        <= 1.,
+                "{stage}: native origin differs from panel {:?} in viewport {viewport:?}: {state}",
+                pane.bounds
             );
             ensure!(
                 app.host.is_visible(tab) && app.bars.contains_key(&pane.id),

@@ -8,13 +8,9 @@ pub const TAB_WIDTH: f32 = 204.;
 pub const HEADER_CONTROL_HEIGHT: f32 = 30.;
 pub const PANEL_CORNER_RADIUS: f32 = 10.;
 pub const PANEL_OUTER_GAP: f32 = 6.;
-// Windows centers its tabs in the caption row. Count the row's bottom
-// padding toward the visible gutter so it matches the panel dividers.
-const PANEL_TOP_GAP: f32 = if cfg!(target_os = "windows") {
-    PANEL_OUTER_GAP - (TOP - HEADER_CONTROL_HEIGHT) / 2.
-} else {
-    PANEL_OUTER_GAP
-};
+// Tabs are centered in the header on every platform. Count the header's
+// bottom padding toward the visible gutter so it matches the panel dividers.
+const PANEL_TOP_GAP: f32 = PANEL_OUTER_GAP - (TOP - HEADER_CONTROL_HEIGHT) / 2.;
 
 /// Shared by panel painting, native view placement, and docking hit targets.
 pub(crate) fn panel_content_rect(width: f32, height: f32) -> Rect {

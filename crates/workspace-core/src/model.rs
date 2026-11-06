@@ -1,4 +1,4 @@
-use crate::{Axis, Layout, SplitEdge};
+use crate::{Axis, FloatingPanel, Layout, SplitEdge};
 
 pub type SpaceId = u64;
 pub type PaneId = u64;
@@ -45,6 +45,7 @@ pub struct Space {
     pub custom_title: Option<String>,
     pub icon: Option<String>,
     pub layout: Layout,
+    pub floating: Vec<FloatingPanel>,
     pub panes: Vec<Pane>,
     pub focused_pane: PaneId,
 }
@@ -157,6 +158,7 @@ impl Workspace {
             if self.active_space().panes.len() > 1 {
                 let space = self.active_space_mut();
                 space.layout.remove_pane(pane);
+                space.floating.retain(|f| f.pane != pane);
                 space.panes.remove(index);
                 if space.focused_pane == pane {
                     space.focused_pane = space.panes[0].id;
@@ -168,6 +170,7 @@ impl Workspace {
             let p = &mut self.active_space_mut().panes[index];
             p.active_tab = p.tabs[slot.min(p.tabs.len() - 1)].id;
         }
+        self.repair_tiled();
         self.pinned_tabs.push(PinnedTab {
             tab: moved,
             icon: None,
@@ -276,6 +279,7 @@ impl Workspace {
             custom_title: None,
             icon: None,
             layout: Layout::Pane(pane_id),
+            floating: Vec::new(),
             panes: vec![pane],
             focused_pane: pane_id,
         });
@@ -439,8 +443,10 @@ impl Workspace {
         space.focused_pane = destination;
         if space.panes[source_index].tabs.is_empty() {
             space.layout.remove_pane(source);
+            space.floating.retain(|f| f.pane != source);
             space.panes.remove(source_index);
         }
+        self.repair_tiled();
         true
     }
 
@@ -455,12 +461,14 @@ impl Workspace {
         if source == destination
             || self.active_space().pane(source).is_none()
             || self.active_space().pane(destination).is_none()
+            || (edge.is_some() && !self.active_space().layout.pane_ids().contains(&destination))
         {
             return false;
         }
         let split = edge.map(|_| self.allocate());
         let space = self.active_space_mut();
         space.layout.remove_pane(source);
+        space.floating.retain(|f| f.pane != source);
         if let Some(edge) = edge {
             let (first, second) = if edge.is_first() {
                 (source, destination)
@@ -490,6 +498,7 @@ impl Workspace {
             target.active_tab = moved.active_tab;
             space.focused_pane = destination;
         }
+        self.repair_tiled();
         true
     }
 
@@ -514,7 +523,7 @@ impl Workspace {
         let source_pane = space.pane(source)?;
         if !source_pane.tabs.iter().any(|t| t.id == tab)
             || (source == destination && source_pane.tabs.len() == 1)
-            || space.pane(destination).is_none()
+            || !space.layout.pane_ids().contains(&destination)
         {
             return None;
         }
@@ -645,13 +654,18 @@ impl Workspace {
         let Some(index) = space.panes.iter().position(|p| p.id == id) else {
             return false;
         };
-        if !space.layout.remove_pane(id) {
+        if !space.layout.remove_pane(id)
+            && !space.floating.iter().any(|f| f.pane == id)
+            && space.layout.pane_ids() != [id]
+        {
             return false;
         }
+        space.floating.retain(|f| f.pane != id);
         space.panes.remove(index);
         if space.focused_pane == id {
             space.focused_pane = space.layout.pane_ids()[0];
         }
+        self.repair_tiled();
         true
     }
 
@@ -659,13 +673,13 @@ impl Workspace {
         self.active_space_mut().layout.resize(id, ratio)
     }
 
-    fn allocate(&mut self) -> u64 {
+    pub(crate) fn allocate(&mut self) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         id
     }
 
-    fn new_pane(&mut self, url: &str) -> Pane {
+    pub(crate) fn new_pane(&mut self, url: &str) -> Pane {
         let id = self.allocate();
         let tab_id = self.allocate();
         Pane {

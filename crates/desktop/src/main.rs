@@ -16,6 +16,7 @@ mod downloads_ui;
 mod drag_preview;
 mod external_urls;
 mod floating_bar;
+mod floating_panels;
 #[cfg(test)]
 mod gesture_tests;
 mod history_suggestions;
@@ -58,6 +59,8 @@ mod smoke_docking;
 mod smoke_downloads;
 #[cfg(feature = "smoke")]
 mod smoke_external_urls;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_floating;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_google_popup;
 #[cfg(feature = "smoke")]
@@ -246,6 +249,8 @@ fn main() {
                 window_state::probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_space_menu::session_probe(&app, window, cx);
+                #[cfg(all(feature = "smoke", target_os = "macos"))]
+                smoke_floating::session_probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_persistence::probe(&app, window, cx);
                 #[cfg(all(feature = "smoke", target_os = "macos"))]

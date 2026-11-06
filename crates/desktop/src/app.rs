@@ -91,6 +91,7 @@ impl SwipeState {
 pub struct BrowserApp {
     pub sleep: crate::sleep::SleepState,
     pub swipes: HashMap<PaneId, SwipeState>,
+    pub floating_panels: crate::floating_panels::FloatingPanels,
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
     pub model: crate::persistence::TrackedWorkspace,
@@ -285,6 +286,7 @@ impl BrowserApp {
             sleep: crate::sleep::SleepState::restore(),
             last_fullscreen: window.is_fullscreen(),
             bars: HashMap::new(),
+            floating_panels: Default::default(),
             chrome_views: HashSet::new(),
             swipes: HashMap::new(),
             model,
@@ -435,6 +437,9 @@ impl BrowserApp {
             }
             TabTarget::Page(pane, tab) => {
                 self.model.switch_tab(pane, tab);
+                if self.model.active_space().floating_panel(pane).is_some() {
+                    self.reveal_floating(pane);
+                }
             }
         }
         match target {
@@ -531,6 +536,9 @@ impl BrowserApp {
             self.cancel_edit(window, cx);
         }
         self.model.focus_pane(pane);
+        if self.model.active_space().floating_panel(pane).is_some() {
+            self.reveal_floating(pane);
+        }
         self.wake_tab(self.active_tab());
         self.notifications.remove(&self.active_tab());
         self.sync_address(window, cx);
@@ -688,6 +696,7 @@ impl BrowserApp {
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
+        self.poll_floating_panels(window, cx);
         self.poll_sleep(window, cx);
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(

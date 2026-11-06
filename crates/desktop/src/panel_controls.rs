@@ -245,12 +245,7 @@ impl BrowserApp {
         if window.is_window_active() {
             self.notifications.remove(&self.active_tab());
         }
-        let viewport = window.viewport_size();
-        let content = crate::render::panel_content_rect(
-            f32::from(viewport.width),
-            f32::from(viewport.height),
-        );
-        let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
+        let geometry = self.panel_geometry(window);
         let mut visible: Vec<_> = self
             .model
             .active_space()
@@ -390,6 +385,7 @@ impl BrowserApp {
             self.report(result);
         }
         // Create last, above every page and floating panel control.
+        self.prepare_floating_panels(window, cx);
         self.prepare_pins(window, cx);
         self.prepare_history_popup(window, cx);
         self.prepare_space_menu(window, cx);

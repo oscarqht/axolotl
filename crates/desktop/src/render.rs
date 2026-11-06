@@ -551,12 +551,11 @@ impl Render for BrowserApp {
         }
         let viewport = window.viewport_size();
         let downloading = self.host.downloads().borrow().downloading_count();
-        let content = panel_content_rect(f32::from(viewport.width), f32::from(viewport.height));
         let (_, pin_width) = crate::pinned_tabs::header_layout(
             f32::from(viewport.width),
             self.model.pinned_tabs.len(),
         );
-        let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
+        let geometry = self.panel_geometry(window);
         let panes = geometry
             .panes
             .iter()

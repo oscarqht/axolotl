@@ -1,4 +1,5 @@
 use crate::{PaneId, SplitId};
+use serde::{Deserialize, Serialize};
 
 /// Horizontal splits place panes side by side; vertical splits stack them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8,7 +9,8 @@ pub enum Axis {
 }
 
 /// Side selected by a page-content edge drop.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SplitEdge {
     Left,
     Right,
@@ -87,7 +89,7 @@ pub enum Layout {
     },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,

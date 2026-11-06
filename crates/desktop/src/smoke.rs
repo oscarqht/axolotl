@@ -260,6 +260,10 @@ async fn run(
         return crate::smoke_space_drag::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-floating") {
+        return crate::smoke_floating::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-docking") {
         return crate::smoke_docking::run(view, cx).await;
     }

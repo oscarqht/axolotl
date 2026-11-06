@@ -8,6 +8,7 @@ impl BrowserApp {
     }
 
     pub fn cancel_tab_drag(&mut self, cx: &mut Context<Self>) {
+        self.cancel_floating_interaction();
         self.drag_preview = None;
         self.split_preview = None;
         self.host.request_redraw();
@@ -140,14 +141,15 @@ impl BrowserApp {
         _window: &Window,
     ) -> Option<(PaneId, usize)> {
         let drag = self.tab_drag.filter(|drag| drag.active)?;
-        if drag.whole {
-            return None;
-        }
+
         let x = f32::from(position.x);
         let y = f32::from(position.y);
         self.bars.iter().find_map(|(pane, bar)| {
             let r = bar.bounds;
             if x < r.x || x > r.x + r.width || y < r.y || y > r.y + r.height {
+                return None;
+            }
+            if drag.whole && *pane == drag.source {
                 return None;
             }
             let count = self.model.pane(*pane)?.tabs.len();
@@ -170,6 +172,9 @@ impl BrowserApp {
         window: &Window,
     ) -> Option<(PaneId, SplitEdge, Rect)> {
         let drag = self.tab_drag.filter(|drag| drag.active)?;
+        if self.window_edge_target(position, window).is_some() {
+            return None;
+        }
         let viewport = window.viewport_size();
         let geometry = self.model.active_space().layout.geometry(
             crate::render::panel_content_rect(
@@ -187,33 +192,99 @@ impl BrowserApp {
             }
             let r = pane.bounds;
             let content = r;
-            let edge = SplitEdge::at(content, f32::from(position.x), f32::from(position.y))?;
+            let x = f32::from(position.x);
+            let y = f32::from(position.y);
+            let edge = SplitEdge::at(content, x, y)?;
+            let distance = match edge {
+                SplitEdge::Left => x - r.x,
+                SplitEdge::Right => r.x + r.width - x,
+                SplitEdge::Top => y - r.y,
+                SplitEdge::Bottom => r.y + r.height - y,
+            };
+            if distance > 28. {
+                return None;
+            }
             Some((pane.id, edge, edge.preview(content)))
         })
     }
 
-    fn center_drop_target(
+    fn window_edge_target(&self, position: Point<Pixels>, window: &Window) -> Option<SplitEdge> {
+        let s = window.viewport_size();
+        let r = crate::render::panel_content_rect(s.width.into(), s.height.into());
+        let x = f32::from(position.x);
+        let y = f32::from(position.y);
+        if x < r.x || x > r.x + r.width || y < r.y || y > r.y + r.height {
+            return None;
+        }
+        [
+            (SplitEdge::Left, x - r.x),
+            (SplitEdge::Right, r.x + r.width - x),
+            (SplitEdge::Top, y - r.y),
+            (SplitEdge::Bottom, r.y + r.height - y),
+        ]
+        .into_iter()
+        .filter(|(_, d)| *d <= 22.)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(edge, _)| edge)
+    }
+
+    fn floating_drop_target(
         &self,
         position: Point<Pixels>,
         window: &Window,
-    ) -> Option<(PaneId, Rect)> {
+    ) -> Option<(Rect, Option<SplitEdge>)> {
         let drag = self.tab_drag.filter(|d| d.active)?;
-        let viewport = window.viewport_size();
-        let geometry = self.model.active_space().layout.geometry(
-            crate::render::panel_content_rect(
-                f32::from(viewport.width),
-                f32::from(viewport.height),
+        let s = window.viewport_size();
+        let area = crate::render::panel_content_rect(s.width.into(), s.height.into());
+        let x = f32::from(position.x);
+        let y = f32::from(position.y);
+        if x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height {
+            return None;
+        }
+        let old = self
+            .model
+            .active_space()
+            .floating_panel(drag.source)
+            .filter(|_| {
+                drag.whole
+                    || self
+                        .model
+                        .pane(drag.source)
+                        .is_some_and(|p| p.tabs.len() == 1)
+            });
+        let (w, h) = old.map_or((560., 420.), |f| (f.bounds.width, f.bounds.height));
+        let edge = self.window_edge_target(position, window);
+        let offset = old
+            .map(|f| f.fitted(area))
+            .filter(|r| {
+                f32::from(drag.origin.x) >= r.x
+                    && f32::from(drag.origin.x) <= r.x + r.width
+                    && f32::from(drag.origin.y) >= r.y
+                    && f32::from(drag.origin.y) <= r.y + r.height
+            })
+            .map_or((120., 15.), |r| {
+                (
+                    f32::from(drag.origin.x) - r.x,
+                    f32::from(drag.origin.y) - r.y,
+                )
+            });
+        let f = workspace_core::FloatingPanel {
+            pane: drag.source,
+            bounds: Rect::new(x - offset.0, y - offset.1, w, h),
+            edge,
+            pinned: false,
+        };
+        let fitted = f.fitted(area);
+        // Persist the preferred size even in a window smaller than the minimum.
+        Some((
+            Rect::new(
+                fitted.x,
+                fitted.y,
+                w.min(area.width.max(240.)),
+                h.min(area.height.max(160.)),
             ),
-            6.,
-            100.,
-        );
-        geometry.panes.iter().find_map(|p| {
-            let r = p.bounds;
-            let x = f32::from(position.x);
-            let y = f32::from(position.y);
-            (p.id != drag.source && x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
-                .then_some((p.id, r))
-        })
+            edge,
+        ))
     }
 
     pub(crate) fn update_split_preview(&mut self, window: &Window) {
@@ -225,11 +296,19 @@ impl BrowserApp {
         let bounds = position.filter(|_| slot.is_none()).and_then(|p| {
             self.split_drop_target(p, window)
                 .map(|(_, _, r)| r)
-                .or_else(|| self.center_drop_target(p, window).map(|(_, r)| r))
+                .or_else(|| self.floating_drop_target(p, window).map(|(r, _)| r))
         });
         if let Some(preview) = &self.split_preview {
-            let merge = position.is_some_and(|p| self.split_drop_target(p, window).is_none());
-            let result = preview.update(bounds, merge);
+            let label = position.map_or("Release to float", |p| {
+                if self.window_edge_target(p, window).is_some() {
+                    "Release to dock at window edge"
+                } else if self.split_drop_target(p, window).is_some() {
+                    "Release to split"
+                } else {
+                    "Release to float"
+                }
+            });
+            let result = preview.update_label(bounds, label);
             self.report(result);
         }
     }
@@ -274,17 +353,19 @@ impl BrowserApp {
         self.host.request_redraw();
         let target = position.and_then(|p| self.tab_drop_target(p, window));
         let split = position.and_then(|p| self.split_drop_target(p, window));
-        let center = position.and_then(|p| self.center_drop_target(p, window));
+        let floating = position.and_then(|p| self.floating_drop_target(p, window));
         if let Some(drag) = self.tab_drag.take() {
             let moved = if !drag.active {
                 false
             } else if !drag.whole && position.is_some_and(|p| self.pin_drop_target(p, window)) {
                 self.model.pin_tab(drag.source, drag.tab)
             } else if drag.whole {
-                if let Some((pane, edge, _)) = split {
-                    self.model.move_pane(drag.source, pane, Some(edge))
-                } else if let Some((pane, _)) = center {
+                if let Some((pane, _)) = target {
                     self.model.move_pane(drag.source, pane, None)
+                } else if let Some((pane, edge, _)) = split {
+                    self.model.move_pane(drag.source, pane, Some(edge))
+                } else if let Some((bounds, edge)) = floating {
+                    self.model.float_pane(drag.source, bounds, edge)
                 } else {
                     false
                 }
@@ -294,13 +375,18 @@ impl BrowserApp {
                 self.model
                     .split_tab(drag.source, drag.tab, pane, edge)
                     .is_some()
-            } else if let Some((pane, _)) = center {
-                let index = self.model.pane(pane).unwrap().tabs.len();
-                self.model.move_tab(drag.source, drag.tab, pane, index)
+            } else if let Some((bounds, edge)) = floating {
+                self.model
+                    .float_tab(drag.source, drag.tab, bounds, edge)
+                    .is_some()
             } else {
                 false
             };
             if moved {
+                let pane = self.model.active_space().focused_pane;
+                if self.model.active_space().floating_panel(pane).is_some() {
+                    self.reveal_floating(pane);
+                }
                 self.sync_address(window, cx);
                 self.reveal_focused();
                 if !self.model.pinned_tabs.iter().any(|p| p.tab.id == drag.tab) {

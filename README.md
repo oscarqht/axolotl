@@ -129,12 +129,26 @@ machine running the executable. See the validation report below for tested scope
   `permission`/`requestPermission()` report permission for in-app badges. Native
   delivery is forwarded only when the engine already has permission and supports
   the constructor. Service-worker and push notifications are not included.
-- Drag a chip to reorder within a panel, dock into another panel's chip row or
-  center, or create a split at any edge. Drag the handle to move the complete
-  stack: center drops merge panels and edge drops reposition the whole panel.
-  Destination previews appear above live pages. Escape, loss of window activation,
-  or releasing outside the workspace cancels. Moving retains native page state
-  and back/forward history. Splits are created exclusively by dragging.
+- Drag a chip to move one tab, or the handle to move the complete stack. Drop on
+  another panel's bar to merge, or within its thin edge target to create a split.
+  Other drops inside the workspace create a floating panel. A blue preview means
+  float, green means split, and purple means dock at a window edge.
+- Floating panels have a draggable title header, a close button, and a bottom
+  resize grip. Drop at any of the four window edges to snap an overlay there;
+  the tiled layout stays unchanged. Edge panels collapse into separate title and
+  favicon chips. Hover a chip to reveal its live page; leaving hides it after a
+  short grace period. **◇ / ◆** toggles keeping a panel open. Menus, address editing,
+  resizing and dragging keep the panel open. One unpinned panel reveals per edge.
+  Drag a chip onto another chip on that edge to reorder it; drag away to float.
+  Return panels to tiled splits or tab stacks using the same explicit targets.
+- Floating panels belong to their space. Tabs, preferred positions and sizes,
+  edge placement, chip order and pin state restore after restarting. Unpinned
+  edge panels start collapsed. Window resizing keeps panels and chips reachable.
+  Moving retains native page state and back/forward history. Detaching the last
+  tiled panel leaves a fresh start panel behind. Escape, loss of window activation,
+  or releasing outside the workspace cancels a panel move.
+- See [floating panel behavior and validation](docs/floating-panels.md) for persistence
+  and native test details.
 - Deliberate horizontal trackpad/touch swipes across page content select the next
   tab on a left swipe and the previous tab on a right swipe, wrapping at both ends.
   Horizontal tab switching takes priority over page horizontal scrolling; vertical
@@ -277,6 +291,12 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-downloads
 
 # macOS native pointer-capture split release regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
+
+# Floating tabs/panels: native capture, resize, four edges, chips, pin and return paths
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-floating
+# Hold a live floating layout for screenshot/manual inspection:
+# append --smoke-hold-floating
+python3 scripts/test-floating-session.py target/debug/axolotl
 
 # Windows/macOS four-corner native clipping through splits, resizing and panel moves
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-corners

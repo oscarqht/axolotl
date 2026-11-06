@@ -954,3 +954,114 @@ fn pinned_emoji_override_round_trips_and_clear_restores_favicon() {
         None
     );
 }
+
+#[test]
+fn floating_detach_merge_split_preserve_identity_and_round_trip() {
+    let mut w = Workspace::default();
+    let tiled = w.focused_pane().id;
+    let tab = w.focused_pane().active_tab;
+    w.add_tab("https://example.com");
+    let bounds = Rect::new(120., 140., 560., 420.);
+    let floating = w.float_tab(tiled, tab, bounds, None).unwrap();
+    assert_eq!(w.active_space().layout.pane_ids(), vec![tiled]);
+    assert_eq!(w.pane(floating).unwrap().active_tab, tab);
+    for edge in [
+        SplitEdge::Left,
+        SplitEdge::Right,
+        SplitEdge::Top,
+        SplitEdge::Bottom,
+    ] {
+        assert!(w.float_pane(floating, bounds, Some(edge)));
+        assert!(w.pin_floating(floating));
+        let restored = Workspace::from_json(&w.to_json()).unwrap();
+        assert_eq!(restored, w);
+        assert_eq!(restored.active_space().floating[0].edge, Some(edge));
+    }
+    assert!(w.move_pane(floating, tiled, Some(SplitEdge::Right)));
+    assert!(w.active_space().floating.is_empty());
+    assert_eq!(w.pane(floating).unwrap().active_tab, tab);
+    assert!(w.float_pane(floating, bounds, None));
+    assert!(w.move_pane(floating, tiled, None));
+    assert!(w.active_space().floating.is_empty());
+    assert!(w.pane(tiled).unwrap().tabs.iter().any(|t| t.id == tab));
+    assert_eq!(Workspace::from_json(&w.to_json()).unwrap(), w);
+}
+
+#[test]
+fn final_tiled_stack_detaches_without_losing_a_page_and_stays_space_owned() {
+    let mut w = Workspace::default();
+    let pane = w.focused_pane().id;
+    let tab = w.focused_pane().active_tab;
+    let home = w.active_space;
+    assert!(w.float_pane(
+        pane,
+        Rect::new(900., 800., 560., 420.),
+        Some(SplitEdge::Right)
+    ));
+    let replacement = w.active_space().layout.pane_ids()[0];
+    assert_ne!(replacement, pane);
+    assert_eq!(w.pane(pane).unwrap().active_tab, tab);
+    let fitted = w.active_space().floating[0].fitted(Rect::new(6., 44., 600., 400.));
+    assert_eq!(fitted, Rect::new(46., 44., 560., 400.));
+    let other = w.add_space("Other", "about:blank");
+    assert!(w.active_space().floating.is_empty());
+    assert!(!w.float_pane(pane, Rect::new(0., 0., 560., 420.), None));
+    w.active_space = home;
+    let new_tab = w.pane(replacement).unwrap().active_tab;
+    assert!(w.move_tab(replacement, new_tab, pane, 1));
+    assert!(w
+        .active_space()
+        .pane(w.active_space().layout.pane_ids()[0])
+        .is_some());
+    assert_eq!(Workspace::from_json(&w.to_json()).unwrap(), w);
+    w.active_space = other;
+    assert!(w.active_space().floating.is_empty());
+}
+
+#[test]
+fn floating_chips_reorder_close_and_validate_snapshot_geometry() {
+    let mut w = Workspace::default();
+    let a = w.focused_pane().id;
+    let b = w.split_focused(Axis::Horizontal, "about:blank");
+    let r = Rect::new(100., 100., 500., 350.);
+    w.float_pane(a, r, Some(SplitEdge::Left));
+    w.float_pane(b, r, Some(SplitEdge::Left));
+    assert!(w.reorder_floating(b, 0));
+    assert_eq!(
+        w.active_space()
+            .floating
+            .iter()
+            .map(|f| f.pane)
+            .collect::<Vec<_>>(),
+        vec![b, a]
+    );
+    assert!(!w.resize_floating(a, Rect::new(f32::NAN, 0., 500., 350.)));
+    assert!(w.close_pane(a));
+    assert_eq!(w.active_space().floating.len(), 1);
+    let mut value: serde_json::Value = serde_json::from_str(&w.to_json()).unwrap();
+    value["spaces"][0]["floating"][0]["bounds"]["width"] = 10.into();
+    assert!(Workspace::from_json(&value.to_string()).is_err());
+    value = serde_json::from_str(&w.to_json()).unwrap();
+    let duplicate = value["spaces"][0]["floating"][0].clone();
+    value["spaces"][0]["floating"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+    assert!(Workspace::from_json(&value.to_string()).is_err());
+    assert_eq!(Workspace::from_json(&w.to_json()).unwrap(), w);
+}
+
+#[test]
+fn closing_the_last_tiled_pane_with_overlays_keeps_valid_focus() {
+    let mut w = Workspace::default();
+    let overlay = w.focused_pane().id;
+    w.float_pane(overlay, Rect::new(0., 0., 500., 350.), None);
+    let tiled = w.active_space().layout.pane_ids()[0];
+    w.focus_pane(tiled);
+    assert!(w.close_pane(tiled));
+    assert!(w
+        .active_space()
+        .pane(w.active_space().focused_pane)
+        .is_some());
+    assert_eq!(Workspace::from_json(&w.to_json()).unwrap(), w);
+}

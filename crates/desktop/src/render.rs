@@ -38,7 +38,7 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
                     "maximize-restore",
                     WindowControlArea::Max,
                     if window.is_maximized() {
-                        "arrow-up-right-square"
+                        "copy"
                     } else {
                         "maximize"
                     },

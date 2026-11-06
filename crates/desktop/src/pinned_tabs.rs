@@ -169,7 +169,7 @@ impl BrowserApp {
                                 let _ = grip_sender.send(event);
                             }
                         }),
-                    include_str!("../assets/pinned-resize.html"),
+                    crate::icons::html(include_str!("../assets/pinned-resize.html")),
                 )
                 .build_native_child(window, cx)?;
                 let view = crate::browser::with_inline_html(
@@ -186,7 +186,7 @@ impl BrowserApp {
                                 let _ = sender.send(event);
                             }
                         }),
-                    include_str!("../assets/pinned-popup.html"),
+                    crate::icons::html(include_str!("../assets/pinned-popup.html")),
                 )
                 .build_native_child(window, cx)?;
                 self.pins.grip = Some(grip);

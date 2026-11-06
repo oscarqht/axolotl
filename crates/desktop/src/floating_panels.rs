@@ -36,7 +36,7 @@ impl Surface {
                         let _ = tx.send(v);
                     }
                 }),
-            include_str!("../assets/floating-panel.html"),
+            crate::icons::html(include_str!("../assets/floating-panel.html")),
         )
         .build_native_child(window, cx)?;
         view.focus_parent()?;

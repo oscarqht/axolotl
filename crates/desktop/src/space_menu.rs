@@ -82,7 +82,7 @@ impl BrowserApp {
                                 let _ = sender.send(event);
                             }
                         }),
-                    include_str!("../assets/space-menu.html"),
+                    crate::icons::html(include_str!("../assets/space-menu.html")),
                 )
                 .build_native_child(window, cx)?;
                 menu.events = Some(events);

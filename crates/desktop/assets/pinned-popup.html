@@ -16,7 +16,7 @@ form{margin:0;padding:7px}h2{font-size:14px;margin:0 0 14px}label{display:block;
 const frame=document.querySelector('#frame'),menu=document.querySelector('#menu');
 let state={},editing=false,icon=null,menuKey='';
 const send=(type,extra={})=>window.ipc.postMessage(JSON.stringify({type,...extra,generation:state.generation}));
-function updateIcon(){const button=menu.querySelector('#icon');button.textContent=icon||'☺';button.classList.toggle('empty',!icon);button.setAttribute('aria-label',icon?'Change pinned tab icon '+icon:'Choose pinned tab icon (using favicon)')}
+function updateIcon(){const button=menu.querySelector('#icon');button.textContent=icon||'';if(!icon)button.innerHTML='__HEROICON_face-smile__';button.classList.toggle('empty',!icon);button.setAttribute('aria-label',icon?'Change pinned tab icon '+icon:'Choose pinned tab icon (using favicon)')}
 function closePicker(){const picker=menu.querySelector('#picker'),button=menu.querySelector('#icon');picker.hidden=true;button.setAttribute('aria-expanded','false');button.focus()}
 // Match Edit space's catalog, search, selected state, clear and empty-results UI.
 function renderEmojis(){
@@ -45,12 +45,12 @@ window.updatePins=s=>{
  if(s.unpin){
   addItem('Recover Tab…',()=>send('recover'));
   addItem('Sleep Tab',()=>send('sleep'));
-  const keepAlive=addItem(s.keepAlive?'✓ Keep Alive':'Keep Alive',()=>send('keep-alive'));keepAlive.setAttribute('role','menuitemcheckbox');keepAlive.setAttribute('aria-checked',String(s.keepAlive));
+  const keepAlive=addItem('Keep Alive',()=>send('keep-alive'));if(s.keepAlive)keepAlive.insertAdjacentHTML('afterbegin','__HEROICON_check__');keepAlive.setAttribute('role','menuitemcheckbox');keepAlive.setAttribute('aria-checked',String(s.keepAlive));
   addItem('Unpin to focused pane',()=>send('unpin'));addItem('Edit icon…',editIcon)
  }
- else for(const pin of s.pins){const b=addItem('',()=>send('open',{id:pin.id})),label=document.createElement('span');label.className='pin-title';label.textContent=(pin.sleeping?'💤 ':'')+(pin.title||pin.url||'New tab');label.style.opacity=pin.sleeping?'0.5':'1';
+ else for(const pin of s.pins){const b=addItem('',()=>send('open',{id:pin.id})),label=document.createElement('span');label.className='pin-title';label.textContent=(pin.title||pin.url||'New tab');label.style.opacity=pin.sleeping?'0.5':'1';
  if(pin.icon){const emoji=document.createElement('span');emoji.className='pin-emoji';emoji.textContent=pin.icon;b.append(emoji)}else{const image=document.createElement('img');try{const u=new URL(pin.url);if(/^https?:$/.test(u.protocol))image.src=u.origin+'/favicon.ico'}catch{}image.onerror=()=>image.hidden=true;b.append(image)}
- b.append(label);b.onmouseenter=e=>send('sleep-hover',{id:pin.id,value:true,x:e.clientX,y:e.clientY});b.onmouseleave=()=>send('sleep-hover',{id:pin.id,value:false});b.oncontextmenu=e=>{e.preventDefault();send('context',{id:pin.id})};
+ if(pin.sleeping)b.insertAdjacentHTML('beforeend','__HEROICON_moon__');b.append(label);b.setAttribute('aria-label',(pin.sleeping?'Sleeping, ':'')+(pin.title||pin.url||'New tab'));b.onmouseenter=e=>send('sleep-hover',{id:pin.id,value:true,x:e.clientX,y:e.clientY});b.onmouseleave=()=>send('sleep-hover',{id:pin.id,value:false});b.oncontextmenu=e=>{e.preventDefault();send('context',{id:pin.id})};
  }
 };
 document.onpointerdown=e=>{if(!menu.contains(e.target))send('dismiss')};

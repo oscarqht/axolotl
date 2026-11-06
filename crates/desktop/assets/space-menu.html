@@ -31,7 +31,7 @@ let icon=state.icon||null, finished=false;
 const send=(type,value)=>{if(type!=='ready'){if(finished)return;finished=true}window.ipc.postMessage(JSON.stringify({type,value,icon}))};
 for(const key of ['ink','surface','hover','border'])document.documentElement.style.setProperty('--'+key,state[key]);
 function place(){menu.style.left=Math.max(4,Math.min(state.x,innerWidth-menu.offsetWidth-4))+'px';menu.style.top=Math.max(4,Math.min(state.y,innerHeight-menu.offsetHeight-4))+'px'}
-function updateIcon(){iconButton.textContent=icon||'☺';iconButton.classList.toggle('empty',!icon);iconButton.setAttribute('aria-label',icon?'Change space icon '+icon:'Choose space icon (none selected)')}
+function updateIcon(){iconButton.textContent=icon||'';if(!icon)iconButton.innerHTML='__HEROICON_face-smile__';iconButton.classList.toggle('empty',!icon);iconButton.setAttribute('aria-label',icon?'Change space icon '+icon:'Choose space icon (none selected)')}
 function closePicker(){picker.hidden=true;iconButton.setAttribute('aria-expanded','false');place();iconButton.focus()}
 function renderEmojis(){
  const words=search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);

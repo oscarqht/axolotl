@@ -39,10 +39,10 @@ impl FloatingBar {
                         let _ = sender.send(value);
                     }
                 }),
-            include_str!("../assets/floating-bar.html")
+            crate::icons::html(include_str!("../assets/floating-bar.html"))
                 .replace(
                     "__FLOATING_SCRIPT__",
-                    include_str!("../assets/floating-bar.js"),
+                    &crate::icons::html(include_str!("../assets/floating-bar.js")),
                 )
                 .replace(
                     "__HISTORY_SCRIPT__",

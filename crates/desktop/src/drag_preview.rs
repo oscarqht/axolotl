@@ -129,9 +129,10 @@ impl DragPreview {
             };
             let script = if let Some(tiles) = &self.cached_tiles {
                 format!(
-                    r#"document.querySelector('p').hidden=true;const grid=document.createElement('div');grid.style.cssText='display:grid;height:146px;gap:2px;grid-template-columns:repeat({},1fr)';for(const [title,src] of {}){{const tile=document.createElement('div');tile.style.cssText='min-width:0;min-height:0;overflow:hidden';if(src){{const img=document.createElement('img');img.src=src;img.style.cssText='width:100%;height:100%;object-fit:cover;object-position:top';tile.append(img)}}else{{tile.textContent='💤 '+(title||'New tab');tile.style.padding='12px'}}grid.append(tile)}}document.querySelector('img').replaceWith(grid);"#,
+                    r#"document.querySelector('p').hidden=true;const grid=document.createElement('div');grid.style.cssText='display:grid;height:146px;gap:2px;grid-template-columns:repeat({},1fr)';for(const [title,src] of {}){{const tile=document.createElement('div');tile.style.cssText='min-width:0;min-height:0;overflow:hidden';if(src){{const img=document.createElement('img');img.src=src;img.style.cssText='width:100%;height:100%;object-fit:cover;object-position:top';tile.append(img)}}else{{tile.innerHTML={};tile.append(document.createTextNode(title||'New tab'));tile.style.padding='12px'}}grid.append(tile)}}document.querySelector('img').replaceWith(grid);"#,
                     if tiles.len() > 1 { 2 } else { 1 },
-                    serde_json::to_string(tiles)?
+                    serde_json::to_string(tiles)?,
+                    serde_json::to_string(&crate::icons::html("__HEROICON_moon__ "))?
                 )
             } else {
                 script

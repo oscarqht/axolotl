@@ -3,6 +3,7 @@ use crate::{
     app::BrowserApp,
     native_webview::{BuildNativeChild, NativeWebView},
 };
+use anyhow::Context as _;
 use gpui::*;
 use serde_json::{Value, json};
 use std::{rc::Rc, sync::mpsc::Receiver, time::Instant};
@@ -136,7 +137,7 @@ impl BrowserApp {
         if self.history_matches.is_empty() {
             if let Some(popup) = &self.history_popup {
                 let result = popup.view.set_visible(false);
-                self.report(result.map_err(Into::into));
+                self.report(result.context("hiding history popup"));
             }
             return;
         }

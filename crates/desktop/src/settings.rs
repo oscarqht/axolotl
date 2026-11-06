@@ -3,6 +3,7 @@ use crate::{
     app::BrowserApp,
     native_webview::{BuildNativeChild, NativeWebView},
 };
+use anyhow::Context as _;
 use gpui::*;
 use gpui_component::ActiveTheme;
 use serde_json::Value;
@@ -168,7 +169,7 @@ impl BrowserApp {
                 }
                 "ready" => {
                     if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
-                        self.report(view.focus().map_err(Into::into));
+                        self.report(view.focus().context("focusing settings"));
                     }
                 }
                 "protection" => {
@@ -232,7 +233,7 @@ impl BrowserApp {
                         if let Some(view) = self.settings.as_ref().and_then(|d| d.view.as_ref()) {
                             self.report(
                                 view.evaluate_script(&format!("window.homepageResult({response})"))
-                                    .map_err(Into::into),
+                                    .context("updating homepage result"),
                             );
                         }
                         self.report(result);

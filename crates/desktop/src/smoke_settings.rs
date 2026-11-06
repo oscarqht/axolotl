@@ -3,7 +3,7 @@ use crate::{
     app::{BrowserApp, Command},
     smoke::{eval, pause},
 };
-use anyhow::{Result, ensure};
+use anyhow::{Context as _, Result, ensure};
 use gpui::*;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ pub(crate) async fn dialog_eval(
             .evaluate_script_with_callback(&format!("(()=>{{try{{return eval({})}}catch(error){{return {{scriptError:String(error)}}}}}})()",serde_json::to_string(script).unwrap()), move |value| {
                 *target.lock().unwrap() = Some(value)
             })
-            .map_err(anyhow::Error::from)
+            .context("evaluating settings script")
     })??;
     for _ in 0..50 {
         if let Some(value) = response.lock().unwrap().take() {

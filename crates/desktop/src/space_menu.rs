@@ -3,6 +3,7 @@ use crate::{
     app::BrowserApp,
     native_webview::{BuildNativeChild, NativeWebView},
 };
+use anyhow::Context as _;
 use gpui::*;
 use serde_json::Value;
 use std::sync::mpsc::Receiver;
@@ -122,7 +123,7 @@ impl BrowserApp {
                 }
                 "ready" => {
                     if let Some(view) = &menu.view {
-                        self.report(view.focus().map_err(Into::into));
+                        self.report(view.focus().context("focusing space menu"));
                     }
                 }
                 "sleep" => {

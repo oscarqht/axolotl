@@ -259,6 +259,7 @@ impl BrowserApp {
         .detach();
         Self::install_space_shortcuts(window, cx);
         Self::install_page_tools(cx);
+        Self::install_history_shortcuts(cx);
         #[cfg(target_os = "macos")]
         Self::install_copy_url(cx);
         let preferences = crate::preferences::Preferences::restore();
@@ -566,6 +567,11 @@ impl BrowserApp {
         if self.settings.is_some() {
             return;
         }
+        if matches!(command, Command::Back | Command::Forward) {
+            self.navigate_history(matches!(command, Command::Forward));
+            cx.notify();
+            return;
+        }
         if self.link_popup.is_some() {
             match command {
                 Command::CloseTab => {
@@ -574,14 +580,6 @@ impl BrowserApp {
                 }
                 Command::Reload => {
                     self.report(self.host.reload(crate::link_popup::POPUP_TAB));
-                    return;
-                }
-                Command::Back => {
-                    self.report(self.host.back(crate::link_popup::POPUP_TAB));
-                    return;
-                }
-                Command::Forward => {
-                    self.report(self.host.forward(crate::link_popup::POPUP_TAB));
                     return;
                 }
                 _ => self.close_link_popup(window, cx),
@@ -620,8 +618,7 @@ impl BrowserApp {
                 self.sync_address(window, cx);
             }
             Command::Reload => self.report(self.host.reload(self.active_tab())),
-            Command::Back => self.report(self.host.back(self.active_tab())),
-            Command::Forward => self.report(self.host.forward(self.active_tab())),
+            Command::Back | Command::Forward => unreachable!("history handled above"),
             #[cfg(feature = "smoke")]
             Command::Split(axis) => {
                 self.model

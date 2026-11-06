@@ -19,6 +19,7 @@ mod floating_bar;
 mod floating_panels;
 #[cfg(test)]
 mod gesture_tests;
+mod history_shortcuts;
 mod history_suggestions;
 mod link_popup;
 #[cfg(target_os = "macos")]
@@ -66,6 +67,8 @@ mod smoke_floating;
 mod smoke_google_popup;
 #[cfg(feature = "smoke")]
 mod smoke_history;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_history_shortcuts;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -206,7 +209,11 @@ fn main() {
             KeyBinding::new("alt-right", Forward, None),
         ]);
         #[cfg(target_os = "macos")]
-        cx.bind_keys([KeyBinding::new("cmd-shift-c", CopyUrl, None)]);
+        cx.bind_keys([
+            KeyBinding::new("cmd-shift-c", CopyUrl, None),
+            KeyBinding::new("cmd-[", Back, None),
+            KeyBinding::new("cmd-]", Forward, None),
+        ]);
         #[cfg(target_os = "macos")]
         cx.bind_keys((1..=9).map(|number| {
             KeyBinding::new(

@@ -9,7 +9,7 @@ use gpui::*;
 use objc2_app_kit::NSEventModifierFlags as Flags;
 use workspace_core::{Axis, TabId};
 
-fn fixture() -> Result<String> {
+pub(crate) fn fixture() -> Result<String> {
     use std::{
         io::{Read, Write},
         net::TcpListener,

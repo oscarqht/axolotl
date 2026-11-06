@@ -202,6 +202,7 @@ See [default-browser setup and checks](docs/settings.md#default-browser-and-exte
 | Cmd/Ctrl+Plus or Equals / Minus | Zoom the focused page in / out (saved per hostname) |
 | Cmd/Ctrl+0 | Reset website zoom to 100% |
 | Cmd/Ctrl+F | Find in the focused page; Enter / Shift+Enter for next / previous, Escape to close |
+| Cmd+[ / Cmd+] (macOS) | Back / forward in the focused page, including page inputs and chrome focus |
 | Alt+Left / Alt+Right | Back / forward (when delivered to the shell) |
 | F6 | Cycle pane focus when delivered to the GPUI shell |
 
@@ -213,7 +214,10 @@ See [page zoom and find](docs/page-tools.md) for details and verification.
 Cmd+number uses the current space order after dragging spaces. Cmd+9 selects
 the ninth space; numbers without a corresponding space leave the current view unchanged.
 
-Back, forward, and reload act on the focused pane. The native macOS Edit menu
+History shortcuts target the native focused page, or the open preview/pin or
+focused pane when chrome has focus. Cmd+[ and Cmd+] are reserved before webpage
+handlers on macOS, navigate once per key press, and do nothing in Settings or at
+the corresponding history boundary. Reload acts on the focused pane. The native macOS Edit menu
 supplies standard copy/paste actions to both web content and the inline URL input.
 Cmd+Shift+C works with webpage or browser chrome focus and copies the live page
 URL, including query strings and fragments, without changing an unfinished

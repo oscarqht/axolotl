@@ -164,7 +164,7 @@ pub(crate) async fn run(
         pause(cx).await;
     }
     view.update_in(cx, |app, _, _| app.sleep.check_hover())??;
-    ensure!(bar_eval(view,pane,"({text:document.querySelector('.label').textContent,opacity:document.querySelector('.label').style.opacity,icon:document.querySelector('.sleep-icon svg')?.dataset.heroicon})",cx).await? == serde_json::json!({"text":"New tab · Axolotl","opacity":"0.5","icon":"moon"}), "Sleeping title style missing");
+    ensure!(bar_eval(view,pane,"({text:document.querySelector('.label').textContent,opacity:document.querySelector('.label').style.opacity,icon:document.querySelector('.sleep-icon svg')?.dataset.icon})",cx).await? == serde_json::json!({"text":"New tab · Axolotl","opacity":"0.5","icon":"half-moon"}), "Sleeping title style missing");
     view.update_in(cx, |app, window, cx| {
         app.select_target(TabTarget::Page(pane, first), window, cx)
     })?;

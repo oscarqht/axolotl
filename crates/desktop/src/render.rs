@@ -38,12 +38,12 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
                     "maximize-restore",
                     WindowControlArea::Max,
                     if window.is_maximized() {
-                        "square-2-stack"
+                        "arrow-up-right-square"
                     } else {
-                        "stop"
+                        "maximize"
                     },
                 ),
-                ("close", WindowControlArea::Close, "x-mark"),
+                ("close", WindowControlArea::Close, "xmark"),
             ]
             .into_iter()
             .map(|(id, area, glyph)| {
@@ -155,7 +155,7 @@ impl BrowserApp {
                         );
                     }))
                     .when(self.sleep.is_sleeping(id), |button| {
-                        button.child(div().opacity(0.5).child(icon("moon", 16.)))
+                        button.child(div().opacity(0.5).child(icon("half-moon", 16.)))
                     })
                     .when(
                         !self.sleep.is_sleeping(id)
@@ -165,7 +165,7 @@ impl BrowserApp {
                             button.child(
                                 div()
                                     .text_color(rgb(colors.muted))
-                                    .child(icon("globe-alt", 16.)),
+                                    .child(icon("bright-star", 16.)),
                             )
                         },
                     )
@@ -221,7 +221,7 @@ impl BrowserApp {
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.bg(rgb(colors.hover)))
-                        .child(icon("ellipsis-horizontal", 18.))
+                        .child(icon("more-horiz", 18.))
                         .tooltip(|w, cx| {
                             gpui_component::tooltip::Tooltip::new("More pinned tabs").build(w, cx)
                         })
@@ -521,7 +521,7 @@ impl BrowserApp {
                                 1.
                             },
                         )
-                        .child(icon("x-mark", 14.))
+                        .child(icon("xmark", 14.))
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             cx.stop_propagation();
                             if matches!(target, TabTarget::Space(_)) && this.model.spaces.len() == 1
@@ -605,7 +605,7 @@ impl BrowserApp {
                                         .items_center()
                                         .gap_1()
                                         .opacity(0.5)
-                                        .child(icon("moon", 18.))
+                                        .child(icon("half-moon", 18.))
                                         .child(if pane.active_tab().display_title().is_empty() {
                                             "New tab".to_owned()
                                         } else {
@@ -1009,7 +1009,7 @@ impl Render for BrowserApp {
                                 };
                                 gpui_component::tooltip::Tooltip::new(label).build(window, cx)
                             })
-                            .child(icon("arrow-down-tray", 20.))
+                            .child(icon("download", 20.))
                             .when(downloading > 0, |button| {
                                 button.child(
                                     div()
@@ -1060,7 +1060,7 @@ impl Render for BrowserApp {
                                     .action(&crate::Settings, None)
                                     .build(window, cx)
                             })
-                            .child(icon("cog-8-tooth", 20.))
+                            .child(icon("settings", 20.))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.settings_focus.focus(window);
                                 this.open_settings(false, window, cx)

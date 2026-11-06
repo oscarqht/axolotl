@@ -343,7 +343,7 @@ window.updateBar = (s) => {
       }
       const close = document.createElement("button");
       close.className = "close";
-      close.innerHTML = '__HEROICON_x-mark__';
+      close.innerHTML = '__ICON_xmark__';
       close.title = "Close tab";
       close.setAttribute("aria-label", "Close " + (t.title || t.url || "tab"));
       close.onclick = (e) => {
@@ -392,7 +392,7 @@ window.updateBar = (s) => {
     chip.setAttribute("aria-label", `${t.sleeping ? "Sleeping, " : ""}${chip.title}${t.notifications ? `, ${t.notifications} unread notifications` : ''}`);
     const label = chip.querySelector(".label");
     let sleepIcon = chip.querySelector('.sleep-icon');
-    if (t.sleeping && label && !sleepIcon) { sleepIcon = document.createElement('span'); sleepIcon.className = 'sleep-icon'; sleepIcon.innerHTML = '__HEROICON_moon__'; chip.insertBefore(sleepIcon, label); }
+    if (t.sleeping && label && !sleepIcon) { sleepIcon = document.createElement('span'); sleepIcon.className = 'sleep-icon'; sleepIcon.innerHTML = '__ICON_half-moon__'; chip.insertBefore(sleepIcon, label); }
     if (!t.sleeping) sleepIcon?.remove();
     if (label) { label.textContent = (t.title || t.url || "New tab"); label.style.opacity = t.sleeping ? "0.5" : "1"; }
     const image = chip.querySelector("img");
@@ -486,7 +486,7 @@ function renderMenu() {
         b.type = "button";
         b.setAttribute("role", "menuitem");
         b.textContent = label;
-        if (label.includes("Keep Alive")) { if (t.keepAlive) b.insertAdjacentHTML("afterbegin", '__HEROICON_check__ '); b.setAttribute("role","menuitemcheckbox"); b.setAttribute("aria-checked",String(!!t.keepAlive)); }
+        if (label.includes("Keep Alive")) { if (t.keepAlive) b.insertAdjacentHTML("afterbegin", '__ICON_check__ '); b.setAttribute("role","menuitemcheckbox"); b.setAttribute("aria-checked",String(!!t.keepAlive)); }
         b.disabled = disabled;
         b.onclick = act(fn);
         return b;

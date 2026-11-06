@@ -1,83 +1,75 @@
-//! Locally bundled Heroicons v2.2.0, 24px Outline (MIT).
+//! Locally bundled user-supplied SVG icons.
 use gpui::{prelude::*, *};
 use std::borrow::Cow;
 
 const ICONS: &[(&str, &[u8])] = &[
     (
+        "dots-grid3x3",
+        include_bytes!("../assets/icons/dots-grid3x3.svg"),
+    ),
+    (
         "arrow-down",
-        include_bytes!("../assets/heroicons/arrow-down.svg"),
+        include_bytes!("../assets/icons/arrow-down.svg"),
     ),
+    ("download", include_bytes!("../assets/icons/download.svg")),
     (
-        "arrow-down-tray",
-        include_bytes!("../assets/heroicons/arrow-down-tray.svg"),
+        "shield-loading",
+        include_bytes!("../assets/icons/shield-loading.svg"),
     ),
-    (
-        "arrow-path",
-        include_bytes!("../assets/heroicons/arrow-path.svg"),
-    ),
-    (
-        "arrow-up",
-        include_bytes!("../assets/heroicons/arrow-up.svg"),
-    ),
+    ("arrow-up", include_bytes!("../assets/icons/arrow-up.svg")),
     (
         "arrow-up-right",
-        include_bytes!("../assets/heroicons/arrow-up-right.svg"),
+        include_bytes!("../assets/icons/arrow-up-right.svg"),
     ),
     (
-        "arrows-pointing-out",
-        include_bytes!("../assets/heroicons/arrows-pointing-out.svg"),
-    ),
-    ("bars-3", include_bytes!("../assets/heroicons/bars-3.svg")),
-    (
-        "bookmark",
-        include_bytes!("../assets/heroicons/bookmark.svg"),
+        "nav-arrow-down-solid",
+        include_bytes!("../assets/icons/nav-arrow-down-solid.svg"),
     ),
     (
-        "bookmark-slash",
-        include_bytes!("../assets/heroicons/bookmark-slash.svg"),
+        "arrow-down-tag",
+        include_bytes!("../assets/icons/arrow-down-tag.svg"),
     ),
-    ("check", include_bytes!("../assets/heroicons/check.svg")),
+    ("pin", include_bytes!("../assets/icons/pin.svg")),
+    ("pin-slash", include_bytes!("../assets/icons/pin-slash.svg")),
+    ("check", include_bytes!("../assets/icons/check.svg")),
     (
-        "chevron-left",
-        include_bytes!("../assets/heroicons/chevron-left.svg"),
-    ),
-    (
-        "chevron-right",
-        include_bytes!("../assets/heroicons/chevron-right.svg"),
+        "arrow-left",
+        include_bytes!("../assets/icons/arrow-left.svg"),
     ),
     (
-        "cog-8-tooth",
-        include_bytes!("../assets/heroicons/cog-8-tooth.svg"),
+        "arrow-right",
+        include_bytes!("../assets/icons/arrow-right.svg"),
+    ),
+    ("settings", include_bytes!("../assets/icons/settings.svg")),
+    (
+        "more-horiz",
+        include_bytes!("../assets/icons/more-horiz.svg"),
     ),
     (
-        "ellipsis-horizontal",
-        include_bytes!("../assets/heroicons/ellipsis-horizontal.svg"),
+        "emoji-talking-happy",
+        include_bytes!("../assets/icons/emoji-talking-happy.svg"),
     ),
     (
-        "face-smile",
-        include_bytes!("../assets/heroicons/face-smile.svg"),
+        "bright-star",
+        include_bytes!("../assets/icons/bright-star.svg"),
     ),
-    (
-        "globe-alt",
-        include_bytes!("../assets/heroicons/globe-alt.svg"),
-    ),
-    ("minus", include_bytes!("../assets/heroicons/minus.svg")),
-    ("moon", include_bytes!("../assets/heroicons/moon.svg")),
-    ("plus", include_bytes!("../assets/heroicons/plus.svg")),
+    ("minus", include_bytes!("../assets/icons/minus.svg")),
+    ("half-moon", include_bytes!("../assets/icons/half-moon.svg")),
+    ("plus", include_bytes!("../assets/icons/plus.svg")),
     (
         "shield-check",
-        include_bytes!("../assets/heroicons/shield-check.svg"),
+        include_bytes!("../assets/icons/shield-check.svg"),
     ),
     (
-        "shield-exclamation",
-        include_bytes!("../assets/heroicons/shield-exclamation.svg"),
+        "shield-xmark",
+        include_bytes!("../assets/icons/shield-xmark.svg"),
     ),
     (
-        "square-2-stack",
-        include_bytes!("../assets/heroicons/square-2-stack.svg"),
+        "arrow-up-right-square",
+        include_bytes!("../assets/icons/arrow-up-right-square.svg"),
     ),
-    ("stop", include_bytes!("../assets/heroicons/stop.svg")),
-    ("x-mark", include_bytes!("../assets/heroicons/x-mark.svg")),
+    ("maximize", include_bytes!("../assets/icons/maximize.svg")),
+    ("xmark", include_bytes!("../assets/icons/xmark.svg")),
 ];
 
 pub struct Assets;
@@ -85,13 +77,13 @@ impl AssetSource for Assets {
     fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
         Ok(ICONS
             .iter()
-            .find(|(name, _)| path == format!("heroicons/{name}.svg"))
+            .find(|(name, _)| path == format!("icons/{name}.svg"))
             .map(|(_, bytes)| Cow::Borrowed(*bytes)))
     }
     fn list(&self, path: &str) -> anyhow::Result<Vec<SharedString>> {
         Ok(ICONS
             .iter()
-            .map(|(name, _)| format!("heroicons/{name}.svg"))
+            .map(|(name, _)| format!("icons/{name}.svg"))
             .filter(|name| name.starts_with(path))
             .map(Into::into)
             .collect())
@@ -101,7 +93,7 @@ impl AssetSource for Assets {
 /// GPUI paints SVG alpha with the inherited text color.
 pub fn icon(name: &'static str, size: f32) -> gpui_component::Icon {
     gpui_component::Icon::empty()
-        .path(format!("heroicons/{name}.svg"))
+        .path(format!("icons/{name}.svg"))
         .size(px(size))
         .flex_shrink_0()
 }
@@ -111,11 +103,11 @@ pub fn icon(name: &'static str, size: f32) -> gpui_component::Icon {
 pub fn html(source: &str) -> String {
     let mut result = source.to_owned();
     for (name, bytes) in ICONS {
-        let token = format!("__HEROICON_{name}__");
+        let token = format!("__ICON_{name}__");
         if result.contains(&token) {
             let svg = std::str::from_utf8(bytes).expect("bundled SVG is UTF-8")
                 .replace(" aria-hidden=\"true\"", "")
-                .replace("<svg ", &format!("<svg data-heroicon=\"{name}\" aria-hidden=\"true\" focusable=\"false\" width=\"18\" height=\"18\" style=\"display:inline-block;vertical-align:middle;flex-shrink:0;pointer-events:none\" "))
+                .replace("<svg ", &format!("<svg data-icon=\"{name}\" aria-hidden=\"true\" focusable=\"false\" width=\"18\" height=\"18\" style=\"display:inline-block;vertical-align:middle;flex-shrink:0;pointer-events:none\" "))
                 .replace('\n', " ");
             result = result.replace(&token, &svg);
         }
@@ -130,6 +122,7 @@ mod tests {
     #[test]
     fn embedded_surfaces_resolve_every_icon() {
         for source in [
+            include_str!("../assets/start.html"),
             include_str!("../assets/floating-bar.html"),
             include_str!("../assets/floating-bar.js"),
             include_str!("../assets/floating-panel.html"),
@@ -142,10 +135,10 @@ mod tests {
         ] {
             let rendered = html(source);
             assert!(
-                !rendered.contains("__HEROICON_"),
+                !rendered.contains("__ICON_"),
                 "Unresolved icon in embedded surface"
             );
-            assert!(rendered.contains("stroke-width=\"1.5\""));
+            assert!(rendered.contains("currentColor"));
             assert!(rendered.contains("focusable=\"false\""));
         }
     }

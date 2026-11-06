@@ -288,8 +288,8 @@ pub mod windows {
                             }
                             if let Some(url) = url {
                                 if url == "about:blank" {
-                                    target.NavigateToString(&HSTRING::from(include_str!(
-                                        "../assets/start.html"
+                                    target.NavigateToString(&HSTRING::from(crate::icons::html(
+                                        include_str!("../assets/start.html"),
                                     )))?;
                                 } else {
                                     target.Navigate(&HSTRING::from(url))?;

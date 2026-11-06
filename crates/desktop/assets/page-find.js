@@ -16,9 +16,9 @@
     </style><form role="search" aria-label="Find in page">
         <input type="text" aria-label="Find in page" placeholder="Find in page" autocomplete="off" spellcheck="false">
         <output aria-live="polite">0/0</output>
-        <button type="button" title="Previous match (Shift+Enter)" aria-label="Previous match">__HEROICON_arrow-up__</button>
-        <button type="button" title="Next match (Enter)" aria-label="Next match">__HEROICON_arrow-down__</button>
-        <button type="button" title="Close (Escape)" aria-label="Close find">__HEROICON_x-mark__</button>
+        <button type="button" title="Previous match (Shift+Enter)" aria-label="Previous match">__ICON_arrow-up__</button>
+        <button type="button" title="Next match (Enter)" aria-label="Next match">__ICON_arrow-down__</button>
+        <button type="button" title="Close (Escape)" aria-label="Close find">__ICON_xmark__</button>
     </form>`;
     const input = shadow.querySelector('input'), output = shadow.querySelector('output');
     const buttons = shadow.querySelectorAll('button');

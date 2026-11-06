@@ -407,7 +407,7 @@ impl WryHost {
         } else {
             String::new()
         };
-        let start_url = html_data_url(START_HTML);
+        let start_url = html_data_url(&crate::icons::html(START_HTML));
         let builder = WebViewBuilder::new()
             // Keep retained webapps running independently of view visibility.
             // Keep Alive only governs our unload timer; WebKit's separate
@@ -621,7 +621,7 @@ impl WryHost {
             // second load here would discard the native WindowProxy linkage.
             if navigate {
                 if url == "about:blank" {
-                    view.load_html(START_HTML)?;
+                    view.load_html(&crate::icons::html(START_HTML))?;
                 } else {
                     view.load_url(url)?;
                 }
@@ -1185,7 +1185,7 @@ impl BrowserHost for WryHost {
         if url == "about:blank" {
             return self
                 .get(tab)?
-                .load_html(include_str!("../assets/start.html"))
+                .load_html(&crate::icons::html(START_HTML))
                 .context("Opening start page");
         }
         self.get(tab)?

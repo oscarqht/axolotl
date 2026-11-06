@@ -411,9 +411,8 @@ impl WryHost {
                 let event = match command {
                     "focus" => BrowserEvent::Focused(tab),
                     "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
-                    | "reload" | "swipe-next" | "swipe-prev" => {
-                        BrowserEvent::Shortcut(tab, command.to_owned())
-                    }
+                    | "reload" | "swipe-next" | "swipe-prev" | "history-back"
+                    | "history-forward" => BrowserEvent::Shortcut(tab, command.to_owned()),
                     _ => return,
                 };
                 let _ = ipc.try_send(event);
@@ -1196,7 +1195,9 @@ pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option
     }
     match command {
         "focus" | "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
-        | "reload" | "swipe-next" | "swipe-prev" => Some(command),
+        | "reload" | "swipe-next" | "swipe-prev" | "history-back" | "history-forward" => {
+            Some(command)
+        }
         _ => None,
     }
 }

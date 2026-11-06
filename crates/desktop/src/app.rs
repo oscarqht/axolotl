@@ -91,6 +91,8 @@ impl SwipeState {
 pub struct BrowserApp {
     pub sleep: crate::sleep::SleepState,
     pub swipes: HashMap<PaneId, SwipeState>,
+    /// Page momentum must not share accumulation with floating-bar tab swipes.
+    pub page_swipes: HashMap<TabId, SwipeState>,
     pub floating_panels: crate::floating_panels::FloatingPanels,
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
@@ -291,6 +293,7 @@ impl BrowserApp {
             chrome_views: HashSet::new(),
             view_errors: HashSet::new(),
             swipes: HashMap::new(),
+            page_swipes: HashMap::new(),
             model,
             browsing_history,
             visit_ids: HashMap::new(),
@@ -546,6 +549,17 @@ impl BrowserApp {
         self.sync_address(window, cx);
         cx.notify();
     }
+    fn swipe_history(&mut self, tab: TabId, forward: bool) {
+        // The engine naturally does nothing at either end of this page's history.
+        // Do not use command(): it targets the focused page (or an open preview).
+        let result = if forward {
+            self.host.forward(tab)
+        } else {
+            self.host.back(tab)
+        };
+        self.report(result);
+    }
+
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.is_some() {
             return;
@@ -937,17 +951,15 @@ impl BrowserApp {
                         .iter()
                         .find(|p| p.active_tab == tab)
                         .map(|p| p.id);
-                    if let Some(pane) = pane {
+                    if pane.is_some() {
                         let direction =
-                            self.swipes
-                                .entry(pane)
+                            self.page_swipes
+                                .entry(tab)
                                 .or_default()
                                 .feed(x, y, Instant::now());
                         if let Some(forward) = direction {
                             self.cancel_edit(window, cx);
-                            self.model.cycle_tab(pane, forward);
-                            self.sync_address(window, cx);
-                            self.reveal_focused();
+                            self.swipe_history(tab, forward);
                         }
                     }
                 }
@@ -983,6 +995,11 @@ impl BrowserApp {
                         continue;
                     };
                     if self.dragging.is_some() || self.tab_drag_active() {
+                        continue;
+                    }
+                    if key == "history-back" || key == "history-forward" {
+                        self.cancel_edit(window, cx);
+                        self.swipe_history(tab, key == "history-forward");
                         continue;
                     }
                     self.model.focus_pane(pane);

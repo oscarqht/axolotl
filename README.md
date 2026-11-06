@@ -149,11 +149,14 @@ machine running the executable. See the validation report below for tested scope
   or releasing outside the workspace cancels a panel move.
 - See [floating panel behavior and validation](docs/floating-panels.md) for persistence
   and native test details.
-- Deliberate horizontal trackpad/touch swipes across page content select the next
-  tab on a left swipe and the previous tab on a right swipe, wrapping at both ends.
-  Horizontal tab switching takes priority over page horizontal scrolling; vertical
-  scrolling remains normal. Trackpad momentum switches once per gesture. On the
-  floating bar, dragging a chip/handle takes priority over touch swiping.
+- Deliberate horizontal swipes across page content navigate that page's web
+  history: swipe right to go back and left to go forward. Trackpad direction
+  follows the system scrolling settings. At either end of history, swiping does
+  nothing; it never switches tabs. History navigation takes priority over page
+  horizontal scrolling; vertical scrolling remains normal. Trackpad momentum
+  navigates once per gesture. Floating-bar swipes still select the next tab on a
+  left swipe and the previous tab on a right swipe, wrapping at both ends;
+  dragging a chip/handle takes priority over touch swiping.
 - Closing the final tab in a panel removes that panel when other panels remain;
   the final panel instead receives a fresh start tab. Drag the thin dividers to
   resize panels while their content stays visible.

@@ -41,7 +41,7 @@ window.addEventListener(
       event.stopImmediatePropagation();
       if (!touch.fired && Math.abs(x) > 60) {
         touch.fired = true;
-        send(x < 0 ? "swipe-next" : "swipe-prev");
+        send(x < 0 ? "history-forward" : "history-back");
       }
     }
   },

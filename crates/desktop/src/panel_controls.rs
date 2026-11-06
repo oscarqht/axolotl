@@ -224,6 +224,7 @@ impl BrowserApp {
         }
         self.host.retain(&ids);
         self.view_errors.retain(|id| ids.contains(id));
+        self.page_swipes.retain(|id, _| ids.contains(id));
         #[cfg(target_os = "macos")]
         self.native_popup_sources.retain(|id, _| ids.contains(id));
         if self.sleep.retain(&ids) {

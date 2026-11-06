@@ -228,6 +228,10 @@ impl BrowserApp {
             let grip = self.pins.grip.as_ref().unwrap();
             grip.set_visible(rect.is_some())?;
             if let (Some(id), Some(r)) = (self.pins.open, rect) {
+                // The retained page may have had square corners in a floating panel.
+                // Clip the native page itself, not just the shield behind it.
+                self.host
+                    .set_panel_radius(id, crate::render::PANEL_CORNER_RADIUS)?;
                 self.host.place(
                     id,
                     Bounds {

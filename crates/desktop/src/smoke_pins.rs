@@ -38,6 +38,24 @@ async fn popup_read(
     anyhow::bail!("Popup read timed out: {script}")
 }
 
+async fn check_popup_corners(
+    view: &WeakEntity<BrowserApp>,
+    cx: &mut AsyncWindowContext,
+) -> Result<()> {
+    view.update_in(cx, |app, _, _| -> Result<()> {
+        let id = app.pins.open.context("Pinned popup is closed")?;
+        let state = app.host.panel_clip_state(id)?;
+        ensure!(
+            state["radius"] == f64::from(crate::render::PANEL_CORNER_RADIUS)
+                && state["clips"] == true
+                && state["corners"] == 15,
+            "pinned popup lost four-corner clipping: {state}"
+        );
+        Ok(())
+    })??;
+    Ok(())
+}
+
 async fn wait_popup_closed(
     view: &WeakEntity<BrowserApp>,
     cx: &mut AsyncWindowContext,
@@ -311,6 +329,7 @@ pub async fn run(
             pause(cx).await;
         }
     }
+    check_popup_corners(view, cx).await?;
     let before_resize = view.update_in(cx, |app, window, _| app.pin_rect(window).unwrap())?;
     let page_size = eval(&host, first, "({width:innerWidth,height:innerHeight})", cx).await?;
     ensure!(
@@ -367,6 +386,7 @@ pub async fn run(
         ensure!((after.x-before_resize.x).abs()<1. && (after.width-before_resize.width-20.).abs()<1. && (after.height-before_resize.height+30.).abs()<1., "bottom-right resizing moved origin or used wrong deltas: {before_resize:?} -> {after:?}");
         Ok::<_,anyhow::Error>(())
     })??;
+    check_popup_corners(view, cx).await?;
     popup_action(view, "send('resize',{width:500,height:420});true", cx).await?;
     pause(cx).await;
     popup_action(

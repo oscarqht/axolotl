@@ -1463,6 +1463,17 @@ pub(crate) fn allowed_url(url: &str) -> bool {
         || normalized == "about:blank"
 }
 
+/// Additional document types for embedded frames only. Never use this for
+/// address entry, new windows, privileged inline UI, or a top-level target.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn embedded_document_url(url: &str) -> bool {
+    let normalized = url.to_ascii_lowercase();
+    normalized == "about:srcdoc"
+        || normalized.starts_with("about:srcdoc#")
+        || normalized.starts_with("blob:")
+        || normalized.starts_with("data:")
+}
+
 pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option<&'a str> {
     let (token, command) = message.split_once(':')?;
     if token != nonce {

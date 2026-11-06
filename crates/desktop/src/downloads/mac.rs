@@ -9,8 +9,8 @@ use objc2_foundation::{
     NSURLResponse,
 };
 use objc2_web_kit::{
-    WKDownload, WKDownloadDelegate, WKNavigationAction, WKNavigationDelegate, WKNavigationResponse,
-    WKWebView,
+    WKDownload, WKDownloadDelegate, WKNavigationAction, WKNavigationActionPolicy,
+    WKNavigationDelegate, WKNavigationResponse, WKWebView,
 };
 use std::{collections::HashMap, rc::Weak};
 use wry::WebViewExtMacOS;
@@ -60,14 +60,35 @@ define_class!(
         }
     }
     impl NavigationDelegate {
-        // Preserve every Wry navigation, permission, and history callback. Only
-        // the two download conversions belong to this proxy.
+        // Preserve Wry callbacks except the explicit child-document policy and
+        // download conversions below.
         #[unsafe(method(forwardingTargetForSelector:))]
         fn forwarding(&self, _selector: Sel) -> *mut AnyObject {
             Retained::as_ptr(&self.ivars().original).cast_mut().cast()
         }
     }
     unsafe impl WKNavigationDelegate for NavigationDelegate {
+        #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
+        fn policy(&self, webview: &WKWebView, action: &WKNavigationAction, handler: &block2::Block<dyn Fn(WKNavigationActionPolicy)>) {
+            unsafe {
+                // Wry's URL-only handler cannot distinguish top-level navigation
+                // from iframe documents. WebKit reports srcdoc as about:srcdoc;
+                // generated previews commonly use blob: or data:. Permit those
+                // only for an existing child target, retaining WebKit's origin,
+                // sandbox, CSP and X-Frame-Options enforcement. A nil target is
+                // a new window and must still pass Wry's ordinary policy.
+                let child = action.targetFrame().is_some_and(|frame| !frame.isMainFrame());
+                let embedded = action.request().URL().and_then(|url| url.absoluteString())
+                    .is_some_and(|url| crate::browser::embedded_document_url(&url.to_string()));
+                let download = action.respondsToSelector(objc2::sel!(shouldPerformDownload))
+                    && action.shouldPerformDownload();
+                if child && embedded && !download {
+                    handler.call((WKNavigationActionPolicy::Allow,));
+                } else {
+                    self.ivars().original.webView_decidePolicyForNavigationAction_decisionHandler(webview, action, handler);
+                }
+            }
+        }
         #[unsafe(method(webView:navigationAction:didBecomeDownload:))]
         fn action(&self, _webview: &WKWebView, _action: &WKNavigationAction, download: &WKDownload) {
             unsafe { download.setDelegate(Some(ProtocolObject::from_ref(self))); }

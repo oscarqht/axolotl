@@ -68,6 +68,33 @@ fn navigation_never_allows_local_files_or_executable_schemes() {
 }
 
 #[test]
+fn embedded_document_types_do_not_expand_top_level_navigation() {
+    for url in [
+        "about:srcdoc",
+        "about:srcdoc#anchor",
+        "blob:https://example.com/id",
+        "blob:null/id",
+        "data:text/html,<h1>Preview</h1>",
+    ] {
+        assert!(crate::browser::embedded_document_url(url), "denied {url}");
+        assert!(!allowed_url(url), "top-level allowed {url}");
+    }
+    for url in [
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "about:config",
+        "about:srcdoc-extra",
+        "custom:payload",
+    ] {
+        assert!(
+            !crate::browser::embedded_document_url(url),
+            "embedded allowed {url}"
+        );
+        assert!(!allowed_url(url), "top-level allowed {url}");
+    }
+}
+
+#[test]
 fn link_bridge_requires_nonce_command_and_safe_destination() {
     use crate::browser::authenticated_link;
     for url in [

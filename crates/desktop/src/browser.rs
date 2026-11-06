@@ -759,6 +759,10 @@ impl BrowserHost for WryHost {
         if !allowed_url(url) {
             bail!("Only HTTP, HTTPS, and about:blank pages are supported");
         }
+        #[cfg(feature = "smoke")]
+        if crate::smoke::hold_launch_view() {
+            return Ok(());
+        }
         if !self.protection.borrow().native.ready() {
             if let Some(error) = self.protection.borrow().native.error() {
                 bail!("Native protection: {error}");

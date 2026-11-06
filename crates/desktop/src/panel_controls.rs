@@ -223,6 +223,7 @@ impl BrowserApp {
             ids.insert(crate::link_popup::POPUP_TAB);
         }
         self.host.retain(&ids);
+        self.view_errors.retain(|id| ids.contains(id));
         #[cfg(target_os = "macos")]
         self.native_popup_sources.retain(|id, _| ids.contains(id));
         if self.sleep.retain(&ids) {
@@ -276,6 +277,11 @@ impl BrowserApp {
                 continue;
             }
             let result = self.host.ensure(id, &url, window, cx);
+            if result.is_err() {
+                self.view_errors.insert(id);
+            } else {
+                self.view_errors.remove(&id);
+            }
             self.report(result);
             if self.host.has_view(id) {
                 self.report(self.host.show(id, true));

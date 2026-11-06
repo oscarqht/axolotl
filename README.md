@@ -276,6 +276,10 @@ exits. It requires a GUI session and HTTPS access to example.com:
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
 
+# Startup placeholder regression (no network needed)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-launch-loading
+# Add --smoke-hold-launch-loading to hold loading and ready states for visual inspection.
+
 # macOS native HTTP/JavaScript browser identity regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-identity
 

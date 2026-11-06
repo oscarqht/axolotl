@@ -15,6 +15,14 @@ use workspace_core::{Axis, TabId};
 
 pub(crate) type Host = Rc<dyn BrowserHost>;
 
+static LAUNCH_RELEASED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Exercise the real missing-view startup path without racing protection setup.
+pub(crate) fn hold_launch_view() -> bool {
+    std::env::args().any(|arg| arg == "--smoke-launch-loading")
+        && !LAUNCH_RELEASED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn start(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
     let view = app.downgrade();
     window.spawn(cx, async move |cx| {
@@ -175,6 +183,43 @@ async fn run(
     })?;
     if std::env::args().any(|arg| arg == "--smoke-sleep-session") {
         return crate::smoke_sleep::session(view, cx).await;
+    }
+    if std::env::args().any(|arg| arg == "--smoke-launch-loading") {
+        view.update_in(cx, |app, _, _| -> Result<()> {
+            ensure!(!app.host.has_view(first), "Startup view was not deferred");
+            ensure!(
+                app.view_errors.is_empty(),
+                "Pending startup reported a failure"
+            );
+            Ok(())
+        })??;
+        println!("AXOLOTL_LAUNCH loading");
+        let hold = if std::env::args().any(|arg| arg == "--smoke-hold-launch-loading") {
+            50
+        } else {
+            5
+        };
+        for _ in 0..hold {
+            pause(cx).await;
+        }
+        LAUNCH_RELEASED.store(true, std::sync::atomic::Ordering::Relaxed);
+        pause(cx).await;
+        wait_title(&host, first, "New tab · Axolotl", cx).await?;
+        view.update_in(cx, |app, _, _| -> Result<()> {
+            ensure!(
+                app.host.has_view(first) && app.host.is_visible(first),
+                "Page did not replace loading"
+            );
+            ensure!(app.view_errors.is_empty(), "Startup left a creation error");
+            Ok(())
+        })??;
+        println!("AXOLOTL_LAUNCH ready");
+        for _ in 0..hold {
+            pause(cx).await;
+        }
+        return Ok(vec![
+            "pending startup placeholder transitions to native page",
+        ]);
     }
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
 

@@ -73,6 +73,37 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
         )
 }
 
+/// A missing native view is normal while protection and browser setup are pending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneContent {
+    Sleeping,
+    Loading,
+    Unavailable,
+    Page,
+}
+
+impl PaneContent {
+    fn resolve(sleeping: bool, has_view: bool, failed: bool) -> Self {
+        if sleeping {
+            Self::Sleeping
+        } else if has_view {
+            Self::Page
+        } else if failed {
+            Self::Unavailable
+        } else {
+            Self::Loading
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Loading => "Loading page…",
+            Self::Unavailable => "Page unavailable",
+            _ => "",
+        }
+    }
+}
+
 impl BrowserApp {
     fn pinned_header(&self, window: &Window, cx: &Context<Self>) -> AnyElement {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
@@ -477,7 +508,11 @@ impl BrowserApp {
         let pane = self.model.pane(pane_id).expect("layout pane exists");
         let tab = pane.active_tab;
         let page = self.host.has_view(tab).then(|| self.host.clone());
-        let unavailable = page.is_none();
+        let state = PaneContent::resolve(
+            self.sleep.is_sleeping(tab),
+            page.is_some(),
+            self.view_errors.contains(&tab),
+        );
         div()
             .absolute()
             .left(px(rect.x))
@@ -496,7 +531,7 @@ impl BrowserApp {
                     .right_0()
                     .rounded(px(PANEL_CORNER_RADIUS))
                     .bg(rgb(colors.page))
-                    .child(if self.sleep.is_sleeping(tab) {
+                    .child(if state == PaneContent::Sleeping {
                         div()
                             .id(("sleeping-pane", tab))
                             .size_full()
@@ -523,14 +558,33 @@ impl BrowserApp {
                                 cx.notify();
                             }))
                             .into_any_element()
-                    } else if unavailable {
+                    } else if state != PaneContent::Page {
                         div()
+                            .id(("page-placeholder", tab))
                             .size_full()
                             .flex()
+                            .flex_col()
+                            .gap_3()
                             .items_center()
                             .justify_center()
                             .text_color(rgb(colors.muted))
-                            .child("Page unavailable")
+                            .when(state == PaneContent::Loading, |el| {
+                                el.child(
+                                    div()
+                                        .w(px(40.))
+                                        .h(px(4.))
+                                        .rounded_full()
+                                        .bg(rgb(colors.accent))
+                                        .with_animation(
+                                            "page-loading-pulse",
+                                            Animation::new(std::time::Duration::from_millis(1200))
+                                                .repeat()
+                                                .with_easing(bounce(ease_in_out)),
+                                            |el, delta| el.opacity(0.3 + 0.7 * delta),
+                                        ),
+                                )
+                            })
+                            .child(state.label())
                             .into_any_element()
                     } else {
                         canvas(
@@ -1004,5 +1058,39 @@ impl Render for BrowserApp {
                     )
                 },
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PaneContent;
+
+    #[test]
+    fn pending_native_view_shows_loading_until_created() {
+        let pending = PaneContent::resolve(false, false, false);
+        assert_eq!(pending, PaneContent::Loading);
+        assert_eq!(pending.label(), "Loading page…");
+        assert_eq!(PaneContent::resolve(false, true, false), PaneContent::Page);
+    }
+
+    #[test]
+    fn creation_failure_is_not_disguised_as_loading() {
+        let failed = PaneContent::resolve(false, false, true);
+        assert_eq!(failed, PaneContent::Unavailable);
+        assert_eq!(failed.label(), "Page unavailable");
+        // A successfully retried creation takes precedence over a stale error.
+        assert_eq!(PaneContent::resolve(false, true, true), PaneContent::Page);
+    }
+
+    #[test]
+    fn sleeping_presentation_takes_precedence_over_native_view_state() {
+        for has_view in [false, true] {
+            for failed in [false, true] {
+                assert_eq!(
+                    PaneContent::resolve(true, has_view, failed),
+                    PaneContent::Sleeping
+                );
+            }
+        }
     }
 }

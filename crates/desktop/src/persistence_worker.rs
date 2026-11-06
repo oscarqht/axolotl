@@ -233,9 +233,23 @@ impl Store {
             .map_err(|_| anyhow!("persistence worker stopped"))
     }
     pub fn reserve_history_id(&self) -> Result<i64> {
-        self.next_history_id
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-            .map_err(|_| anyhow!("History visit IDs exhausted"))
+        // Keep compatibility with older Rust without fetch_update, which is
+        // deprecated on newer toolchains in favor of try_update.
+        let mut id = self.next_history_id.load(Ordering::Relaxed);
+        loop {
+            let next = id
+                .checked_add(1)
+                .ok_or_else(|| anyhow!("History visit IDs exhausted"))?;
+            match self.next_history_id.compare_exchange_weak(
+                id,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(previous) => return Ok(previous),
+                Err(current) => id = current,
+            }
+        }
     }
     pub fn history(&self, sql: &str, params: Vec<rusqlite::types::Value>) -> Result<()> {
         self.sender

@@ -42,6 +42,8 @@ mod macos_popup;
 #[cfg(target_os = "macos")]
 mod macos_quit;
 #[cfg(target_os = "macos")]
+mod macos_script_dialogs;
+#[cfg(target_os = "macos")]
 mod macos_titlebar;
 #[cfg(target_os = "macos")]
 mod native_popup_tabs;
@@ -120,6 +122,8 @@ mod smoke_quit;
 mod smoke_reload;
 #[cfg(feature = "smoke")]
 mod smoke_responsiveness;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_script_dialogs;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_webapp;
 #[cfg(all(feature = "smoke", target_os = "macos"))]

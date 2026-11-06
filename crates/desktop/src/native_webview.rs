@@ -198,6 +198,18 @@ mod windows_view {
                                 )
                             };
                             let setup = (|| -> wry::Result<()> {
+                                // Let WebView2 own native alert/confirm/prompt UI, return
+                                // values, frame dispatch and controller-close cleanup.
+                                unsafe {
+                                    use wry::WebViewExtWindows;
+                                    view.controller()
+                                        .CoreWebView2()
+                                        .and_then(|webview| webview.Settings())
+                                        .and_then(|settings| {
+                                            settings.SetAreDefaultScriptDialogsEnabled(true)
+                                        })
+                                        .map_err(webview2_com::Error::from)?;
+                                }
                                 if let Some(bounds) = bounds {
                                     view.set_bounds(bounds)?;
                                 }

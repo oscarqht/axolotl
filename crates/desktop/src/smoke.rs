@@ -270,6 +270,10 @@ async fn run(
         return crate::smoke_x_oauth::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-script-dialogs") {
+        return crate::smoke_script_dialogs::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-oauth") {
         return crate::smoke_oauth::run(view, cx).await;
     }

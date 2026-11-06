@@ -18,6 +18,7 @@ use wry::{
 pub(crate) struct PopupDelegateIvars {
     original: Retained<ProtocolObject<dyn WKUIDelegate>>,
     closed: Box<dyn Fn()>,
+    dialogs: crate::macos_script_dialogs::Dialogs,
 }
 
 define_class!(
@@ -44,6 +45,35 @@ define_class!(
     }
 
     unsafe impl WKUIDelegate for PopupDelegate {
+        #[unsafe(method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:))]
+        fn alert(&self, view: &WKWebView, message: &objc2_foundation::NSString,
+            frame: &objc2_web_kit::WKFrameInfo, done: &block2::DynBlock<dyn Fn()>) {
+            let done = done.copy();
+            self.ivars().dialogs.show(view, frame, message, None, false,
+                Box::new(move |_, _| done.call(())));
+        }
+
+        #[unsafe(method(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:))]
+        fn confirm(&self, view: &WKWebView, message: &objc2_foundation::NSString,
+            frame: &objc2_web_kit::WKFrameInfo, done: &block2::DynBlock<dyn Fn(objc2::runtime::Bool)>) {
+            let done = done.copy();
+            self.ivars().dialogs.show(view, frame, message, None, true,
+                Box::new(move |accepted, _| done.call((objc2::runtime::Bool::new(accepted),))));
+        }
+
+        #[unsafe(method(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:))]
+        fn prompt(&self, view: &WKWebView, message: &objc2_foundation::NSString,
+            default_text: Option<&objc2_foundation::NSString>, frame: &objc2_web_kit::WKFrameInfo,
+            done: &block2::DynBlock<dyn Fn(*mut objc2_foundation::NSString)>) {
+            let done = done.copy();
+            let empty = objc2_foundation::NSString::new();
+            self.ivars().dialogs.show(view, frame, message, Some(default_text.unwrap_or(&empty)), true,
+                Box::new(move |accepted, text| {
+                    let value = text.filter(|_| accepted);
+                    done.call((value.as_ref().map_or(std::ptr::null_mut(), |s| Retained::as_ptr(s).cast_mut()),));
+                }));
+        }
+
         #[unsafe(method(webViewDidClose:))]
         fn web_view_did_close(&self, _view: &WKWebView) {
             // The callback must enqueue an event, never destroy this delegate
@@ -54,7 +84,7 @@ define_class!(
 );
 
 /// Keep the returned guard alive for the view's lifetime: WKWebView's UI delegate
-/// property is weak. All methods except script close continue through Wry.
+/// property is weak. Popup creation and other optional methods continue through Wry.
 pub(crate) fn install(
     view: &wry::WebView,
     closed: impl Fn() + 'static,
@@ -68,6 +98,7 @@ pub(crate) fn install(
         let delegate = mtm.alloc::<PopupDelegate>().set_ivars(PopupDelegateIvars {
             original,
             closed: Box::new(closed),
+            dialogs: Default::default(),
         });
         let delegate: Retained<PopupDelegate> = msg_send![super(delegate), init];
         view.webview()

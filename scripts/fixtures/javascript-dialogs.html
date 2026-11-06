@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>JavaScript dialog checks</title>
+<style>
+body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+button { padding: 10px 16px; margin: 4px; } pre { white-space: pre-wrap; background: #eee; padding: 16px; }
+iframe { width: 100%; border: 1px solid #aaa; margin-top: 20px; }
+</style>
+<h1>Native JavaScript dialogs</h1>
+<p>Run in Axolotl. Use Return, Escape, Tab, typing, selection, and copy/paste in the native dialogs.</p>
+<button id="alert">Alert</button><button id="confirm">Confirm</button><button id="prompt">Prompt</button><button id="popup">Open popup fixture</button>
+<pre id="results">Results appear here. Prompt OK with no text must be ""; Cancel must be null.</pre>
+<iframe title="Dialog frame"></iframe>
+<script>
+const log = (kind, value) => document.querySelector('#results').textContent += '\n' + kind + ': ' + JSON.stringify(value);
+document.querySelector('#alert').onclick = () => log('alert', alert('Alert from a website'));
+document.querySelector('#confirm').onclick = () => log('confirm', confirm('Confirm this action?'));
+document.querySelector('#prompt').onclick = () => log('prompt', prompt('Your name (try empty or Unicode text)', 'Axolotl'));
+document.querySelector('#popup').onclick = () => window.open(location.href, '_blank', 'popup,width=650,height=650');
+document.querySelector('iframe').srcdoc = `<button onclick="alert('Alert from a frame')">Frame alert</button><button onclick="document.querySelector('output').textContent=JSON.stringify(confirm('Frame confirm'))">Frame confirm</button><button onclick="document.querySelector('output').textContent=JSON.stringify(prompt('Frame prompt','default'))">Frame prompt</button><output></output>`;
+</script>

@@ -255,6 +255,9 @@ ads and trackers** or the website shield in each panel to change it. Lists updat
 daily while the browser is open; **Update now** retries immediately. See
 [content protection and current YouTube limitations](docs/content-protection.md).
 
+Website `alert()`, `confirm()`, and `prompt()` use native dialogs on macOS and
+Windows. See [JavaScript dialog behavior and checks](docs/javascript-dialogs.md).
+
 Web-page downloads save automatically to the user's Downloads folder on macOS and
 Windows, using the suggested filename and numbered suffixes for conflicts. The
 **Downloads** button between pinned tabs and Settings opens this session's list,

@@ -34,9 +34,9 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
 objc2-security = { version = "0.3", default-features = false, features = ["std", "SecTask"] }
 objc2 = "0.6"
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "CABase", "CAAnimation", "CAMediaTiming", "CAMediaTimingFunction"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWorkspace", "NSAccessibility", "NSEvent", "NSGraphicsContext", "block2", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAlert", "NSTextField", "NSButton", "NSControl", "NSWorkspace", "NSAccessibility", "NSEvent", "NSGraphicsContext", "block2", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProgress", "NSURLResponse", "NSURLRequest", "NSBundle", "NSURL", "NSDictionary", "NSData", "NSError", "NSNotification", "NSOperation", "NSString", "NSValue", "block2"] }
-objc2-web-kit = { version = "0.3", default-features = false, features = ["WKDownload", "WKDownloadDelegate", "WKNavigationDelegate", "WKNavigationAction", "WKNavigationResponse", "WKSnapshotConfiguration", "WKWebView", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKUserScript", "WKWebViewConfiguration"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["WKFrameInfo", "WKSecurityOrigin", "WKDownload", "WKDownloadDelegate", "WKNavigationDelegate", "WKNavigationAction", "WKNavigationResponse", "WKSnapshotConfiguration", "WKWebView", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKUserScript", "WKWebViewConfiguration"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.56"

@@ -229,6 +229,10 @@ async fn run(
     }
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
 
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-horizontal-scroll") {
+        return crate::smoke_horizontal_scroll::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-tab-menu") {
         let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
         return Ok(vec![crate::smoke_menu::run(view, pane, cx).await?]);

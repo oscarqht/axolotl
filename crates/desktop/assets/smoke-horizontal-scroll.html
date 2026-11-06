@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>Horizontal scrolling acceptance</title>
+<style>
+html { background:#f4f6fa; color:#182844; font:18px system-ui; }
+body { margin:0; min-height:1600px; }
+h1 { margin:24px 40px 4px; font-size:30px; } p { margin:0 40px; }
+section { position:absolute; left:40px; width:640px; }
+label { display:block; margin-bottom:10px; font-weight:600; }
+.scroller { overflow:auto; width:640px; height:100px; border:2px solid #6688bd; border-radius:10px; }
+.track { display:flex; width:1600px; height:100px; }
+b { flex:1; padding:24px; background:#d3e2fa; border-right:2px solid white; }
+b:nth-child(even) { background:#b5d9d2; }
+</style>
+<h1>Horizontal scrolling</h1><p>Native Axolotl · wheel input reaches website content in both directions</p>
+<section style="top:150px"><label>Nested scroll area</label><div id="nested" class="scroller"><div class="track"><b>1 · Start</b><b>2 · Middle</b><b>3 · Continue</b><b>4 · End</b></div></div></section>
+<section style="top:330px"><label>Shadow DOM scroll area</label><div id="shadow"></div></section>
+<section style="top:510px"><label>Right-to-left scroll area</label><div id="rtl" class="scroller" dir="rtl"><div class="track"><b>1 · Start</b><b>2 · Middle</b><b>3 · Continue</b><b>4 · End</b></div></div></section>
+<script>
+shadow.attachShadow({mode:'open'}).innerHTML=`<style>.scroller{overflow:auto;width:640px;height:100px;border:2px solid #6688bd;border-radius:10px}.track{display:flex;width:1600px;height:100px}b{flex:1;padding:24px;background:#d3e2fa;border-right:2px solid white}b:nth-child(even){background:#b5d9d2}</style><div class="scroller"><div class="track"><b>1 · Start</b><b>2 · Middle</b><b>3 · Continue</b><b>4 · End</b></div></div>`;
+shadow.scroller=shadow.shadowRoot.querySelector('.scroller');
+window.events=[]; addEventListener('wheel', e=>events.push({x:e.deltaX,y:e.deltaY,trusted:e.isTrusted}));
+</script>

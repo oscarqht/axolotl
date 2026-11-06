@@ -130,6 +130,10 @@ impl FloatingBar {
         }
         Ok(())
     }
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    pub fn test_scroll(&self, dx: i32) -> Result<()> {
+        crate::smoke_horizontal_scroll::scroll_view(&self.view, 10., 10., dx, 0)
+    }
     /// Deliver native events to the originating WKWebView, including releases
     /// outside its bounds. The fixture supplies OS button state separately.
     #[cfg(all(feature = "smoke", target_os = "macos"))]

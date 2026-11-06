@@ -125,8 +125,12 @@ page views themselves are retained. Chip pointer capture begins only after the
 drag threshold, preserving ordinary clicks and double-clicks.
 
 `docking.rs` shares edge, center and measured chip-midpoint hit testing with
-native previews and final drops. Initialization scripts capture trusted wheel
-and touch gestures across documents/subframes. Per-panel gesture accumulation
+native previews and final drops. Initialization scripts inspect trusted wheel
+and touch gestures across documents/subframes. Page history gestures yield to
+horizontal scrolling in the event's composed ancestor path and document root,
+including shadow DOM and RTL scroll offsets. Once a gesture scrolls content it
+stays with the page through its boundary/momentum; a fresh boundary gesture may
+navigate history. Per-panel gesture accumulation
 survives tab switches and control rebuilds, preventing repeated switching from
 trackpad momentum. Vertical page scrolling is left to the native engine.
 

@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Iframe acceptance · Axolotl</title>
+<style>
+  body { margin: 24px; background: #eef3f5; color: #12313a; font: 16px system-ui }
+  h1 { margin: 0 0 8px } p { margin: 0 0 20px }
+  main { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px }
+  section { padding: 12px; background: white; border-radius: 12px }
+  h2 { font-size: 16px; margin: 0 0 8px }
+  iframe { width: 100%; height: 125px; border: 1px solid #b0cbd2; border-radius: 6px; box-sizing: border-box }
+  #status { margin-top: 16px; font-weight: 600 }
+</style>
+<h1>Iframe acceptance</h1>
+<p>Local native WebKit check · each green card is a separate document. Click its button to test interaction.</p>
+<main>
+  <section><h2>Same-origin HTTP</h2><iframe id="same" title="Same-origin HTTP" src="/frame?id=same"></iframe></section>
+  <section><h2>Cross-origin HTTP</h2><iframe id="cross" title="Cross-origin HTTP" src="__CROSS_ORIGIN__/frame?id=cross"></iframe></section>
+  <section><h2>Inline srcdoc</h2><iframe id="srcdoc" title="Inline srcdoc"></iframe></section>
+</main><p id="status">Waiting for frames…</p>
+<script>
+window.results = {};
+const expected = ['same', 'cross', 'srcdoc', 'dynamic', 'blob', 'data', 'blank', 'sandbox'];
+addEventListener('message', event => {
+  const {id, clicked, trusted} = event.data || {};
+  if (!expected.includes(id) || event.source !== document.getElementById(id)?.contentWindow) return;
+  results[id] = {clicked: !!clicked, trusted: !!trusted};
+  statusText();
+});
+function statusText() {
+  document.getElementById('status').textContent = `${Object.keys(results).length}/${expected.length} frames loaded · ${Object.values(results).filter(r => r.clicked).length} buttons clicked`;
+}
+function frameHTML(id) {
+  return `<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:14px;background:#d8f5e5;color:#123e2b;font:15px system-ui}button{display:block;margin-top:12px;padding:8px 12px;border:0;border-radius:5px;background:#166541;color:white}</style><strong>${id}: rendered</strong><button onclick="this.textContent='Clicked ✓';parent.postMessage({id:'${id}',clicked:true,trusted:event.isTrusted},'*')">Click ${id}</button><script>parent.postMessage({id:'${id}'},'*')<\/script>`;
+}
+function add(id, title, setup) {
+  const section = document.createElement('section');
+  const label = document.createElement('h2'); label.textContent = title;
+  const frame = document.createElement('iframe'); frame.id = id; frame.title = title;
+  section.append(label, frame); document.querySelector('main').append(section);
+  setup(frame);
+}
+document.getElementById('srcdoc').srcdoc = frameHTML('srcdoc');
+add('dynamic', 'Script-created HTTP', f => f.src = '/frame?id=dynamic');
+add('blob', 'Generated blob URL', f => f.src = URL.createObjectURL(new Blob([frameHTML('blob')], {type:'text/html'})));
+add('data', 'Inline data URL', f => f.src = 'data:text/html;charset=utf-8,' + encodeURIComponent(frameHTML('data')));
+add('blank', 'Script-written about:blank', f => { f.contentDocument.open(); f.contentDocument.write(frameHTML('blank')); f.contentDocument.close(); });
+add('sandbox', 'Sandboxed srcdoc', f => { f.sandbox = 'allow-scripts'; f.srcdoc = frameHTML('sandbox'); });
+// These documents must remain blocked by WebKit's embedding restrictions.
+add('denied', 'X-Frame-Options / CSP: blocked', f => f.src = '/denied');
+</script>

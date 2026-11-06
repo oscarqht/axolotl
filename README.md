@@ -319,6 +319,11 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-launch-lo
 # macOS native HTTP/JavaScript browser identity regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-identity
 
+# macOS iframe rendering, native clicks and security regression (no network needed)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-iframes
+# Set AXOLOTL_IFRAME_SNAPSHOT=/tmp/axolotl-iframes.png to save the native page image.
+# See docs/iframe-evidence/README.md for the fixture and before/after evidence.
+
 # Focused native check for page notifications and unread badges (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications
 # Add --smoke-notifications-snapshot=/tmp/axolotl-notifications on macOS for before/after native tab-bar PNGs.

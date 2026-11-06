@@ -89,6 +89,8 @@ mod smoke_horizontal_scroll;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_iframes;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_input;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_keyboard;

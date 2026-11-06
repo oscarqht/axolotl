@@ -232,6 +232,11 @@ async fn run(
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
 
     #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-iframes") {
+        return crate::smoke_iframes::run(view, cx).await;
+    }
+
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-horizontal-scroll") {
         return crate::smoke_horizontal_scroll::run(view, cx).await;
     }

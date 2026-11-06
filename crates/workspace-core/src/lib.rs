@@ -11,3 +11,6 @@ pub use snapshot::{load_workspace, save_workspace, write_atomic, SnapshotError, 
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod split_snap_tests;

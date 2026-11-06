@@ -185,6 +185,10 @@ async fn run(
     if std::env::args().any(|arg| arg == "--smoke-corners") {
         return crate::smoke_corners::run(view, cx).await;
     }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-split-snap") {
+        return crate::smoke_split_snap::run(view, cx).await;
+    }
     if std::env::args().any(|arg| arg == "--smoke-responsiveness") {
         return crate::smoke_responsiveness::run(view, cx).await;
     }

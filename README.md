@@ -218,6 +218,13 @@ and survives app restarts. Find is case-insensitive plain text with match highli
 and a current/total count. Both tools also target open pins and link previews.
 See [page zoom and find](docs/page-tools.md) for details and verification.
 
+Right-click a space and choose **Pin Space** to keep it at the left of the header,
+after the window controls. Pinned spaces show their emoji or title initial in a
+square tab, with the full title on hover and no close button. **Unpin Space**
+returns it to the front of the regular tabs. Drag to reorder within either group;
+regular spaces scroll independently. Pin status and both groups' order survive
+restarts. Cmd+number follows the combined pinned-then-regular order.
+
 Cmd+number uses the current space order after dragging spaces. Cmd+9 selects
 the ninth space; numbers without a corresponding space leave the current view unchanged.
 
@@ -339,7 +346,7 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-bar-sizin
 # Space editor, emoji search/select/clear, save/cancel and session roundtrip
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-menu
 
-# Title/icon persistence across separate native processes and legacy sessions
+# Pin/title/icon persistence across separate native processes and legacy sessions
 python3 scripts/test-space-session.py target/debug/axolotl
 
 # Indexed macOS space shortcuts from page and app-control focus
@@ -363,8 +370,9 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-x-oauth
 # Opt-in live Google result Option-click regression (network required, macOS)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-google-popup
 
-# Space order, measured insertion slots, edge scrolling and cancellation
+# Space order, pinned groups, measured insertion slots, edge scrolling and cancellation
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-space-drag
+# Add --smoke-hold-space-pins to inspect compact pinned tabs after regular scrolling.
 ```
 
 A focused macOS input regression checks native link hit testing and sends an OS

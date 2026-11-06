@@ -28,11 +28,13 @@ def main():
         path = Path(directory) / 'app.sqlite3'
         with sqlite3.connect(path) as db:
             saved = json.loads(db.execute("SELECT json FROM app_state WHERE key='session'").fetchone()[0])
+        assert saved['spaces'][0]['pinned'] is True, saved
         assert saved['spaces'][0]['icon'] == '🚀', saved
         assert saved['spaces'][0]['custom_title'] == 'Restart space', saved
         run('restore')
         for space in saved['spaces']:
             space.pop('icon', None)
+            space.pop('pinned', None)
         # A fresh profile exercises automatic import of an older session.
         with tempfile.TemporaryDirectory(prefix='axolotl-space-legacy-') as legacy:
             original = json.dumps(saved)
@@ -43,7 +45,7 @@ def main():
             assert backup.read_text() == original, 'Legacy backup was rewritten'
             with sqlite3.connect(Path(legacy) / 'app.sqlite3') as db:
                 assert db.execute("SELECT count(*) FROM app_state WHERE key='session'").fetchone()[0] == 1
-        print('PASS: title and emoji saved through native editor, restored after restart, older sessions default to no icon')
+        print('PASS: pin status, title and emoji saved through native editor, restored after restart, older sessions default to no icon and unpinned')
 
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@ button{padding:8px 12px;text-align:left;border:0;border-radius:4px;background:tr
 #picker{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}.picker-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.picker-heading label{margin:0}#clear{padding:4px 8px}#emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(32px,1fr));max-height:180px;overflow:auto;margin-top:8px;gap:2px}#emojis button{padding:4px 0;height:34px;text-align:center;font-size:22px}#emojis button[aria-pressed=true]{background:var(--hover)}#empty{padding:10px 0;margin:0;opacity:.7}[hidden]{display:none!important}
 </style>
 <div id="menu" tabindex="-1" role="menu" aria-label="Space tab">
+<button id="pin-space" role="menuitem"></button>
 <button id="sleep-space" role="menuitem">Sleep Space</button>
 <button id="edit-space" role="menuitem">Edit space</button>
 <form hidden>
@@ -39,7 +40,8 @@ function renderEmojis(){
  document.querySelector('#empty').hidden=results.length>0;emojis.scrollTop=0;place();
 }
 document.querySelector("#sleep-space").onclick=()=>send("sleep");
-button.onclick=()=>{document.querySelector("#sleep-space").hidden=true;button.hidden=true;form.hidden=false;menu.classList.add('editing');menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Edit space');input.value=state.title;input.placeholder=state.placeholder;updateIcon();place();input.focus();input.select()};
+const pinButton=document.querySelector("#pin-space");pinButton.textContent=state.pinned?"Unpin Space":"Pin Space";pinButton.onclick=()=>send("toggle-pin");
+button.onclick=()=>{pinButton.hidden=true;document.querySelector("#sleep-space").hidden=true;button.hidden=true;form.hidden=false;menu.classList.add('editing');menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Edit space');input.value=state.title;input.placeholder=state.placeholder;updateIcon();place();input.focus();input.select()};
 iconButton.onclick=()=>{if(!picker.hidden){closePicker();return}picker.hidden=false;iconButton.setAttribute('aria-expanded','true');search.value='';renderEmojis();search.focus()};
 search.oninput=renderEmojis;
 document.querySelector('#clear').onclick=()=>{icon=null;updateIcon();closePicker()};

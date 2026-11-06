@@ -40,7 +40,7 @@ pub(crate) async fn run(
         app.model.tab_mut(tab).unwrap().title = "Original page title".into();
         app.model.set_custom_title(tab, "Fixed page title");
         app.model.switch_space(active);
-        let page_titles: Vec<_> = app
+        let mut page_titles: Vec<_> = app
             .model
             .spaces
             .iter()
@@ -48,8 +48,45 @@ pub(crate) async fn run(
             .flat_map(|p| &p.tabs)
             .map(|t| (t.id, t.custom_title.clone()))
             .collect();
+        page_titles.sort_by_key(|t| t.0);
         (active, other, page_titles)
     })?;
+    for expected in [true, false] {
+        view.update_in(cx, |app, window, cx| {
+            app.open_space_menu(other, point(px(110.), px(35.)), window, cx);
+        })?;
+        pause(cx).await;
+        pause(cx).await;
+        let label = eval(view, "document.querySelector('#pin-space').textContent", cx).await?;
+        ensure!(
+            label == if expected { "Pin Space" } else { "Unpin Space" },
+            "Wrong pin label: {label}"
+        );
+        eval(
+            view,
+            "document.querySelector('#pin-space').click();true",
+            cx,
+        )
+        .await?;
+        pause(cx).await;
+        view.update_in(cx, |app, _, _| -> Result<()> {
+            ensure!(
+                app.model
+                    .spaces
+                    .iter()
+                    .find(|s| s.id == other)
+                    .unwrap()
+                    .pinned
+                    == expected,
+                "Pin IPC failed"
+            );
+            ensure!(
+                app.model.active_space == active,
+                "Pin action changed selection"
+            );
+            Ok(())
+        })??;
+    }
     // Let newly created native page surfaces settle before mounting the menu.
     pause(cx).await;
     pause(cx).await;
@@ -74,7 +111,7 @@ pub(crate) async fn run(
         pause(cx).await;
         let snapshot = eval(view, "(()=>{const r=menu.getBoundingClientRect();const rows=[...menu.querySelectorAll('[role=menuitem]')];return {fullWidth:rows.every(b=>Math.abs(b.offsetWidth-(menu.clientWidth-10))<=1),hoverOnly:rows.every(b=>b.matches(':hover')||getComputedStyle(b).backgroundColor==='rgba(0, 0, 0, 0)'),items:rows.map(b=>b.textContent),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight}})()", cx).await?;
         ensure!(
-            snapshot["items"] == serde_json::json!(["Sleep Space", "Edit space"])
+            snapshot["items"] == serde_json::json!(["Pin Space", "Sleep Space", "Edit space"])
                 && snapshot["fits"] == true
                 && snapshot["fullWidth"] == true
                 && snapshot["hoverOnly"] == true,
@@ -174,7 +211,7 @@ pub(crate) async fn run(
                     && space.focused_pane().active_tab().display_title() == "Fixed page title",
                 "Space menu changed its active page title"
             );
-            let current_page_titles: Vec<_> = app
+            let mut current_page_titles: Vec<_> = app
                 .model
                 .spaces
                 .iter()
@@ -182,6 +219,7 @@ pub(crate) async fn run(
                 .flat_map(|p| &p.tabs)
                 .map(|t| (t.id, t.custom_title.clone()))
                 .collect();
+            current_page_titles.sort_by_key(|t| t.0);
             ensure!(
                 current_page_titles == page_titles,
                 "Space menu changed a page tab custom title"
@@ -220,6 +258,11 @@ pub(crate) fn session_probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut 
             view.update_in(cx, |app, window, cx| {
                 window.activate_window();
                 cx.activate(true);
+                let _ = app;
+            })?;
+            pause(cx).await;
+            pause(cx).await;
+            view.update_in(cx, |app, window, cx| {
                 app.open_space_menu(app.model.active_space, point(px(120.), px(40.)), window, cx);
             })?;
             pause(cx).await;
@@ -232,6 +275,20 @@ pub(crate) fn session_probe(app: &Entity<BrowserApp>, window: &Window, cx: &mut 
                 ensure!(before["icon"] == if stage == "restore" { serde_json::json!("🚀") } else { Value::Null }, "Icon not restored: {before}");
                 eval(&view, "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true", cx).await?;
             }
+            pause(cx).await;
+            if stage == "seed" {
+                view.update_in(cx, |app, window, cx| {
+                    app.open_space_menu(app.model.active_space, point(px(120.), px(40.)), window, cx);
+                })?;
+                pause(cx).await;
+                pause(cx).await;
+                eval(&view, "document.querySelector('#pin-space').click();true", cx).await?;
+                pause(cx).await;
+            }
+            view.update_in(cx, |app, _, _| -> Result<()> {
+                ensure!(app.model.active_space().pinned == (stage != "legacy"), "Pin status not saved/restored or legacy default incorrect");
+                Ok(())
+            })??;
             // Let the real SessionSaver debounce write before process shutdown.
             for _ in 0..6 { pause(cx).await; }
             Ok(before)

@@ -82,6 +82,7 @@ pub async fn run(
         for i in 2..=3 {
             app.model.add_space(format!("Shortcut {i}"), "about:blank");
         }
+        app.model.set_space_pinned(first, true);
         app.model.switch_space(first);
         app.focus.focus(window);
         cx.notify();
@@ -219,6 +220,7 @@ pub async fn run(
     assert_page_focus(&host, ninth_tab, cx).await?;
 
     view.update_in(cx, |app, window, cx| {
+        app.model.set_space_pinned(ninth, true);
         app.model.move_space(ninth, 0);
         app.focus.focus(window);
         window.dispatch_action(Box::new(crate::SelectSpace { index: 1 }), cx);
@@ -240,6 +242,6 @@ pub async fn run(
         "GPUI space actions bubble from shell and address editor; valid selection cancels editing while unavailable slots preserve the draft",
         "AppKit-queued native Cmd+1, Cmd+2 and Cmd+9 reach the global monitor with web pages, Settings and temporary popup focused",
         "unavailable native slots preserve modal state; valid selection dismisses Settings/popup and focuses selected native page",
-        "Cmd+9 selects exactly ninth among ten spaces; reordered slots use current space order and retain live page state",
+        "Cmd+9 selects exactly ninth among ten spaces; pinned and regular slots use current space order and retain live page state",
     ])
 }

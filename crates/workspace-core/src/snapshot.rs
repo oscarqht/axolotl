@@ -59,6 +59,8 @@ struct PinnedDto {
 
 #[derive(Serialize, Deserialize)]
 struct SpaceDto {
+    #[serde(default)]
+    pinned: bool,
     id: u64,
     name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -196,6 +198,7 @@ impl Workspace {
                 .spaces
                 .iter()
                 .map(|s| SpaceDto {
+                    pinned: s.pinned,
                     id: s.id,
                     name: s.name.clone(),
                     custom_title: s.custom_title.clone(),
@@ -294,6 +297,7 @@ impl Workspace {
                 return Err(SnapshotError::Invalid("focused pane not in space"));
             }
             spaces.push(Space {
+                pinned: s.pinned,
                 id: s.id,
                 name: s.name,
                 custom_title: s.custom_title.filter(|c| !c.trim().is_empty()),
@@ -307,6 +311,7 @@ impl Workspace {
                 focused_pane: s.focused_pane,
             });
         }
+        spaces.sort_by_key(|s| !s.pinned);
         if !spaces.iter().any(|s| s.id == dto.active_space) {
             return Err(SnapshotError::Invalid("active space missing"));
         }

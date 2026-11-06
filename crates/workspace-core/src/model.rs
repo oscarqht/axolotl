@@ -40,6 +40,7 @@ impl Pane {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Space {
+    pub pinned: bool,
     pub id: SpaceId,
     pub name: String,
     pub custom_title: Option<String>,
@@ -274,6 +275,7 @@ impl Workspace {
         let pane = self.new_pane(url);
         let pane_id = pane.id;
         self.spaces.push(Space {
+            pinned: false,
             id,
             name: name.into(),
             custom_title: None,
@@ -287,13 +289,33 @@ impl Workspace {
         id
     }
 
+    /// Pinned spaces form a stable prefix. Unpinning returns to the regular front.
+    pub fn set_space_pinned(&mut self, id: SpaceId, pinned: bool) -> bool {
+        let Some(index) = self.spaces.iter().position(|s| s.id == id) else {
+            return false;
+        };
+        if self.spaces[index].pinned == pinned {
+            return false;
+        }
+        let mut space = self.spaces.remove(index);
+        space.pinned = pinned;
+        let boundary = self.spaces.iter().take_while(|s| s.pinned).count();
+        self.spaces.insert(boundary, space);
+        true
+    }
+
     /// Move a space to an insertion slot in the original strip (0..=len).
     /// Selection and all space contents remain attached to their stable IDs.
     pub fn move_space(&mut self, id: SpaceId, slot: usize) -> bool {
         let Some(from) = self.spaces.iter().position(|space| space.id == id) else {
             return false;
         };
-        let slot = slot.min(self.spaces.len());
+        let boundary = self.spaces.iter().take_while(|s| s.pinned).count();
+        let slot = if self.spaces[from].pinned {
+            slot.min(boundary)
+        } else {
+            slot.clamp(boundary, self.spaces.len())
+        };
         let to = if slot > from { slot - 1 } else { slot };
         if from == to {
             return false;

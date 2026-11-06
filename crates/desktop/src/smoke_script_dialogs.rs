@@ -1,4 +1,4 @@
-//! Real WebKit calls, native sheets and AppKit keyboard dispatch, offline.
+//! Real WebKit calls and native sheets, with optional OS-driven keyboard checks.
 use crate::{
     app::BrowserApp,
     macos_script_dialogs::test_alert,
@@ -6,24 +6,32 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use gpui::*;
-use objc2::{MainThreadMarker, rc::Retained};
-use objc2_app_kit::{
-    NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSTextField,
-};
-use objc2_foundation::{NSPoint, NSString};
+use objc2::rc::Retained;
+use objc2_app_kit::{NSAlert, NSTextField};
+use objc2_foundation::NSString;
 
 async fn sheet(cx: &mut AsyncWindowContext) -> Result<Retained<NSAlert>> {
     for _ in 0..40 {
         pause(cx).await;
         if let Some(alert) = test_alert() {
+            pause(cx).await;
             return Ok(alert);
         }
     }
     anyhow::bail!("JavaScript did not show a native sheet")
 }
 
+fn os_key(code: u16, command: bool, text: Option<&str>) {
+    println!(
+        "AXOLOTL_DIALOG_KEY {}",
+        serde_json::json!({"pid":std::process::id(),"key_code":code,"command":command,"text":text})
+    );
+}
+
 fn key(alert: &NSAlert, cancel: bool) -> Result<()> {
-    if std::env::args().any(|arg| arg == "--smoke-dialog-direct") {
+    if std::env::args().any(|arg| arg == "--smoke-dialog-os") {
+        os_key(if cancel { 53 } else { 36 }, false, None);
+    } else {
         // Main thread, live NSAlert-owned button and its AppKit target/action.
         unsafe {
             alert
@@ -31,18 +39,6 @@ fn key(alert: &NSAlert, cancel: bool) -> Result<()> {
                 .objectAtIndex(usize::from(cancel))
                 .performClick(None);
         }
-        return Ok(());
-    }
-    let window = alert.window();
-    window.makeKeyWindow();
-    let text = NSString::from_str(if cancel { "\u{1b}" } else { "\r" });
-    let app = NSApplication::sharedApplication(MainThreadMarker::new().unwrap());
-    for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
-        let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
-            kind, NSPoint::new(0.,0.), NSEventModifierFlags::empty(), 0., window.windowNumber(), None,
-            &text, &text, false, if cancel { 53 } else { 36 },
-        ).context("Create sheet keyboard event")?;
-        app.postEvent_atStart(&event, false);
     }
     Ok(())
 }
@@ -115,6 +111,12 @@ pub async fn run(
             Some("你好 🦎"),
         ),
         (
+            "prompt('Keyboard editing', 'replace me')",
+            serde_json::json!("typed"),
+            false,
+            Some("typed"),
+        ),
+        (
             "prompt('Cancel prompt', 'default')",
             serde_json::Value::Null,
             true,
@@ -133,7 +135,16 @@ pub async fn run(
             alert.messageText().to_string().contains("127.0.0.1"),
             "Missing initiating frame host"
         );
-        if let Some(input) = input {
+        if call.contains("Keyboard editing")
+            && std::env::args().any(|arg| arg == "--smoke-dialog-os")
+        {
+            os_key(0, true, None); // Select the supplied default text.
+            os_key(0, false, Some("typed"));
+            os_key(0, true, None); // Select/copy, delete and paste through Edit.
+            os_key(8, true, None);
+            os_key(51, false, None);
+            os_key(9, true, None);
+        } else if let Some(input) = input {
             let field = alert
                 .accessoryView()
                 .context("Prompt input missing")?
@@ -152,10 +163,6 @@ pub async fn run(
                 "Prompt lost default text"
             );
             if let Ok(path) = std::env::var("AXOLOTL_DIALOG_SNAPSHOT") {
-                ensure!(
-                    !std::env::args().any(|arg| arg == "--smoke-dialog-direct"),
-                    "OS screenshots require an unlocked graphical session; omit AXOLOTL_DIALOG_SNAPSHOT for direct button tests"
-                );
                 let status = std::process::Command::new("screencapture")
                     .args([
                         "-x",
@@ -168,16 +175,17 @@ pub async fn run(
             }
         }
         key(&alert, cancel)?;
-        for _ in 0..30 {
+        for _ in 0..100 {
             pause(cx).await;
             if test_alert().is_none() {
                 break;
             }
         }
         ensure!(test_alert().is_none(), "Sheet did not dismiss: {call}");
+        let actual = eval(&host, tab, "answer", cx).await?;
         ensure!(
-            eval(&host, tab, "answer", cx).await? == expected,
-            "Incorrect dialog result: {call}"
+            actual == expected,
+            "Incorrect dialog result: {call}: expected {expected}, got {actual}"
         );
     }
     // window.open still creates a related webview with its own dialog delegate.
@@ -236,13 +244,19 @@ pub async fn run(
     .await?;
     let alert = sheet(cx).await?;
     key(&alert, false)?;
-    pause(cx).await;
+    for _ in 0..100 {
+        pause(cx).await;
+        if test_alert().is_none() {
+            break;
+        }
+    }
+    ensure!(test_alert().is_none(), "Final alert did not dismiss");
     Ok(vec![
         "native alert/confirm/prompt values, defaults, empty and Unicode input",
-        if std::env::args().any(|arg| arg == "--smoke-dialog-direct") {
-            "native NSAlert button actions; foreground keyboard unverified"
+        if std::env::args().any(|arg| arg == "--smoke-dialog-os") {
+            "OS Return/Escape, prompt typing, selection, copy/delete/paste"
         } else {
-            "Return/Escape through AppKit event queue"
+            "native NSAlert button actions; foreground keyboard unverified"
         },
         "frame and window.open popup dialogs",
         "page-close sheet cleanup and subsequent dialog",

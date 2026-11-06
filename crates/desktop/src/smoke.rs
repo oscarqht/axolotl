@@ -28,7 +28,9 @@ pub fn start(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
     window.spawn(cx, async move |cx| {
         let started = Instant::now();
         let result = run(&view,cx).await;
-        let kind = if std::env::args().any(|arg| arg == "--smoke-keyboard-os") {
+        let kind = if std::env::args().any(|arg| arg == "--smoke-dialog-os") {
+            "OS keyboard dialog checks; programmatic native lifecycle checks"
+        } else if std::env::args().any(|arg| arg == "--smoke-keyboard-os") {
             "OS keyboard editing; programmatic AppKit shortcut and shell checks"
         } else {
             "programmatic native smoke; OS mouse/keyboard not simulated"

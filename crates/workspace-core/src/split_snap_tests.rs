@@ -10,18 +10,32 @@ fn close(actual: f32, expected: f32) {
 }
 
 #[test]
-fn nested_third_accepts_exact_ten_pixel_boundary_without_cancellation() {
+fn overlapping_snap_ranges_choose_the_nearest_stop() {
+    let divider = Divider {
+        id: 1,
+        axis: Axis::Horizontal,
+        bounds: Rect::new(497., 0., 6., 600.),
+        container: Rect::new(0., 0., 1000., 600.),
+    };
+    // Both quarter and third are within 50px; the closest one wins.
+    for (pointer, stop) in [(285., 250.), (300., 1000. / 3.)] {
+        close(divider.drag_ratio(pointer, 0.) * 994. + 3., stop);
+    }
+}
+
+#[test]
+fn nested_third_accepts_exact_fifty_pixel_boundary_without_cancellation() {
     for axis in [Axis::Horizontal, Axis::Vertical] {
         let divider = Divider {
             id: 1,
             axis,
             bounds: Rect::new(1047., 1047., 6., 6.),
-            container: Rect::new(703., 703., 691., 691.),
+            container: Rect::new(703., 703., 1691., 1691.),
         };
-        let stop = 703. + 691. / 3.;
-        for offset in [-10., 10.] {
+        let stop = 703. + 1691. / 3.;
+        for offset in [-50., 50.] {
             let ratio = divider.drag_ratio(stop + offset, stop + offset);
-            close(703. + ratio * 685. + 3., stop);
+            close(703. + ratio * 1685. + 3., stop);
         }
     }
 }
@@ -36,11 +50,11 @@ fn all_stops_snap_by_parent_center_in_both_axes_and_release_freely() {
             first: Box::new(Layout::Pane(2)),
             second: Box::new(Layout::Pane(3)),
         };
-        let bounds = Rect::new(123., 217., 1200., 1200.);
+        let bounds = Rect::new(123., 217., 2400., 2400.);
         let divider = layout.geometry(bounds, 6., 80.).dividers[0];
         for fraction in [0.25, 1. / 3., 0.5, 2. / 3., 0.75] {
-            let stop = 1200. * fraction;
-            for offset in [-10.25, -10., -4., 0., 4., 10., 10.25] {
+            let stop = 2400. * fraction;
+            for offset in [-50.25, -50., -25., 0., 25., 50., 50.25] {
                 let position = stop + offset;
                 let (x, y) = match axis {
                     Axis::Horizontal => (bounds.x + position, bounds.y + 50.),
@@ -53,7 +67,7 @@ fn all_stops_snap_by_parent_center_in_both_axes_and_release_freely() {
                     Axis::Horizontal => x - bounds.x,
                     Axis::Vertical => y - bounds.y,
                 };
-                close(actual, if offset.abs() <= 10. { stop } else { position });
+                close(actual, if offset.abs() <= 50. { stop } else { position });
             }
         }
     }
@@ -70,7 +84,7 @@ fn nested_snap_uses_its_own_parent_with_nonstandard_gutter() {
             let parent = divider.container;
             let x = parent.x + parent.width * fraction;
             let y = parent.y + parent.height * fraction;
-            for offset in [-10., 5., 10.] {
+            for offset in [-5., 0., 5.] {
                 workspace.resize_split(divider.id, divider.drag_ratio(x + offset, y + offset));
                 let placed = workspace.active_space().layout.geometry(bounds, 12., 80.);
                 let placed = *placed.dividers.iter().find(|d| d.id == divider.id).unwrap();

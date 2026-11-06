@@ -1,4 +1,4 @@
-let historyItems = [], historySelection = -1, historyInput = null, historyTab = null;
+let historyItems = [], historySelection = -1, historyInput = null, historyTab = null, historyQuery = null;
 function renderHistory() {
   const list = document.querySelector('#history');
   const open = historyItems.length > 0;
@@ -23,11 +23,12 @@ function renderHistory() {
   list.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest'});
 }
 window.clearHistory = () => {
+  historyQuery = null;
   historyItems = []; historySelection = -1; renderHistory();
   send({type:'history-open',value:false});
 };
 window.updateHistory = (query, items) => {
-  if (!historyInput?.isConnected || historyInput.value !== query) return;
+  if (!historyInput?.isConnected || historyQuery !== query || historyInput.value !== query) return;
   historyItems = items; historySelection = -1; renderHistory();
   send({type:'history-open',value:items.length > 0});
 };
@@ -36,7 +37,13 @@ function bindHistory(input, tab) {
   input.setAttribute('role','combobox'); input.setAttribute('aria-autocomplete','list');
   input.setAttribute('aria-controls','history'); input.setAttribute('aria-expanded','false');
   input.autocomplete='off'; input.spellcheck=false;
-  input.oninput = () => { window.clearHistory(); send({type:'history-query',tab,value:input.value}); };
+  input.oninput = () => {
+    // Keep the current list and native bounds until replacement matches arrive.
+    if (!input.value.trim()) window.clearHistory();
+    else historyQuery = input.value;
+    send({type:'history-query',tab,value:input.value});
+  };
+  input.onblur = () => window.clearHistory();
   window.clearHistory();
 }
 function historyKey(e, input, tab) {

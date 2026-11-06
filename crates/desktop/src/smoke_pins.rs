@@ -12,7 +12,7 @@ async fn popup_action(
     cx: &mut AsyncWindowContext,
 ) -> Result<()> {
     // Actions may dismiss the popup; check the resulting state after IPC.
-    view.update_in(cx, |app, _, _| app.pins.evaluate(script))??;
+    view.update_in(cx, |app, _, _| app.pins.evaluate(false, script))??;
     pause(cx).await;
     Ok(())
 }
@@ -36,6 +36,24 @@ async fn popup_read(
         pause(cx).await;
     }
     anyhow::bail!("Popup read timed out: {script}")
+}
+
+async fn check_popup_corners(
+    view: &WeakEntity<BrowserApp>,
+    cx: &mut AsyncWindowContext,
+) -> Result<()> {
+    view.update_in(cx, |app, _, _| -> Result<()> {
+        let id = app.pins.open.context("Pinned popup is closed")?;
+        let state = app.host.panel_clip_state(id)?;
+        ensure!(
+            state["radius"] == f64::from(crate::render::PANEL_CORNER_RADIUS)
+                && state["clips"] == true
+                && state["corners"] == 15,
+            "pinned popup lost four-corner clipping: {state}"
+        );
+        Ok(())
+    })??;
+    Ok(())
 }
 
 async fn wait_popup_closed(
@@ -267,14 +285,108 @@ pub async fn run(
         );
         Ok::<_, anyhow::Error>(())
     })??;
+    #[cfg(target_os = "macos")]
+    {
+        for dark in [true, false] {
+            host.set_test_appearance(first, Some(dark))?;
+            pause(cx).await;
+            view.update_in(cx, |_, _, cx| {
+                use gpui_component::ActiveTheme;
+                let colors = crate::chrome_theme::ChromeColors::current(cx);
+                ensure!(
+                    cx.theme().is_dark() == dark,
+                    "theme did not follow native appearance"
+                );
+                ensure!(
+                    colors.selected_space == if dark { 0x244c43 } else { 0xd4eee4 }
+                        && colors.selected_space != colors.surface
+                        && colors.accent != colors.border,
+                    "selected-space fill and border are not distinct in the current theme"
+                );
+                Ok::<_, anyhow::Error>(())
+            })??;
+        }
+        host.set_test_appearance(first, None)?;
+        pause(cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(path) =
+        std::env::args().find_map(|a| a.strip_prefix("--smoke-pins-snapshot=").map(str::to_owned))
+    {
+        host.save_test_snapshot(first, &format!("{path}.page.png"))?;
+        let rect = view.update_in(cx, |app, window, _| {
+            app.pins.snapshot(&path);
+            app.pin_rect(window).unwrap()
+        })?;
+        std::fs::write(format!("{path}.json"), serde_json::to_string(&rect)?)?;
+        for _ in 0..50 {
+            if ["shield", "page", "grip"]
+                .iter()
+                .all(|s| std::path::Path::new(&format!("{path}.{s}.png")).exists())
+            {
+                break;
+            }
+            pause(cx).await;
+        }
+    }
+    check_popup_corners(view, cx).await?;
     let before_resize = view.update_in(cx, |app, window, _| app.pin_rect(window).unwrap())?;
-    ensure!(popup_read(view, "(()=>{const r=grip.getBoundingClientRect(),f=frame.getBoundingClientRect();return r.right<=f.right&&f.right-r.right<5&&r.bottom<=f.bottom&&f.bottom-r.bottom<5&&getComputedStyle(grip).cursor==='nwse-resize'})()", cx).await? == true, "resize grip is not in bottom-right corner");
-    popup_action(view, "grip.setPointerCapture=()=>{};grip.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,clientX:100,clientY:100}));grip.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:1,clientX:120,clientY:70}));grip.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1}))", cx).await?;
+    let page_size = eval(&host, first, "({width:innerWidth,height:innerHeight})", cx).await?;
+    ensure!(
+        (page_size["width"].as_f64().unwrap_or_default() - f64::from(before_resize.width)).abs()
+            < 1.
+            && (page_size["height"].as_f64().unwrap_or_default() - f64::from(before_resize.height))
+                .abs()
+                < 1.,
+        "pinned page does not fill its frame: {page_size}, {before_resize:?}"
+    );
+    #[cfg(target_os = "macos")]
+    {
+        host.test_click_at(first, 40., 18., false)?;
+        pause(cx).await;
+        ensure!(
+            eval(
+                &host,
+                first,
+                "document.activeElement===document.querySelector('input')",
+                cx
+            )
+            .await?
+                == true,
+            "resize overlay intercepted page interaction"
+        );
+    }
+    // The corner is a separate native child above the page, not an external footer.
+    #[cfg(target_os = "macos")]
+    view.update_in(cx, |app, window, _| {
+        app.pins.check_grip(app.pin_rect(window).unwrap())
+    })??;
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSEventType;
+        let x = f64::from(before_resize.x + before_resize.width - 10.);
+        let y = f64::from(before_resize.y + before_resize.height - 8.);
+        for (kind, dx, dy) in [
+            (NSEventType::LeftMouseDown, 0., 0.),
+            (NSEventType::LeftMouseDragged, 10., -15.),
+            (NSEventType::LeftMouseDragged, 20., -30.),
+            (NSEventType::LeftMouseUp, 20., -30.),
+        ] {
+            view.update_in(cx, |app, _, _| app.pins.grip_mouse(kind, x + dx, y + dy))??;
+            pause(cx).await;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        view.update_in(cx, |app, _, _| app.pins.evaluate(true, "grip.setPointerCapture=()=>undefined;grip.dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,screenX:100,screenY:100}));grip.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,screenX:120,screenY:70}));grip.dispatchEvent(new PointerEvent('pointerup',{pointerId:1}))"))??;
+        pause(cx).await;
+    }
     view.update_in(cx, |app,window,_| {
         let after=app.pin_rect(window).unwrap();
         ensure!((after.x-before_resize.x).abs()<1. && (after.width-before_resize.width-20.).abs()<1. && (after.height-before_resize.height+30.).abs()<1., "bottom-right resizing moved origin or used wrong deltas: {before_resize:?} -> {after:?}");
         Ok::<_,anyhow::Error>(())
     })??;
+    check_popup_corners(view, cx).await?;
     popup_action(view, "send('resize',{width:500,height:420});true", cx).await?;
     pause(cx).await;
     popup_action(
@@ -345,12 +457,13 @@ pub async fn run(
     })??;
     pause(cx).await;
     pause(cx).await;
-    popup_action(
-        view,
-        "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
-        cx,
-    )
-    .await?;
+    // Escape also dismisses when the corner surface owns keyboard focus.
+    view.update_in(cx, |app, _, _| {
+        app.pins.evaluate(
+            true,
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
+        )
+    })??;
     pause(cx).await;
     view.update_in(cx, |app, window, cx| {
         ensure!(app.pins.open.is_none(), "Escape did not dismiss");
@@ -383,6 +496,6 @@ pub async fn run(
     host.forward(first)?;
     crate::smoke::wait_title(&host, first, "Pin second", cx).await?;
     Ok(vec![
-        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
+        "native chip menu and captured header-drop completion pin live pages; cross-space popups preserve DOM/form/scroll/history state and page favicon; switching, repeat click, outside click and Escape dismiss; flush page bounds; internal native bottom-right resize grip and fixed origin; emoji search/select/clear/cancel and session persistence; resize/order/session round trip; context-menu unpin targets focused pane; bounded narrow-window overflow",
     ])
 }

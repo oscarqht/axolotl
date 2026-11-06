@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "suite_version": 1,
+  "native_sources": [
+    "crates/desktop/src/benchmark.rs",
+    "crates/desktop/src/benchmark_actions.rs",
+    "crates/desktop/src/benchmark_extra_actions.rs",
+    "crates/desktop/src/benchmark_fixture.rs",
+    "crates/desktop/src/benchmark_web.rs",
+    "crates/desktop/assets/benchmark-page.html"
+  ],
+  "required": {
+    "actions": [
+      "action.space.create", "action.space.close", "action.space.switch", "action.space.reorder",
+      "action.panel.create", "action.panel.close", "action.panel.focus", "action.panel.dock.edge", "action.panel.merge",
+      "action.tab.create", "action.tab.close", "action.tab.switch", "action.tab.reorder", "action.tab.ipc_select", "action.tab.drag_preview_start",
+      "action.tab.split.left", "action.tab.split.right", "action.tab.split.top", "action.tab.split.bottom", "action.tab.dock.center",
+      "action.split.resize", "action.pin.open", "action.pin.close"
+    ],
+    "web": [
+      "web.simple.command_to_ready_ms", "web.simple.ttfb_ms", "web.simple.dom_content_loaded_ms", "web.simple.load_ms",
+      "web.heavy_cold.command_to_ready_ms", "web.heavy_cold.ttfb_ms", "web.heavy_cold.dom_content_loaded_ms", "web.heavy_cold.load_ms",
+      "web.heavy_warm.command_to_ready_ms", "web.heavy_warm.ttfb_ms", "web.heavy_warm.dom_content_loaded_ms", "web.heavy_warm.load_ms",
+      "web.reload.command_to_ready_ms", "web.history.back_ms", "web.history.forward_ms", "web.dom.update_layout_ms", "web.javascript.compute_ms", "web.event_loop.delay_ms"
+    ],
+    "energy": []
+  }
+}

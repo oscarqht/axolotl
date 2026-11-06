@@ -141,7 +141,7 @@ pub async fn run(
                 };
                 let target = start + length * stop;
                 let mut position = center(original);
-                for offset in [-11., -10., 0., 10., 11., 0.] {
+                for offset in [-51., -50., 0., 50., 51., 0.] {
                     match axis {
                         Axis::Horizontal => position.x = px(target + offset),
                         Axis::Vertical => position.y = px(target + offset),
@@ -160,11 +160,21 @@ pub async fn run(
                         Axis::Horizontal => f32::from(actual.x),
                         Axis::Vertical => f32::from(actual.y),
                     };
-                    let expected = if offset.abs() <= 10. {
-                        target
+                    // Wider snap ranges can overlap in small nested panels.
+                    // The nearest stop wins, while pane limits still take priority.
+                    let pointer = target + offset;
+                    let nearest = [0.25, 1. / 3., 0.5, 2. / 3., 0.75]
+                        .into_iter()
+                        .map(|fraction| start + length * fraction)
+                        .min_by(|a, b| (pointer - a).abs().total_cmp(&(pointer - b).abs()))
+                        .unwrap();
+                    let expected = if (pointer - nearest).abs() <= 50.01 {
+                        nearest
                     } else {
-                        target + offset
+                        pointer
                     };
+                    let margin = ((length - 6.) * 0.1).max(100.) + 3.;
+                    let expected = expected.clamp(start + margin, start + length - margin);
                     ensure!(
                         (actual - expected).abs() < 0.02,
                         "{axis:?} nested={nested} stop={stop} offset={offset}: center {actual}, expected {expected}"
@@ -271,7 +281,7 @@ pub async fn run(
             }
             if !preview {
                 eprintln!(
-                    "AXOLOTL_SPLIT_SNAP {axis:?} nested={nested}: five stops, exact 10px entry, 11px exit, release, pane/ratio limits passed"
+                    "AXOLOTL_SPLIT_SNAP {axis:?} nested={nested}: five stops, 50px range, nearest overlapping stop, release, pane/ratio limits passed"
                 );
             }
         }
@@ -307,7 +317,7 @@ pub async fn run(
         vec!["native nested vertical split preview at 75%"]
     } else {
         vec![
-            "queued AppKit mouse events through GPUI: both axes, nested parent-relative five stops, inclusive 10px entry, 11px exit, snapped release, post-release movement and existing pane/ratio limits",
+            "queued AppKit mouse events through GPUI: both axes, nested parent-relative five stops, inclusive 50px range, nearest overlapping stop, snapped release, post-release movement and existing pane/ratio limits",
         ]
     })
 }

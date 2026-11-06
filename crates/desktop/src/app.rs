@@ -91,8 +91,12 @@ impl SwipeState {
 pub struct BrowserApp {
     pub sleep: crate::sleep::SleepState,
     pub swipes: HashMap<PaneId, SwipeState>,
+    /// Page momentum must not share accumulation with floating-bar tab swipes.
+    pub page_swipes: HashMap<TabId, SwipeState>,
+    pub floating_panels: crate::floating_panels::FloatingPanels,
     pub bars: HashMap<PaneId, crate::floating_bar::FloatingBar>,
     pub(crate) chrome_views: HashSet<TabId>,
+    pub(crate) view_errors: HashSet<TabId>,
     pub model: crate::persistence::TrackedWorkspace,
     pub pins: crate::pinned_tabs::PinnedUi,
     pub browsing_history: Option<crate::browsing_history::BrowsingHistory>,
@@ -254,6 +258,8 @@ impl BrowserApp {
         })
         .detach();
         Self::install_space_shortcuts(window, cx);
+        Self::install_page_tools(cx);
+        Self::install_history_shortcuts(cx);
         #[cfg(target_os = "macos")]
         Self::install_copy_url(cx);
         let preferences = crate::preferences::Preferences::restore();
@@ -285,8 +291,11 @@ impl BrowserApp {
             sleep: crate::sleep::SleepState::restore(),
             last_fullscreen: window.is_fullscreen(),
             bars: HashMap::new(),
+            floating_panels: Default::default(),
             chrome_views: HashSet::new(),
+            view_errors: HashSet::new(),
             swipes: HashMap::new(),
+            page_swipes: HashMap::new(),
             model,
             browsing_history,
             visit_ids: HashMap::new(),
@@ -435,6 +444,9 @@ impl BrowserApp {
             }
             TabTarget::Page(pane, tab) => {
                 self.model.switch_tab(pane, tab);
+                if self.model.active_space().floating_panel(pane).is_some() {
+                    self.reveal_floating(pane);
+                }
             }
         }
         match target {
@@ -519,8 +531,9 @@ impl BrowserApp {
         cx.notify();
     }
     pub(crate) fn close_tab(&mut self, pane: PaneId, tab: TabId) {
-        let replaces_last =
-            self.model.active_space().panes.len() == 1 && self.model.focused_pane().tabs.len() == 1;
+        let replaces_last = self.model.spaces.len() == 1
+            && self.model.active_space().panes.len() == 1
+            && self.model.focused_pane().tabs.len() == 1;
         if self.model.close_tab(pane, tab) && replaces_last {
             let replacement = self.active_tab();
             self.model.tab_mut(replacement).unwrap().url = self.preferences.homepage_url.clone();
@@ -531,13 +544,32 @@ impl BrowserApp {
             self.cancel_edit(window, cx);
         }
         self.model.focus_pane(pane);
+        if self.model.active_space().floating_panel(pane).is_some() {
+            self.reveal_floating(pane);
+        }
         self.wake_tab(self.active_tab());
         self.notifications.remove(&self.active_tab());
         self.sync_address(window, cx);
         cx.notify();
     }
+    fn swipe_history(&mut self, tab: TabId, forward: bool) {
+        // The engine naturally does nothing at either end of this page's history.
+        // Do not use command(): it targets the focused page (or an open preview).
+        let result = if forward {
+            self.host.forward(tab)
+        } else {
+            self.host.back(tab)
+        };
+        self.report(result);
+    }
+
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.is_some() {
+            return;
+        }
+        if matches!(command, Command::Back | Command::Forward) {
+            self.navigate_history(matches!(command, Command::Forward));
+            cx.notify();
             return;
         }
         if self.link_popup.is_some() {
@@ -548,14 +580,6 @@ impl BrowserApp {
                 }
                 Command::Reload => {
                     self.report(self.host.reload(crate::link_popup::POPUP_TAB));
-                    return;
-                }
-                Command::Back => {
-                    self.report(self.host.back(crate::link_popup::POPUP_TAB));
-                    return;
-                }
-                Command::Forward => {
-                    self.report(self.host.forward(crate::link_popup::POPUP_TAB));
                     return;
                 }
                 _ => self.close_link_popup(window, cx),
@@ -594,8 +618,7 @@ impl BrowserApp {
                 self.sync_address(window, cx);
             }
             Command::Reload => self.report(self.host.reload(self.active_tab())),
-            Command::Back => self.report(self.host.back(self.active_tab())),
-            Command::Forward => self.report(self.host.forward(self.active_tab())),
+            Command::Back | Command::Forward => unreachable!("history handled above"),
             #[cfg(feature = "smoke")]
             Command::Split(axis) => {
                 self.model
@@ -688,6 +711,7 @@ impl BrowserApp {
         self.scroll_space_drag(cx);
         self.poll_space_menu(window, cx);
         self.poll_bars(window, cx);
+        self.poll_floating_panels(window, cx);
         self.poll_sleep(window, cx);
         if let Some(preview) = &self.drag_preview {
             let result = preview.update(
@@ -734,6 +758,13 @@ impl BrowserApp {
             };
             #[cfg(target_os = "macos")]
             if self.handle_native_popup_event(&event, &mut popup_ids, window, cx) {
+                continue;
+            }
+            // Route by the originating native page before pin/preview handlers.
+            if let BrowserEvent::Shortcut(tab, key) = &event
+                && let Some(operation) = crate::page_tools::Operation::from_command(key)
+            {
+                self.report(self.host.page_tool(*tab, operation));
                 continue;
             }
             if self.handle_popup_event(&event, window, cx) {
@@ -926,17 +957,15 @@ impl BrowserApp {
                         .iter()
                         .find(|p| p.active_tab == tab)
                         .map(|p| p.id);
-                    if let Some(pane) = pane {
+                    if pane.is_some() {
                         let direction =
-                            self.swipes
-                                .entry(pane)
+                            self.page_swipes
+                                .entry(tab)
                                 .or_default()
                                 .feed(x, y, Instant::now());
                         if let Some(forward) = direction {
                             self.cancel_edit(window, cx);
-                            self.model.cycle_tab(pane, forward);
-                            self.sync_address(window, cx);
-                            self.reveal_focused();
+                            self.swipe_history(tab, forward);
                         }
                     }
                 }
@@ -972,6 +1001,11 @@ impl BrowserApp {
                         continue;
                     };
                     if self.dragging.is_some() || self.tab_drag_active() {
+                        continue;
+                    }
+                    if key == "history-back" || key == "history-forward" {
+                        self.cancel_edit(window, cx);
+                        self.swipe_history(tab, key == "history-forward");
                         continue;
                     }
                     self.model.focus_pane(pane);

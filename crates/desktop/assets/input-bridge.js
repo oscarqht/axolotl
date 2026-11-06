@@ -34,6 +34,17 @@
     });
     window.addEventListener('keydown', event => {
         if (!event.isTrusted) return;
+        if (window.__axolotlFindKey?.(event)) return;
+        // Find consumes its own Escape before pin/preview dismissal.
+        if (event.key === 'Escape' && window.__axolotlCloseFind?.()) {
+            event.preventDefault(); event.stopImmediatePropagation(); return;
+        }
+        if (!event.altKey && (__LINK_MODIFIER__)) {
+            const key = event.key.toLowerCase();
+            const command = key === '+' || key === '=' ? 'zoom-in' : !event.shiftKey ?
+                {'-':'zoom-out', '0':'zoom-reset', f:'find-page'}[key] : null;
+            if (command) { event.preventDefault(); event.stopImmediatePropagation(); send(command); return; }
+        }
         if (event.key === 'Escape') {
             send('escape');
             return;

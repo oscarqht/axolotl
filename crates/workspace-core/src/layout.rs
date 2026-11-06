@@ -1,4 +1,5 @@
 use crate::{PaneId, SplitId};
+use serde::{Deserialize, Serialize};
 
 /// Horizontal splits place panes side by side; vertical splits stack them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8,7 +9,8 @@ pub enum Axis {
 }
 
 /// Side selected by a page-content edge drop.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SplitEdge {
     Left,
     Right,
@@ -87,7 +89,7 @@ pub enum Layout {
     },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
@@ -123,7 +125,7 @@ pub struct Divider {
 
 impl Divider {
     /// Convert a logical pointer position to a resize ratio, snapping the gutter's
-    /// center within ten pixels of a fraction of this split's immediate parent.
+    /// center within fifty pixels of a fraction of this split's immediate parent.
     /// Layout placement still enforces the existing pane minimum sizes.
     pub fn drag_ratio(&self, x: f32, y: f32) -> f32 {
         let (position, start, length, gap) = match self.axis {
@@ -138,15 +140,15 @@ impl Divider {
         let nearest = [0.25, 1. / 3., 0.5, 2. / 3., 0.75]
             .into_iter()
             // Compare in pointer coordinates so subtracting a nested parent's
-            // origin cannot round an exact ten-pixel distance above the limit.
+            // origin cannot round an exact fifty-pixel distance above the limit.
             .map(|fraction| start + length * fraction)
             .min_by(|a, b| (position - a).abs().total_cmp(&(position - b).abs()));
         let position = nearest
             .filter(|stop| {
                 // Equivalent fraction calculations can differ by one float
-                // precision unit. Keep the inclusive boundary at logical 10px.
+                // precision unit. Keep the inclusive boundary at logical 50px.
                 let rounding = f32::EPSILON * position.abs().max(stop.abs());
-                position.is_finite() && (position - stop).abs() <= 10. + rounding
+                position.is_finite() && (position - stop).abs() <= 50. + rounding
             })
             .unwrap_or(position);
         (position - start - gap / 2.) / (length - gap).max(1.)

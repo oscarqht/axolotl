@@ -1,4 +1,59 @@
-# Split separator snapping
+# Page-only swipe history navigation
+
+Run on 2026-11-06 in `bro-page-swipe-history` on macOS.
+
+Page wheel gestures now use the source tab's Back/Forward operations rather than
+cycling its pane's tabs. Page touch gestures use separate authenticated
+`history-back` / `history-forward` commands. Positive wheel deltas go forward;
+negative deltas go back, retaining the system's trackpad scrolling direction.
+Touch swipes go right/back and left/forward. The existing engine history
+operations naturally do nothing when no entry exists in that direction.
+
+Floating-bar wheel/touch swipes, arrow-key selection and tab dragging retain their
+existing handlers. Page wheel accumulation is separate from the bar and keyed by
+tab, survives navigation/momentum, and is discarded when the tab closes. Existing
+thresholds, horizontal-scroll interception and vertical scrolling are unchanged.
+
+Verification:
+
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- `cargo check --workspace --all-targets --all-features --locked`: passed.
+- `cargo test --workspace --all-features --locked`: 119 passed; one existing
+  manual benchmark ignored. Gesture coverage checks momentum suppression,
+  thresholds, both wheel signs and authentication of history/tab commands.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`:
+  passed.
+- `cargo build --workspace --all-features --locked`: passed.
+- `node --test scripts/test-gestures.cjs`: five passed, running the exact shipped
+  page bridge with mocked events. Covers touch directions, once-per-gesture,
+  thresholds/cancellation, wheel normalization, vertical scrolling, pinch and
+  untrusted-input exclusion.
+- `node --test scripts/test-input-bridge.cjs`: ten passed, one existing Escape
+  expectation failed (`2 !== 1`). Both that test and `input-bridge.js` are
+  unchanged from the base; modified Escape is forwarded by the existing bridge.
+
+No physical trackpad/touch or native Windows verification was performed. The
+mocked bridge checks do not establish native end-to-end history navigation.
+Manual follow-up: visit several pages in one tab, swipe back/forward and beyond
+both history endpoints, repeat in a nonfocused split, check a long momentum tail,
+and verify the floating bar still switches tabs without changing page history.
+
+# 50-pixel snap range follow-up
+
+On 2026-11-06, increased the separator snap range from 10 to 50 logical pixels.
+Overlapping ranges select the nearest stop. Updated core and native regression
+expectations and the README to match.
+
+- All 44 core tests passed, including inclusive ±50px boundaries, free movement
+  beyond the range, both axes, nested geometry, and overlapping ranges.
+- Formatting and whitespace checks passed. Workspace Clippy passed with the
+  existing `collapsible_if` lint allowed.
+- Native queued-event verification was inconclusive: two runs observed separator
+  centers inconsistent with the submitted pointer positions (1047 vs 302 and
+  1183.9297 vs 353). Neither run is counted as passing 50px native verification.
+  The native panel capture below was produced during the initial implementation.
+
+# Initial 10-pixel split separator snapping
 
 Run on 2026-11-06 on macOS in `bro-snap-split-separators`.
 

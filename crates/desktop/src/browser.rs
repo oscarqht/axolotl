@@ -104,6 +104,9 @@ impl BrowserEvent {
 /// serialized into the layout core, so a future mobile adapter can share it.
 pub trait BrowserHost {
     #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_zoom(&self, tab: TabId) -> Result<f64>;
+
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_key(
         &self,
         tab: TabId,
@@ -120,7 +123,7 @@ pub trait BrowserHost {
     fn test_option_click(&self, tab: TabId) -> Result<()>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn test_option_click_at(&self, tab: TabId, x: f64, y: f64) -> Result<()>;
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     fn has_native_focus(&self, tab: TabId) -> Result<bool>;
     #[cfg(all(feature = "smoke", target_os = "macos"))]
     fn save_test_snapshot(&self, tab: TabId, path: &str) -> Result<()>;
@@ -137,6 +140,8 @@ pub trait BrowserHost {
     fn is_visible(&self, tab: TabId) -> bool;
     #[cfg(feature = "smoke")]
     fn is_loaded(&self, tab: TabId) -> bool;
+    fn focused_page(&self) -> Option<TabId>;
+    fn page_tool(&self, tab: TabId, operation: crate::page_tools::Operation) -> Result<()>;
     fn downloads(&self) -> Rc<RefCell<crate::downloads::DownloadManager>>;
     fn protection(&self) -> Rc<RefCell<crate::protection::Protection>>;
     fn ensure(&self, tab: TabId, url: &str, window: &Window, cx: &gpui::App) -> Result<()>;
@@ -159,6 +164,7 @@ pub trait BrowserHost {
     fn unload(&self, tab: TabId);
     fn probe_sleep(&self, tab: TabId, callback: Box<dyn Fn(String) + Send>) -> Result<()>;
     fn place(&self, tab: TabId, bounds: Bounds<Pixels>) -> Result<()>;
+    fn set_panel_corners(&self, tab: TabId, radius: f32, bottom_only: bool) -> Result<()>;
     fn show(&self, tab: TabId, visible: bool) -> Result<()>;
     fn raise(&self, tab: TabId) -> Result<()>;
     fn focus(&self, tab: TabId) -> Result<()>;
@@ -219,6 +225,8 @@ pub struct WryState {
     protection: Rc<RefCell<crate::protection::Protection>>,
     protection_revisions: RefCell<HashMap<TabId, (u64, crate::protection::Policy)>>,
     protection_notified: RefCell<String>,
+    site_zoom: RefCell<crate::page_tools::SiteZoom>,
+    unsaved_zoom: RefCell<HashMap<TabId, f64>>,
     views: RefCell<HashMap<TabId, Rc<WebView>>>,
     retired_views: RefCell<Vec<Rc<WebView>>>,
     identities: RefCell<HashMap<TabId, Arc<AtomicU64>>>,
@@ -243,6 +251,8 @@ impl Default for WryHost {
             protection: Rc::new(RefCell::new(crate::protection::Protection::restore())),
             protection_revisions: RefCell::new(HashMap::new()),
             protection_notified: RefCell::new(String::new()),
+            site_zoom: RefCell::new(crate::page_tools::SiteZoom::restore()),
+            unsaved_zoom: RefCell::new(HashMap::new()),
             views: RefCell::new(HashMap::new()),
             retired_views: RefCell::new(Vec::new()),
             identities: RefCell::new(HashMap::new()),
@@ -280,7 +290,7 @@ impl WryHost {
         let point = webview.convertPoint_toView(point, None);
         for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
             let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-                kind, point, flags, 0., window.windowNumber(), None, 0, 1, 1.,
+                kind, point, flags, objc2_foundation::NSProcessInfo::processInfo().systemUptime(), window.windowNumber(), None, 0, 1, 1.,
             ).context("create native click event")?;
             // NSWindow hit testing delivers a genuine WebKit input event, not a
             // JavaScript dispatchEvent (which the bridge intentionally rejects).
@@ -411,7 +421,8 @@ impl WryHost {
                 let event = match command {
                     "focus" => BrowserEvent::Focused(tab),
                     "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
-                    | "reload" | "swipe-next" | "swipe-prev" => {
+                    | "reload" | "swipe-next" | "swipe-prev" | "history-back"
+                    | "history-forward" | "zoom-in" | "zoom-out" | "zoom-reset" | "find-page" => {
                         BrowserEvent::Shortcut(tab, command.to_owned())
                     }
                     _ => return,
@@ -553,6 +564,17 @@ impl WryHost {
                     sender.try_send(BrowserEvent::Closed(close_identity.load(Ordering::Relaxed)));
             })?;
             self.popup_delegates.borrow_mut().insert(tab, delegate);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let sender = self.sender.clone();
+            let identity = identity.clone();
+            view.install_page_shortcuts(move |command| {
+                let _ = sender.try_send(BrowserEvent::Shortcut(
+                    identity.load(Ordering::Relaxed),
+                    command.into(),
+                ));
+            })?;
         }
         self.views.borrow_mut().insert(tab, view);
         self.identities.borrow_mut().insert(tab, identity);
@@ -697,7 +719,7 @@ impl BrowserHost for WryHost {
     fn test_option_click_at(&self, tab: TabId, x: f64, y: f64) -> Result<()> {
         self.native_test_click(tab, x, y, objc2_app_kit::NSEventModifierFlags::Option)
     }
-    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     fn has_native_focus(&self, tab: TabId) -> Result<bool> {
         use objc2_app_kit::NSView;
         use wry::WebViewExtMacOS;
@@ -759,6 +781,10 @@ impl BrowserHost for WryHost {
         if !allowed_url(url) {
             bail!("Only HTTP, HTTPS, and about:blank pages are supported");
         }
+        #[cfg(feature = "smoke")]
+        if crate::smoke::hold_launch_view() {
+            return Ok(());
+        }
         if !self.protection.borrow().native.ready() {
             if let Some(error) = self.protection.borrow().native.error() {
                 bail!("Native protection: {error}");
@@ -774,6 +800,7 @@ impl BrowserHost for WryHost {
         crate::drag_preview::capture(self.get(tab)?.as_ref(), image)
     }
     fn unload(&self, tab: TabId) {
+        self.unsaved_zoom.borrow_mut().remove(&tab);
         #[cfg(target_os = "macos")]
         {
             self.pending_popups.borrow_mut().remove(&tab);
@@ -795,6 +822,64 @@ impl BrowserHost for WryHost {
         )?;
         Ok(())
     }
+    fn focused_page(&self) -> Option<TabId> {
+        let ids: Vec<_> = self.visible.borrow().iter().copied().collect();
+        ids.into_iter().find(|id| {
+            #[cfg(target_os = "macos")]
+            {
+                self.has_native_focus(*id).unwrap_or(false)
+            }
+            #[cfg(target_os = "windows")]
+            {
+                self.get(*id).is_ok_and(|view| view.has_focus())
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            {
+                let _ = id;
+                false
+            }
+        })
+    }
+
+    fn page_tool(&self, tab: TabId, operation: crate::page_tools::Operation) -> Result<()> {
+        use crate::page_tools::{Operation, hostname};
+        let view = self.get(tab)?;
+        if operation == Operation::Find {
+            view.focus()?;
+            view.evaluate_script(include_str!("../assets/page-find.js"))?;
+            return Ok(());
+        }
+        let url = view.url()?;
+        let value = if hostname(&url).is_some() {
+            self.site_zoom.borrow_mut().change(&url, operation)?
+        } else {
+            // Internal documents have no website key: keep their zoom per view.
+            let mut levels = self.unsaved_zoom.borrow_mut();
+            let current = levels.get(&tab).copied().unwrap_or(1.);
+            let value = crate::page_tools::next_zoom(current, operation);
+            levels.insert(tab, value);
+            value
+        };
+        view.zoom(value)?;
+        if let Some(host) = hostname(&url) {
+            for (id, sibling) in self.views.borrow().iter() {
+                if *id != tab
+                    && sibling.url().ok().and_then(|u| hostname(&u)).as_ref() == Some(&host)
+                {
+                    sibling.zoom(value)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    fn test_zoom(&self, tab: TabId) -> Result<f64> {
+        use wry::WebViewExtMacOS;
+        // The test runs on the UI thread; supported macOS targets provide pageZoom.
+        Ok(unsafe { self.get(tab)?.webview().pageZoom() })
+    }
+
     fn has_view(&self, tab: TabId) -> bool {
         self.views.borrow().contains_key(&tab)
     }
@@ -845,6 +930,10 @@ impl BrowserHost for WryHost {
         identity.store(to, Ordering::Relaxed);
         self.identities.borrow_mut().insert(to, identity);
         views.insert(to, view);
+        let level = self.unsaved_zoom.borrow_mut().remove(&from);
+        if let Some(level) = level {
+            self.unsaved_zoom.borrow_mut().insert(to, level);
+        }
         let revision = self.protection_revisions.borrow_mut().remove(&from);
         if let Some(revision) = revision {
             self.protection_revisions.borrow_mut().insert(to, revision);
@@ -855,6 +944,35 @@ impl BrowserHost for WryHost {
                 ids.insert(to);
             }
         }
+        Ok(())
+    }
+
+    fn set_panel_corners(&self, tab: TabId, radius: f32, bottom_only: bool) -> Result<()> {
+        let view = self.get(tab)?;
+        #[cfg(target_os = "macos")]
+        {
+            use wry::WebViewExtMacOS;
+            if let Some(layer) = view.webview().layer() {
+                use objc2_quartz_core::CACornerMask;
+                let corners = if bottom_only {
+                    if view.webview().isFlipped() {
+                        CACornerMask::LayerMinXMaxYCorner | CACornerMask::LayerMaxXMaxYCorner
+                    } else {
+                        CACornerMask::LayerMinXMinYCorner | CACornerMask::LayerMaxXMinYCorner
+                    }
+                } else {
+                    CACornerMask::all()
+                };
+                if layer.cornerRadius() != f64::from(radius) {
+                    layer.setCornerRadius(f64::from(radius));
+                }
+                if layer.maskedCorners() != corners {
+                    layer.setMaskedCorners(corners);
+                }
+            }
+        }
+        #[cfg(target_os = "windows")]
+        view.set_panel_corner_shape(radius, bottom_only)?;
         Ok(())
     }
 
@@ -873,6 +991,9 @@ impl BrowserHost for WryHost {
         let frame = native.frame();
         Ok(serde_json::json!({
             "radius": layer.cornerRadius(),
+            "flipped": native.isFlipped(),
+            "x": frame.origin.x,
+            "y": frame.origin.y,
             "clips": layer.masksToBounds(),
             "corners": layer.maskedCorners().0,
             "width": frame.size.width,
@@ -1015,6 +1136,9 @@ impl BrowserHost for WryHost {
         self.identities
             .borrow_mut()
             .retain(|id, _| tabs.contains(id));
+        self.unsaved_zoom
+            .borrow_mut()
+            .retain(|id, _| tabs.contains(id));
         self.visible.borrow_mut().retain(|id| tabs.contains(id));
         self.loaded.borrow_mut().retain(|id| tabs.contains(id));
         self.views.borrow_mut().retain(|id, view| {
@@ -1146,6 +1270,20 @@ impl BrowserHost for WryHost {
         }
 
         let mut events: Vec<_> = self.events.try_iter().collect();
+        // Apply for every engine, including transient previews and native popups,
+        // before the UI's specialized event handlers consume their navigation.
+        for event in &events {
+            if let BrowserEvent::Navigated(tab, url) = event
+                && let Ok(view) = self.get(*tab)
+            {
+                self.unsaved_zoom.borrow_mut().remove(tab);
+                let value = self.site_zoom.borrow().get(url);
+                if let Err(error) = view.zoom(value) {
+                    eprintln!("Applying website zoom: {error}");
+                }
+            }
+        }
+
         let state = format!("{}:{}:{}", p.revision, p.native.ready(), p.value());
         if *self.protection_notified.borrow() != state {
             *self.protection_notified.borrow_mut() = state;
@@ -1192,7 +1330,8 @@ pub(crate) fn authenticated_command<'a>(message: &'a str, nonce: &str) -> Option
     }
     match command {
         "focus" | "settings" | "address" | "new-tab" | "new-space" | "escape" | "close-tab"
-        | "reload" | "swipe-next" | "swipe-prev" => Some(command),
+        | "reload" | "swipe-next" | "swipe-prev" | "history-back" | "history-forward"
+        | "zoom-in" | "zoom-out" | "zoom-reset" | "find-page" => Some(command),
         _ => None,
     }
 }

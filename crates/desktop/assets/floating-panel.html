@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font:12px -apple-system,Segoe UI,sans-serif;color:#213b36;background:transparent;user-select:none}
+#frame{height:100%;display:flex;align-items:center;gap:7px;padding:0 9px;background:#edf6f2;border:1px solid #9bb9af;border-radius:9px;cursor:grab;box-shadow:0 2px 7px #153d301a}body.panel{border:2px solid #9bb9af;border-radius:10px;box-shadow:none;clip-path:inset(0 round 10px)}body.panel #frame{height:28px;border:0;border-radius:8px 8px 0 0;box-shadow:none}
+body.left #frame,body.right #frame{position:absolute;left:0;top:0;width:100vh;height:100vw;transform-origin:0 0}
+body.left #frame{transform:translateY(100vh) rotate(-90deg)}
+body.right #frame{transform:translateX(100vw) rotate(90deg)}
+#title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}img{width:15px;height:15px}button{border:0;background:transparent;color:inherit;padding:4px;border-radius:5px;cursor:pointer}button:hover{background:#cee5dc}#grip{display:none;position:absolute;right:0;bottom:0;width:19px;height:19px;cursor:nwse-resize;background:#edf6f2;border-bottom-right-radius:8px;overflow:hidden;clip-path:polygon(100% 0,100% 100%,0 100%)}#grip::after{content:"";position:absolute;right:3px;bottom:3px;width:9px;height:9px;background:currentColor;clip-path:polygon(100% 0,100% 100%,0 100%)}
+@media(prefers-color-scheme:dark){body{color:#d7ede5}#frame,#grip{background:#243c34;border-color:#537569}button:hover{background:#3b5d4f}body.panel{border-color:#537569}}
+</style><div id="frame"><span>⠿</span><img id="icon"><span id="title"></span><button id="pin" title="Keep panel open">◇</button><button id="close" title="Close panel">×</button></div><div id="grip"></div>
+<script>
+const frame=document.getElementById('frame'),grip=document.getElementById('grip'),title=document.getElementById('title'),icon=document.getElementById('icon'),pin=document.getElementById('pin'),closeButton=document.getElementById('close');
+let state={}, drag=null;
+const send=(type,data={})=>window.ipc.postMessage(JSON.stringify({type,...data}));
+window.update=s=>{state=s;document.body.classList.toggle('panel',!!s.panel);document.body.classList.toggle('left',s.chipSide==='left');document.body.classList.toggle('right',s.chipSide==='right');title.textContent=s.title||'New tab';icon.src=s.icon||'';icon.hidden=!s.icon;pin.textContent=s.pinned?'◆':'◇';pin.hidden=!s.edge;frame.style.display=s.grip?'none':'flex';grip.style.display=s.grip?'block':'none';};
+frame.onpointerenter=()=>send('hover');
+pin.onclick=()=>send('pin');closeButton.onclick=()=>send('close');
+window.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('button'))return;drag={id:e.pointerId,x:e.screenX,y:e.screenY,cx:e.clientX,cy:e.clientY,active:false};e.target.setPointerCapture(e.pointerId);send(state.grip?'resize-start':'drag-start',{x:e.clientX,y:e.clientY});e.preventDefault()});
+window.addEventListener('pointermove',e=>{if(!drag)return;let dx=e.screenX-drag.x,dy=e.screenY-drag.y;if(Math.hypot(dx,dy)>5)drag.active=true;send(state.grip?'resize':'drag-move',{x:drag.cx+dx,y:drag.cy+dy,dx,dy})});
+window.addEventListener('pointerup',e=>{if(!drag)return;let dx=e.screenX-drag.x,dy=e.screenY-drag.y;send(state.grip?'resize-end':'drag-end',{x:drag.cx+dx,y:drag.cy+dy,dx,dy,active:drag.active});drag=null});
+window.addEventListener('pointercancel',()=>{drag=null;send('cancel')});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){drag=null;send('cancel')}});
+send('ready');
+</script>

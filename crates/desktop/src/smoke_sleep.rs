@@ -61,9 +61,8 @@ pub(crate) async fn session(
             Ok(())
         })??;
     } else {
-        for _ in 0..10 {
-            pause(cx).await;
-        }
+        // Protection compilation can defer the first native view beyond two seconds.
+        crate::smoke::wait_title(&host, id, "New tab · Axolotl", cx).await?;
         view.update_in(cx, |app, window, cx| {
             app.sleep.toggle_keep_alive(id);
             app.preferences.set_sleep(false, 7).unwrap();

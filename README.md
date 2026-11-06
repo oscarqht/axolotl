@@ -129,17 +129,35 @@ machine running the executable. See the validation report below for tested scope
   `permission`/`requestPermission()` report permission for in-app badges. Native
   delivery is forwarded only when the engine already has permission and supports
   the constructor. Service-worker and push notifications are not included.
-- Drag a chip to reorder within a panel, dock into another panel's chip row or
-  center, or create a split at any edge. Drag the handle to move the complete
-  stack: center drops merge panels and edge drops reposition the whole panel.
-  Destination previews appear above live pages. Escape, loss of window activation,
-  or releasing outside the workspace cancels. Moving retains native page state
-  and back/forward history. Splits are created exclusively by dragging.
-- Deliberate horizontal trackpad/touch swipes across page content select the next
-  tab on a left swipe and the previous tab on a right swipe, wrapping at both ends.
-  Horizontal tab switching takes priority over page horizontal scrolling; vertical
-  scrolling remains normal. Trackpad momentum switches once per gesture. On the
-  floating bar, dragging a chip/handle takes priority over touch swiping.
+- Drag a chip to move one tab, or the handle to move the complete stack. Drop on
+  a panel's bar or center to merge, or in its broad edge region to create a split.
+  Only workspace-edge drops detach a new floating overlay. An existing overlay
+  can be freely moved by its header or returned to a tiled split at a thin edge
+  target. Green previews mean split, purple means dock, blue means move a float.
+- Floating panels have a draggable title header and a resize triangle over the
+  page's bottom-right corner. Their pages have square inner corners and no resize
+  footer. Dock at any window edge without changing the tiled layout. Chips stay
+  at the docking position, with offsets to avoid overlaps. Left/right chips are
+  vertical. Hover reveals a fitted panel beside the chip; leaving hides it after
+  a short grace period. **◇ / ◆** toggles keeping it open. Menus, address editing,
+  resizing and dragging keep it open. One unpinned panel reveals per edge.
+  Drag a chip onto another chip on that edge to reorder; drag away to float.
+- Floating panels belong to their space. Tabs, preferred positions and sizes,
+  edge anchors, chip order and pin state restore after restarting. Unpinned
+  panels restore collapsed. Window resizing keeps panels and chips reachable.
+  Moving retains native page state and back/forward history. Detaching the last
+  tiled panel leaves a fresh start panel behind. Escape, loss of window activation,
+  or releasing outside the workspace cancels a panel move.
+- See [floating panel behavior and validation](docs/floating-panels.md) for persistence
+  and native test details.
+- Deliberate horizontal swipes across page content navigate that page's web
+  history: swipe right to go back and left to go forward. Trackpad direction
+  follows the system scrolling settings. At either end of history, swiping does
+  nothing; it never switches tabs. History navigation takes priority over page
+  horizontal scrolling; vertical scrolling remains normal. Trackpad momentum
+  navigates once per gesture. Floating-bar swipes still select the next tab on a
+  left swipe and the previous tab on a right swipe, wrapping at both ends;
+  dragging a chip/handle takes priority over touch swiping.
 - Closing the final tab in a panel removes that panel when other panels remain;
   the final panel instead receives a fresh start tab. Drag the thin dividers to
   resize panels while their content stays visible.
@@ -181,13 +199,25 @@ See [default-browser setup and checks](docs/settings.md#default-browser-and-exte
 | Option+click (macOS) | Open a link in a temporary window-centered preview |
 | Cmd/Ctrl+W | Close the focused tab |
 | Cmd/Ctrl+R | Reload the focused tab |
+| Cmd/Ctrl+Plus or Equals / Minus | Zoom the focused page in / out (saved per hostname) |
+| Cmd/Ctrl+0 | Reset website zoom to 100% |
+| Cmd/Ctrl+F | Find in the focused page; Enter / Shift+Enter for next / previous, Escape to close |
+| Cmd+[ / Cmd+] (macOS) | Back / forward in the focused page, including page inputs and chrome focus |
 | Alt+Left / Alt+Right | Back / forward (when delivered to the shell) |
 | F6 | Cycle pane focus when delivered to the GPUI shell |
+
+Page zoom is shared across schemes and ports on the same hostname, but not subdomains,
+and survives app restarts. Find is case-insensitive plain text with match highlighting
+and a current/total count. Both tools also target open pins and link previews.
+See [page zoom and find](docs/page-tools.md) for details and verification.
 
 Cmd+number uses the current space order after dragging spaces. Cmd+9 selects
 the ninth space; numbers without a corresponding space leave the current view unchanged.
 
-Back, forward, and reload act on the focused pane. The native macOS Edit menu
+History shortcuts target the native focused page, or the open preview/pin or
+focused pane when chrome has focus. Cmd+[ and Cmd+] are reserved before webpage
+handlers on macOS, navigate once per key press, and do nothing in Settings or at
+the corresponding history boundary. Reload acts on the focused pane. The native macOS Edit menu
 supplies standard copy/paste actions to both web content and the inline URL input.
 Cmd+Shift+C works with webpage or browser chrome focus and copies the live page
 URL, including query strings and fragments, without changing an unfinished
@@ -221,13 +251,13 @@ Native UI performance measurements and methodology: [performance report](docs/pe
 
 ## Checks
 
-Split separators snap within 10 logical pixels of 25%, 33⅓%, 50%, 66⅔%, and
+Split separators snap within 50 logical pixels of 25%, 33⅓%, 50%, 66⅔%, and
 75% of their immediate parent panel. Drag farther away to resize freely; releasing
 keeps the current position. Nested splits use their own parent bounds, and existing
 pane-size limits take priority over snap stops.
 
 ```sh
-node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs
+node --test scripts/test-input-bridge.cjs scripts/test-notifications.cjs scripts/test-protection.cjs scripts/test-history-suggestions.cjs
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -262,6 +292,10 @@ exits. It requires a GUI session and HTTPS access to example.com:
 ```sh
 cargo run -p axolotl --locked --features smoke -- --smoke-test
 
+# Startup placeholder regression (no network needed)
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-launch-loading
+# Add --smoke-hold-launch-loading to hold loading and ready states for visual inspection.
+
 # macOS native HTTP/JavaScript browser identity regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-identity
 
@@ -277,6 +311,12 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-downloads
 
 # macOS native pointer-capture split release regression (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-docking
+
+# Floating tabs/panels: native capture, resize, four edges, chips, pin and return paths
+cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-floating
+# Hold a live floating layout for screenshot/manual inspection:
+# append --smoke-hold-floating
+python3 scripts/test-floating-session.py target/debug/axolotl
 
 # Windows/macOS four-corner native clipping through splits, resizing and panel moves
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-corners
@@ -367,6 +407,9 @@ This checks actual native documents and host operations programmatically. It
 does **not** synthesize OS mouse or keyboard input. The smoke test explicitly
 draws frames because occluded windows can skip display callbacks. See the
 [validation report](docs/validation.md) for results and outstanding manual checks.
+Repeatable native action, webpage, resource and battery benchmarks are documented
+in [docs/benchmarks.md](docs/benchmarks.md).
+
 A macOS/Windows build-and-unit-test workflow is provided in
 [`.github/workflows/check.yml`](.github/workflows/check.yml); defining it does not
 mean either remote CI job has been run.

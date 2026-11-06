@@ -67,6 +67,8 @@ struct SpaceDto {
     icon: Option<String>,
     focused_pane: u64,
     layout: LayoutDto,
+    #[serde(default)]
+    floating: Vec<crate::FloatingPanel>,
     panes: Vec<PaneDto>,
 }
 
@@ -200,6 +202,7 @@ impl Workspace {
                     icon: s.icon.clone(),
                     focused_pane: s.focused_pane,
                     layout: (&s.layout).into(),
+                    floating: s.floating.clone(),
                     panes: s
                         .panes
                         .iter()
@@ -275,6 +278,12 @@ impl Workspace {
             }
             let layout = s.layout.into_layout(&mut ids, 0)?;
             let mut layout_panes = layout.pane_ids();
+            for f in &s.floating {
+                if !crate::floating::valid_bounds(f.bounds) {
+                    return Err(SnapshotError::Invalid("invalid floating bounds"));
+                }
+                layout_panes.push(f.pane);
+            }
             let mut pane_ids: Vec<_> = panes.iter().map(|p| p.id).collect();
             layout_panes.sort_unstable();
             pane_ids.sort_unstable();
@@ -293,6 +302,7 @@ impl Workspace {
                     .map(|icon| icon.trim().to_owned())
                     .filter(|icon| !icon.is_empty()),
                 layout,
+                floating: s.floating,
                 panes,
                 focused_pane: s.focused_pane,
             });

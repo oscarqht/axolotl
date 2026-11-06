@@ -223,6 +223,8 @@ impl BrowserApp {
             ids.insert(crate::link_popup::POPUP_TAB);
         }
         self.host.retain(&ids);
+        self.view_errors.retain(|id| ids.contains(id));
+        self.page_swipes.retain(|id, _| ids.contains(id));
         #[cfg(target_os = "macos")]
         self.native_popup_sources.retain(|id, _| ids.contains(id));
         if self.sleep.retain(&ids) {
@@ -245,12 +247,7 @@ impl BrowserApp {
         if window.is_window_active() {
             self.notifications.remove(&self.active_tab());
         }
-        let viewport = window.viewport_size();
-        let content = crate::render::panel_content_rect(
-            f32::from(viewport.width),
-            f32::from(viewport.height),
-        );
-        let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
+        let geometry = self.panel_geometry(window);
         let mut visible: Vec<_> = self
             .model
             .active_space()
@@ -281,8 +278,28 @@ impl BrowserApp {
                 continue;
             }
             let result = self.host.ensure(id, &url, window, cx);
+            if result.is_err() {
+                self.view_errors.insert(id);
+            } else {
+                self.view_errors.remove(&id);
+            }
             self.report(result);
             if self.host.has_view(id) {
+                let floating = self
+                    .model
+                    .active_space()
+                    .floating
+                    .iter()
+                    .any(|f| self.model.pane(f.pane).is_some_and(|p| p.active_tab == id));
+                self.report(self.host.set_panel_corners(
+                    id,
+                    if floating {
+                        crate::floating_panels::PAGE_RADIUS
+                    } else {
+                        crate::render::PANEL_CORNER_RADIUS
+                    },
+                    floating,
+                ));
                 self.report(self.host.show(id, true));
             }
         }
@@ -390,6 +407,7 @@ impl BrowserApp {
             self.report(result);
         }
         // Create last, above every page and floating panel control.
+        self.prepare_floating_panels(window, cx);
         self.prepare_pins(window, cx);
         self.prepare_history_popup(window, cx);
         self.prepare_space_menu(window, cx);

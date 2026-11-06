@@ -26,13 +26,9 @@ span{padding:8px 14px;background:rgba(233,255,247,.9);border-radius:6px}
         Ok(Self(view))
     }
 
-    pub fn update(&self, bounds: Option<Rect>, merge: bool) -> Result<()> {
+    pub fn update_label(&self, bounds: Option<Rect>, label: &str) -> Result<()> {
         if let Some(r) = bounds {
-            self.0.evaluate_script(if merge {
-                "document.querySelector('span').textContent='Release to merge'"
-            } else {
-                "document.querySelector('span').textContent='Release to split'"
-            })?;
+            self.0.evaluate_script(&format!("document.querySelector('span').textContent={};document.body.style.borderColor={};document.body.style.background={}",serde_json::json!(label),serde_json::json!(if label.contains("window"){"#c194ef"}else if label.contains("float"){"#609cde"}else{"#66c9ac"}),serde_json::json!(if label.contains("window"){"rgba(168,109,222,.23)"}else if label.contains("float"){"rgba(74,139,212,.23)"}else{"rgba(68,179,146,.28)"})))?;
             self.0.set_bounds(crate::browser::native_bounds(Bounds {
                 origin: point(px(r.x), px(r.y)),
                 size: size(px(r.width), px(r.height)),

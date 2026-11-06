@@ -73,6 +73,37 @@ fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
         )
 }
 
+/// A missing native view is normal while protection and browser setup are pending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneContent {
+    Sleeping,
+    Loading,
+    Unavailable,
+    Page,
+}
+
+impl PaneContent {
+    fn resolve(sleeping: bool, has_view: bool, failed: bool) -> Self {
+        if sleeping {
+            Self::Sleeping
+        } else if has_view {
+            Self::Page
+        } else if failed {
+            Self::Unavailable
+        } else {
+            Self::Loading
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Loading => "Loading page…",
+            Self::Unavailable => "Page unavailable",
+            _ => "",
+        }
+    }
+}
+
 impl BrowserApp {
     fn pinned_header(&self, window: &Window, cx: &Context<Self>) -> AnyElement {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
@@ -214,6 +245,7 @@ impl BrowserApp {
         };
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let editing = self.editing == Some(target);
+        let selected_space = active && matches!(target, TabTarget::Space(_));
         let sleeping = match target {
             TabTarget::Space(id) => self
                 .model
@@ -237,13 +269,15 @@ impl BrowserApp {
             .flex()
             .items_center()
             .rounded_md()
-            .bg(rgb(if active {
+            .bg(rgb(if selected_space {
+                colors.selected_space
+            } else if active {
                 colors.active_tab
             } else {
                 colors.surface
             }))
             .border_1()
-            .border_color(rgb(if editing {
+            .border_color(rgb(if editing || selected_space {
                 colors.accent
             } else {
                 colors.border
@@ -358,11 +392,18 @@ impl BrowserApp {
                         }
                         .map(|icon| div().flex_shrink_0().mr_1().child(icon.clone())),
                     )
-                    .child(div().truncate().child(if title.is_empty() {
-                        "New tab".to_owned()
-                    } else {
-                        title.to_owned()
-                    }))
+                    .child(
+                        div()
+                            .truncate()
+                            .when(selected_space, |title| {
+                                title.font_weight(FontWeight::SEMIBOLD)
+                            })
+                            .child(if title.is_empty() {
+                                "New tab".to_owned()
+                            } else {
+                                title.to_owned()
+                            }),
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, _, _| {
@@ -466,15 +507,38 @@ impl BrowserApp {
         let colors = crate::chrome_theme::ChromeColors::current(cx);
         let pane = self.model.pane(pane_id).expect("layout pane exists");
         let tab = pane.active_tab;
+        let radius = if self.model.active_space().floating_panel(pane_id).is_some() {
+            0.
+        } else {
+            PANEL_CORNER_RADIUS
+        };
+        let bottom_radius = if radius == 0. {
+            crate::floating_panels::PAGE_RADIUS
+        } else {
+            radius
+        };
+        // Floating chrome is positioned directly in window coordinates. Using
+        // the rounded canvas layout for its native page can grow the right edge
+        // by a point, covering half of the two-point frame border.
+        let floating_bounds = (radius == 0.).then(|| Bounds {
+            origin: point(px(rect.x), px(rect.y)),
+            size: size(px(rect.width), px(rect.height)),
+        });
         let page = self.host.has_view(tab).then(|| self.host.clone());
-        let unavailable = page.is_none();
+        let state = PaneContent::resolve(
+            self.sleep.is_sleeping(tab),
+            page.is_some(),
+            self.view_errors.contains(&tab),
+        );
         div()
             .absolute()
             .left(px(rect.x))
             .top(px(rect.y - TOP))
             .w(px(rect.width))
             .h(px(rect.height))
-            .rounded(px(PANEL_CORNER_RADIUS))
+            .rounded(px(radius))
+            .rounded_bl(px(bottom_radius))
+            .rounded_br(px(bottom_radius))
             .overflow_hidden()
             .bg(rgb(colors.surface))
             .child(
@@ -484,9 +548,11 @@ impl BrowserApp {
                     .bottom_0()
                     .left_0()
                     .right_0()
-                    .rounded(px(PANEL_CORNER_RADIUS))
+                    .rounded(px(radius))
+                    .rounded_bl(px(bottom_radius))
+                    .rounded_br(px(bottom_radius))
                     .bg(rgb(colors.page))
-                    .child(if self.sleep.is_sleeping(tab) {
+                    .child(if state == PaneContent::Sleeping {
                         div()
                             .id(("sleeping-pane", tab))
                             .size_full()
@@ -495,7 +561,9 @@ impl BrowserApp {
                             .children(self.sleep.image(tab).map(|image| {
                                 img(image)
                                     .size_full()
-                                    .rounded(px(PANEL_CORNER_RADIUS))
+                                    .rounded(px(radius))
+                                    .rounded_bl(px(bottom_radius))
+                                    .rounded_br(px(bottom_radius))
                                     .opacity(0.5)
                             }))
                             .when(self.sleep.image(tab).is_none(), |el| {
@@ -513,20 +581,40 @@ impl BrowserApp {
                                 cx.notify();
                             }))
                             .into_any_element()
-                    } else if unavailable {
+                    } else if state != PaneContent::Page {
                         div()
+                            .id(("page-placeholder", tab))
                             .size_full()
                             .flex()
+                            .flex_col()
+                            .gap_3()
                             .items_center()
                             .justify_center()
                             .text_color(rgb(colors.muted))
-                            .child("Page unavailable")
+                            .when(state == PaneContent::Loading, |el| {
+                                el.child(
+                                    div()
+                                        .w(px(40.))
+                                        .h(px(4.))
+                                        .rounded_full()
+                                        .bg(rgb(colors.accent))
+                                        .with_animation(
+                                            "page-loading-pulse",
+                                            Animation::new(std::time::Duration::from_millis(1200))
+                                                .repeat()
+                                                .with_easing(bounce(ease_in_out)),
+                                            |el, delta| el.opacity(0.3 + 0.7 * delta),
+                                        ),
+                                )
+                            })
+                            .child(state.label())
                             .into_any_element()
                     } else {
                         canvas(
                             move |bounds, _, _| {
                                 if let Some(page) = &page
-                                    && let Err(error) = page.place(tab, bounds)
+                                    && let Err(error) =
+                                        page.place(tab, floating_bounds.unwrap_or(bounds))
                                 {
                                     eprintln!("Webview bounds: {error}");
                                 }
@@ -551,12 +639,11 @@ impl Render for BrowserApp {
         }
         let viewport = window.viewport_size();
         let downloading = self.host.downloads().borrow().downloading_count();
-        let content = panel_content_rect(f32::from(viewport.width), f32::from(viewport.height));
         let (_, pin_width) = crate::pinned_tabs::header_layout(
             f32::from(viewport.width),
             self.model.pinned_tabs.len(),
         );
-        let geometry = self.model.active_space().layout.geometry(content, 6., 100.);
+        let geometry = self.panel_geometry(window);
         let panes = geometry
             .panes
             .iter()
@@ -995,5 +1082,39 @@ impl Render for BrowserApp {
                     )
                 },
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PaneContent;
+
+    #[test]
+    fn pending_native_view_shows_loading_until_created() {
+        let pending = PaneContent::resolve(false, false, false);
+        assert_eq!(pending, PaneContent::Loading);
+        assert_eq!(pending.label(), "Loading page…");
+        assert_eq!(PaneContent::resolve(false, true, false), PaneContent::Page);
+    }
+
+    #[test]
+    fn creation_failure_is_not_disguised_as_loading() {
+        let failed = PaneContent::resolve(false, false, true);
+        assert_eq!(failed, PaneContent::Unavailable);
+        assert_eq!(failed.label(), "Page unavailable");
+        // A successfully retried creation takes precedence over a stale error.
+        assert_eq!(PaneContent::resolve(false, true, true), PaneContent::Page);
+    }
+
+    #[test]
+    fn sleeping_presentation_takes_precedence_over_native_view_state() {
+        for has_view in [false, true] {
+            for failed in [false, true] {
+                assert_eq!(
+                    PaneContent::resolve(true, has_view, failed),
+                    PaneContent::Sleeping
+                );
+            }
+        }
     }
 }

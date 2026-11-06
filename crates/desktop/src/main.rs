@@ -1,5 +1,15 @@
 mod app;
 mod app_database;
+#[cfg(feature = "smoke")]
+mod benchmark;
+#[cfg(feature = "smoke")]
+mod benchmark_actions;
+#[cfg(feature = "smoke")]
+mod benchmark_extra_actions;
+#[cfg(feature = "smoke")]
+mod benchmark_fixture;
+#[cfg(feature = "smoke")]
+mod benchmark_web;
 mod browser;
 #[cfg(target_os = "macos")]
 mod browser_identity;
@@ -16,8 +26,10 @@ mod downloads_ui;
 mod drag_preview;
 mod external_urls;
 mod floating_bar;
+mod floating_panels;
 #[cfg(test)]
 mod gesture_tests;
+mod history_shortcuts;
 mod history_suggestions;
 mod link_popup;
 #[cfg(target_os = "macos")]
@@ -33,6 +45,7 @@ mod macos_titlebar;
 #[cfg(target_os = "macos")]
 mod native_popup_tabs;
 mod native_webview;
+mod page_tools;
 mod panel_controls;
 mod persistence;
 mod persistence_worker;
@@ -59,9 +72,13 @@ mod smoke_downloads;
 #[cfg(feature = "smoke")]
 mod smoke_external_urls;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_floating;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_google_popup;
 #[cfg(feature = "smoke")]
 mod smoke_history;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_history_shortcuts;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_identity;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
@@ -76,6 +93,8 @@ mod smoke_menu;
 mod smoke_notifications;
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_oauth;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_page_tools;
 #[cfg(feature = "smoke")]
 mod smoke_panels;
 #[cfg(feature = "smoke")]
@@ -172,6 +191,20 @@ fn main() {
         } else {
             "ctrl"
         };
+        for (key, operation) in [
+            ("=", page_tools::Operation::ZoomIn),
+            ("shift-=", page_tools::Operation::ZoomIn),
+            ("+", page_tools::Operation::ZoomIn),
+            ("-", page_tools::Operation::ZoomOut),
+            ("0", page_tools::Operation::ZoomReset),
+            ("f", page_tools::Operation::Find),
+        ] {
+            cx.bind_keys([KeyBinding::new(
+                &format!("{modifier}-{key}"),
+                page_tools::PageTool { operation },
+                None,
+            )]);
+        }
         cx.bind_keys([
             KeyBinding::new(&format!("{modifier}-q"), Quit, None),
             KeyBinding::new(&format!("{modifier}-l"), Address, None),
@@ -186,7 +219,11 @@ fn main() {
             KeyBinding::new("alt-right", Forward, None),
         ]);
         #[cfg(target_os = "macos")]
-        cx.bind_keys([KeyBinding::new("cmd-shift-c", CopyUrl, None)]);
+        cx.bind_keys([
+            KeyBinding::new("cmd-shift-c", CopyUrl, None),
+            KeyBinding::new("cmd-[", Back, None),
+            KeyBinding::new("cmd-]", Forward, None),
+        ]);
         #[cfg(target_os = "macos")]
         cx.bind_keys((1..=9).map(|number| {
             KeyBinding::new(
@@ -246,6 +283,8 @@ fn main() {
                 window_state::probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_space_menu::session_probe(&app, window, cx);
+                #[cfg(all(feature = "smoke", target_os = "macos"))]
+                smoke_floating::session_probe(&app, window, cx);
                 #[cfg(feature = "smoke")]
                 smoke_persistence::probe(&app, window, cx);
                 #[cfg(all(feature = "smoke", target_os = "macos"))]

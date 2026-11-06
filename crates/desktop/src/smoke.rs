@@ -15,6 +15,14 @@ use workspace_core::{Axis, TabId};
 
 pub(crate) type Host = Rc<dyn BrowserHost>;
 
+static LAUNCH_RELEASED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Exercise the real missing-view startup path without racing protection setup.
+pub(crate) fn hold_launch_view() -> bool {
+    std::env::args().any(|arg| arg == "--smoke-launch-loading")
+        && !LAUNCH_RELEASED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn start(app: &Entity<BrowserApp>, window: &Window, cx: &mut App) {
     let view = app.downgrade();
     window.spawn(cx, async move |cx| {
@@ -173,8 +181,51 @@ async fn run(
         cx.activate(true);
         (app.host.clone(), app.active_tab())
     })?;
+    if std::env::args().any(|arg| arg == "--smoke-close-empty-space") {
+        view.update_in(cx, |app, _, _| check_close_empty_space(app))??;
+        return Ok(vec![
+            "closing final tab removes space without changing surviving tabs or URLs; final space uses configured homepage",
+        ]);
+    }
     if std::env::args().any(|arg| arg == "--smoke-sleep-session") {
         return crate::smoke_sleep::session(view, cx).await;
+    }
+    if std::env::args().any(|arg| arg == "--smoke-launch-loading") {
+        view.update_in(cx, |app, _, _| -> Result<()> {
+            ensure!(!app.host.has_view(first), "Startup view was not deferred");
+            ensure!(
+                app.view_errors.is_empty(),
+                "Pending startup reported a failure"
+            );
+            Ok(())
+        })??;
+        println!("AXOLOTL_LAUNCH loading");
+        let hold = if std::env::args().any(|arg| arg == "--smoke-hold-launch-loading") {
+            50
+        } else {
+            5
+        };
+        for _ in 0..hold {
+            pause(cx).await;
+        }
+        LAUNCH_RELEASED.store(true, std::sync::atomic::Ordering::Relaxed);
+        pause(cx).await;
+        wait_title(&host, first, "New tab · Axolotl", cx).await?;
+        view.update_in(cx, |app, _, _| -> Result<()> {
+            ensure!(
+                app.host.has_view(first) && app.host.is_visible(first),
+                "Page did not replace loading"
+            );
+            ensure!(app.view_errors.is_empty(), "Startup left a creation error");
+            Ok(())
+        })??;
+        println!("AXOLOTL_LAUNCH ready");
+        for _ in 0..hold {
+            pause(cx).await;
+        }
+        return Ok(vec![
+            "pending startup placeholder transitions to native page",
+        ]);
     }
     wait_title(&host, first, "New tab · Axolotl", cx).await?;
 
@@ -191,6 +242,9 @@ async fn run(
     }
     if std::env::args().any(|arg| arg == "--smoke-responsiveness") {
         return crate::smoke_responsiveness::run(view, cx).await;
+    }
+    if std::env::args().any(|arg| arg == "--smoke-benchmark") {
+        return crate::benchmark::run(view, cx).await;
     }
     if std::env::args().any(|arg| arg == "--smoke-performance") {
         return crate::smoke_performance::run(view, cx).await;
@@ -213,6 +267,14 @@ async fn run(
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-google-popup") {
         return crate::smoke_google_popup::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-history-shortcuts") {
+        return crate::smoke_history_shortcuts::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-page-tools") {
+        return crate::smoke_page_tools::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-keyboard") {
@@ -258,6 +320,10 @@ async fn run(
     }
     if std::env::args().any(|arg| arg == "--smoke-space-drag") {
         return crate::smoke_space_drag::run(view, cx).await;
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|arg| arg == "--smoke-floating") {
+        return crate::smoke_floating::run(view, cx).await;
     }
     #[cfg(target_os = "macos")]
     if std::env::args().any(|arg| arg == "--smoke-docking") {
@@ -688,6 +754,10 @@ async fn run(
     })??;
     pause(cx).await;
     checks.push("targeted sibling, split and close actions; final tab and space guards; switching cancels edits");
+    view.update_in(cx, |app, _, _| check_close_empty_space(app))??;
+    checks.push(
+        "last-tab space removal preserves surviving tabs and URLs; final-space homepage fallback",
+    );
     // Route CloseTab through the GPUI action used by Cmd+W, with actual native views.
     let (original, right, bottom, closed, extra) = view.update_in(cx, |app, window, cx| {
         app.model = workspace_core::Workspace::default().into();
@@ -1163,4 +1233,56 @@ async fn run(
 
     checks.extend(crate::smoke_panels::run(view, &host, moved, destination, cx).await?);
     Ok(checks)
+}
+
+/// Exercise the desktop wrapper as well as the model with a non-default homepage.
+fn check_close_empty_space(app: &mut BrowserApp) -> Result<()> {
+    let saved_model = app.model.clone();
+    let saved_homepage = app.preferences.homepage_url.clone();
+    let result = (|| -> Result<()> {
+        app.preferences.homepage_url = "https://example.com/configured-home".into();
+        app.model = workspace_core::Workspace::new("https://example.com/survivor").into();
+        app.model.add_tab("https://example.com/active-survivor");
+        let survivor = app.model.active_space().clone();
+        let closing = app.model.add_space("Close me", "about:blank");
+        let pane = app.model.focused_pane().id;
+        let tab = app.active_tab();
+        app.close_tab(pane, u64::MAX);
+        ensure!(
+            app.model.active_space == closing,
+            "Invalid close removed space"
+        );
+        app.close_tab(pane, tab);
+        ensure!(app.model.spaces.len() == 1, "Empty space retained");
+        ensure!(
+            app.model.active_space() == &survivor,
+            "Surviving space tabs or URLs changed"
+        );
+        app.close_tab(pane, tab);
+        ensure!(
+            app.model.active_space() == &survivor,
+            "Stale close changed survivor"
+        );
+        let pane = app.model.focused_pane().id;
+        let tab = app.active_tab();
+        app.close_tab(pane, tab);
+        ensure!(
+            app.model.focused_pane().active_tab().url == "https://example.com/survivor",
+            "Ordinary close changed remaining URL"
+        );
+        let last = app.active_tab();
+        app.close_tab(pane, last);
+        ensure!(
+            app.model.spaces.len() == 1 && app.active_tab() != last,
+            "Final space did not retain a new tab"
+        );
+        ensure!(
+            app.model.focused_pane().active_tab().url == app.preferences.homepage_url,
+            "Final space ignored configured homepage"
+        );
+        Ok(())
+    })();
+    app.model = saved_model;
+    app.preferences.homepage_url = saved_homepage;
+    result
 }

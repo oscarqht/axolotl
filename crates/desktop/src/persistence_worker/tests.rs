@@ -69,6 +69,35 @@ fn history_id_exhaustion_does_not_wrap_or_advance() {
         assert_eq!(writer.next_history_id.load(Ordering::Relaxed), i64::MAX);
     }
 }
+
+#[test]
+fn concurrent_history_reservations_are_unique_and_contiguous() {
+    let writer = Store::new(None).unwrap();
+    let first = writer.next_history_id.load(Ordering::Relaxed);
+    let start = std::sync::Barrier::new(8);
+    let mut ids = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let writer = &writer;
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    (0..1000)
+                        .map(|_| writer.reserve_history_id().unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    ids.sort_unstable();
+    assert_eq!(ids, (first..first + 8000).collect::<Vec<_>>());
+    assert_eq!(writer.reserve_history_id().unwrap(), first + 8000);
+}
+
 #[test]
 fn failed_batch_keeps_last_committed_data_and_retries() {
     let dir = directory();

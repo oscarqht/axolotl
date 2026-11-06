@@ -46,6 +46,7 @@ mod macos_titlebar;
 #[cfg(target_os = "macos")]
 mod native_popup_tabs;
 mod native_webview;
+mod notifications;
 mod page_tools;
 mod panel_controls;
 mod persistence;

@@ -246,7 +246,7 @@ impl BrowserApp {
         self.visit_ids.retain(|id, _| ids.contains(id));
         self.document_titles.retain(|id, _| ids.contains(id));
         if window.is_window_active() {
-            self.notifications.remove(&self.active_tab());
+            self.clear_tab_notifications(self.active_tab());
         }
         let geometry = self.panel_geometry(window);
         let mut visible: Vec<_> = self

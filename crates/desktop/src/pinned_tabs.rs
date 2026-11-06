@@ -105,7 +105,7 @@ impl BrowserApp {
             self.wake_tab(id);
             self.pins.open = Some(id);
             self.pins.focus_page = true;
-            self.notifications.remove(&id);
+            self.clear_tab_notifications(id);
         }
         cx.notify();
     }

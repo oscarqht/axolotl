@@ -242,7 +242,7 @@ impl BrowserApp {
                 this.cancel_tab_drag(cx);
                 this.cancel_space_drag(cx);
             } else {
-                this.notifications.remove(&this.active_tab());
+                this.clear_tab_notifications(this.active_tab());
                 if this.settings.is_some() {
                     this.default_browser.refresh();
                 }
@@ -476,7 +476,7 @@ impl BrowserApp {
         if self.editing.is_none() {
             self.focus.focus(window);
         }
-        self.notifications.remove(&self.active_tab());
+        self.clear_tab_notifications(self.active_tab());
         self.sync_address(window, cx);
         self.reveal_focused();
         cx.notify();
@@ -557,7 +557,7 @@ impl BrowserApp {
             self.reveal_floating(pane);
         }
         self.wake_tab(self.active_tab());
-        self.notifications.remove(&self.active_tab());
+        self.clear_tab_notifications(self.active_tab());
         self.sync_address(window, cx);
         cx.notify();
     }
@@ -833,7 +833,7 @@ impl BrowserApp {
                     {
                         continue;
                     }
-                    self.notifications.remove(&tab);
+                    self.clear_tab_notifications(tab);
                     // Native child focus is outside GPUI's focus tree, so it may
                     // not emit InputEvent::Blur (including clicks in the same pane).
                     self.cancel_edit(window, cx);

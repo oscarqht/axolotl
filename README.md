@@ -318,6 +318,7 @@ cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-browser-i
 
 # Focused native check for page notifications and unread badges (no network needed)
 cargo run -p axolotl --locked --features smoke -- --smoke-test --smoke-notifications
+# Add --smoke-notifications-snapshot=/tmp/axolotl-notifications on macOS for before/after native tab-bar PNGs.
 
 # Downloads: native attachment/blob clicks, conflicts, concurrent progress, cancellation and failures
 # Creates UUID-prefixed fixtures in the real Downloads folder and removes its own files.

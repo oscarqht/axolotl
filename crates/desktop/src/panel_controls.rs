@@ -1,4 +1,4 @@
-//! Native floating control lifecycle and IPC dispatch.
+//! Native floating control lifecycle and Rust action dispatch.
 use crate::app::{BrowserApp, Command, DragInput, TabAction, TabTarget};
 use gpui::*;
 use std::{collections::HashSet, time::Instant};
@@ -11,7 +11,7 @@ impl BrowserApp {
             }
         }
         for (pane, event) in events {
-            // Recycled surfaces can still have IPC queued for their old pane.
+            // Recycled controls can still have actions queued for their old pane.
             if event["type"] != "ready" && event["pane"].as_u64() != Some(pane) {
                 continue;
             }
@@ -53,6 +53,17 @@ impl BrowserApp {
                         bar.transitioning = false;
                     }
                     cx.notify();
+                }
+                "chip-metric" => {
+                    if let Some(bar) = self.bars.get_mut(&pane) {
+                        let count = self.model.pane(pane).unwrap().tabs.len();
+                        bar.midpoints.resize(count, 0.);
+                        if let Some(index) = event["index"].as_u64().map(|i| i as usize)
+                            && let Some(mid) = bar.midpoints.get_mut(index)
+                        {
+                            *mid = event["midpoint"].as_f64().unwrap_or(0.) as f32;
+                        }
+                    }
                 }
                 "metrics" => {
                     if let Some(bar) = self.bars.get_mut(&pane) {
@@ -208,7 +219,7 @@ impl BrowserApp {
         }
     }
 
-    pub fn prepare_views(&mut self, window: &mut Window, cx: &gpui::App) {
+    pub fn prepare_views(&mut self, window: &mut Window, cx: &mut gpui::App) {
         #[cfg(feature = "smoke")]
         let _timing = crate::smoke_performance::time("prepare_views");
         let mut ids: HashSet<_> = self
@@ -313,7 +324,7 @@ impl BrowserApp {
                 self.report(self.host.show(id, true));
             }
         }
-        // Native children stack in creation order. Rebuild controls above newly
+        // Native children stack in creation order. Raise controls above newly
         // created page surfaces, after a captured drag has released its pointer.
         let native_views: HashSet<_> = ids
             .iter()
@@ -335,15 +346,14 @@ impl BrowserApp {
             if let Some(dialog) = &mut self.settings {
                 dialog.view = None;
             }
-            // Reorder the existing controls instead of constructing WKWebViews
-            // again. Keep their editor, scroll, transition and pointer state.
+            // Retain the GPUI editor, scroll and pointer state while raising chrome.
         }
         if !self.tab_drag_active() {
             self.chrome_views = native_views;
         }
         let active_panes: HashSet<_> = geometry.panes.iter().map(|p| p.id).collect();
         // Keep only as many native control surfaces as visible panes. Recycle
-        // inactive ones across spaces rather than caching a WebKit page per space.
+        // inactive ones across spaces rather than caching an overlay window per space.
         let mut spare: Vec<_> = self
             .bars
             .extract_if(|id, _| !active_panes.contains(id))
@@ -400,20 +410,12 @@ impl BrowserApp {
                     })
                 })
                 .collect();
-            let state = serde_json::json!({"pane":p.id,"active":p.active_tab,"editing":editing,"expanded":self.bars[&pane.id].expanded,"tabs":tabs});
+            let state = serde_json::json!({"pane":p.id,"active":p.active_tab,"editing":editing,"expanded":self.bars[&pane.id].expanded,"tabs":tabs,"visible":self.settings.is_none() && self.link_popup.is_none() && self.pins.open.is_none() && self.pins.menu.is_none()});
             let result = self
                 .bars
                 .get_mut(&pane.id)
                 .unwrap()
-                .place(pane.bounds, state);
-            self.report(result);
-        }
-        // Construct every sibling first: a new native child returns focus to
-        // GPUI and would otherwise blur an editor in an earlier sibling.
-        if let Some(TabTarget::Page(pane, _)) = self.editing
-            && let Some(bar) = self.bars.get(&pane)
-        {
-            let result = bar.focus_editor();
+                .place(pane.bounds, state, cx);
             self.report(result);
         }
         // Create last, above every page and floating panel control.

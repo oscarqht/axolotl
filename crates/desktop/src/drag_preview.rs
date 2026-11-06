@@ -54,6 +54,7 @@ impl DragPreview {
             html,
         )
         .build_native_child(window, cx)?;
+        #[cfg(not(target_os = "windows"))]
         view.focus_parent()?;
         let image = Rc::new(RefCell::new(None));
         Ok(Self {

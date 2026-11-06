@@ -233,8 +233,14 @@ impl BrowserApp {
             {
                 return;
             }
+            if !window.is_window_active() && this.bars.values().any(|bar| bar.has_focus()) {
+                return;
+            }
             if !window.is_window_active() {
                 this.downloads_popup = None;
+                for bar in this.bars.values_mut() {
+                    bar.dismiss_controls();
+                }
                 this.dismiss_history();
                 this.space_menu = None;
                 this.space_tooltip = None;
@@ -252,6 +258,7 @@ impl BrowserApp {
         .detach();
         cx.observe_window_bounds(window, |this, window, cx| {
             this.window_saver.tick(window, cx);
+            cx.notify();
         })
         .detach();
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
@@ -834,6 +841,9 @@ impl BrowserApp {
                         continue;
                     }
                     self.clear_tab_notifications(tab);
+                    for bar in self.bars.values_mut() {
+                        bar.dismiss_controls();
+                    }
                     // Native child focus is outside GPUI's focus tree, so it may
                     // not emit InputEvent::Blur (including clicks in the same pane).
                     self.cancel_edit(window, cx);

@@ -124,8 +124,6 @@ mod tests {
     fn embedded_surfaces_resolve_every_icon() {
         for source in [
             include_str!("../assets/start.html"),
-            include_str!("../assets/floating-bar.html"),
-            include_str!("../assets/floating-bar.js"),
             include_str!("../assets/floating-panel.html"),
             include_str!("../assets/settings.html"),
             include_str!("../assets/link-popup.html"),

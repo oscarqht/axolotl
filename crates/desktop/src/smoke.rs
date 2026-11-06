@@ -245,6 +245,19 @@ async fn run(
         return Ok(vec![crate::smoke_menu::run(view, pane, cx).await?]);
     }
 
+    if std::env::args().any(|arg| arg == "--smoke-native-chips-ui") {
+        view.update_in(cx, |app, _, cx| {
+            for _ in 0..3 {
+                app.model.add_tab("about:blank");
+            }
+            cx.notify();
+        })?;
+        println!("AXOLOTL_NATIVE_CHIPS_UI_READY");
+        for _ in 0..900 {
+            pause(cx).await;
+        }
+        return Ok(vec!["held isolated native GPUI chips fixture"]);
+    }
     #[cfg(target_os = "windows")]
     if std::env::args().any(|arg| arg == "--smoke-windows-controls") {
         return crate::smoke_panels::check_windows_controls(view, cx).await;
@@ -637,12 +650,15 @@ async fn run(
     let new_tab = view.update_in(cx, |app, _, _| app.active_tab())?;
     wait_title(&host, new_tab, "New tab · Axolotl", cx).await?;
     let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
-    let editor = bar_eval(view,pane,"({focused:document.activeElement?.tagName==='INPUT',value:document.querySelector('input')?.value,active:document.activeElement?.tagName,hasFocus:document.hasFocus(),bar:bar.className,expanded,hostExpanded:state.expanded,viewport:innerWidth,expected:state.surfaceWidth,visibility:getComputedStyle(tabs).visibility})",cx).await?;
-    ensure!(
-        editor["focused"] == true && editor["value"] == "about:blank",
-        "New tab editor not focused: {editor}"
-    );
-    bar_eval(view,pane,"document.querySelector('input').value='example.com'; document.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); true",cx).await?;
+    view.update_in(cx, |app, _, cx| -> Result<()> {
+        let (editing, value) = app.bars[&pane].test_editor(cx);
+        ensure!(
+            editing == Some(new_tab) && value == "about:blank",
+            "Native editor was not initialized"
+        );
+        app.bars[&pane].test_navigate("example.com", cx);
+        Ok(())
+    })??;
     pause(cx).await;
     wait_title(&host, new_tab, "Example Domain", cx).await?;
     view.update_in(cx, |app, _, _| {

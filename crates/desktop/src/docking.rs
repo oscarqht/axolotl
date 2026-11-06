@@ -83,8 +83,10 @@ impl BrowserApp {
             self.cancel_edit(window, cx);
             self.tab_drag.as_mut().unwrap().active = true;
             self.suppress_tab_click = true;
-            self.report(self.host.focus_parent(self.active_tab()));
-            self.focus.focus(window);
+            if drag.input != DragInput::NativeBar {
+                self.report(self.host.focus_parent(self.active_tab()));
+                self.focus.focus(window);
+            }
             if let Some(tab) = self.model.tab(drag.tab) {
                 let result = self.host.ensure(drag.tab, &tab.url, window, cx);
                 self.report(result);

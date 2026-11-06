@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/workspace-core", "crates/desktop"]
 resolver = "2"
+exclude = ["vendor/gpui-component"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,3 +10,6 @@ license = "MIT"
 
 [profile.dev]
 debug = 1
+
+[patch.crates-io]
+gpui-component = { path = "vendor/gpui-component" }

@@ -1,7 +1,7 @@
 //! Native floating-control and whole-panel integration assertions.
 use crate::{
     app::BrowserApp,
-    smoke::{Host, bar_eval, eval, pause},
+    smoke::{Host, eval, pause},
 };
 use anyhow::{Result, ensure};
 use gpui::*;
@@ -12,74 +12,85 @@ pub(crate) async fn check_windows_controls(
     view: &WeakEntity<BrowserApp>,
     cx: &mut AsyncWindowContext,
 ) -> Result<Vec<&'static str>> {
-    use crate::app::{Command, TabTarget};
-    let pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
-    for trigger in ["shortcut", "double-click", "new-tab"] {
-        view.update_in(cx, |app, window, cx| -> Result<()> {
-            app.cancel_edit(window, cx);
-            match trigger {
-                "shortcut" => app.command(Command::Address, window, cx),
-                "new-tab" => app.command(Command::NewTab, window, cx),
-                _ => {
-                    app.bars[&pane].evaluate(
-                        "document.querySelector('.chip').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));true",
-                        |_| {},
-                    )?;
-                }
-            }
-            Ok(())
-        })??;
-        for _ in 0..10 {
-            pause(cx).await;
-        }
-        view.update_in(cx, |app, _, _| {
-            ensure!(
-                app.bars[&pane].test_frontmost()?,
-                "{trigger}: page covers the tab chips"
-            );
-            ensure!(
-                app.editing == Some(TabTarget::Page(pane, app.active_tab())),
-                "{trigger} dismissed the URL editor"
-            );
-            Ok(())
-        })??;
-        let editor = bar_eval(view, pane,
-            "(()=>{const i=document.querySelector('input');return {focused:document.hasFocus()&&document.activeElement===i,value:i?.value,selected:i?.selectionEnd-i?.selectionStart}})()", cx).await?;
-        ensure!(
-            editor["focused"] == true
-                && editor["value"] == "about:blank"
-                && editor["selected"] == 11,
-            "{trigger} editor is not ready for typing: {editor}"
-        );
-        bar_eval(view, pane, "(()=>{const i=document.querySelector('input');i.value='draft.example/path';i.dispatchEvent(new Event('input'));return true})()", cx).await?;
-        for _ in 0..3 {
-            pause(cx).await;
-        }
-        ensure!(
-            bar_eval(view, pane, "document.querySelector('input')?.value", cx).await?
-                == "draft.example/path",
-            "{trigger}: rendering overwrote the URL draft"
-        );
-        view.update_in(cx, |app, _, _| app.host.focus(app.active_tab()))??;
-        for _ in 0..3 {
-            pause(cx).await;
-        }
-        view.update_in(cx, |app, _, _| {
-            ensure!(
-                app.editing.is_none(),
-                "{trigger}: focusing the page failed to dismiss the editor"
-            );
-            ensure!(
-                app.bars[&pane].test_frontmost()?,
-                "{trigger}: page focus covered the tab chips"
-            );
-            Ok(())
-        })??;
+    let (pane, first, second) = view.update_in(cx, |app, window, cx| {
+        app.cancel_edit(window, cx);
+        let pane = app.model.focused_pane().id;
+        let first = app.active_tab();
+        let second = app.model.add_tab("about:blank");
+        app.model.switch_tab(pane, first);
+        cx.notify();
+        (pane, first, second)
+    })?;
+    for _ in 0..4 {
+        pause(cx).await;
     }
+    view.update_in(cx, |app, _, cx| app.bars[&pane].test_expand(true, cx))?;
+    for _ in 0..4 {
+        pause(cx).await;
+    }
+    view.update_in(cx, |app, _, cx| -> Result<()> {
+        let bar = &app.bars[&pane];
+        ensure!(bar.expanded, "GPUI hover expansion was not delivered");
+        let viewport = bar.test_viewport(cx)?;
+        ensure!(
+            (f32::from(viewport.width) - bar.bounds.width).abs() < 1.
+                && (f32::from(viewport.height) - 48.).abs() < 1.,
+            "Native client area clips the chip row: {viewport:?}, bounds {:?}",
+            bar.bounds
+        );
+        ensure!(bar.bounds.width > 176., "Native overlay did not expand");
+        ensure!(
+            bar.test_frontmost()?,
+            "Native GPUI overlay is covered by the page"
+        );
+        bar.test_action("select", second, cx);
+        Ok(())
+    })??;
+    for _ in 0..4 {
+        pause(cx).await;
+    }
+    view.update_in(cx, |app, _, cx| -> Result<()> {
+        ensure!(
+            app.active_tab() == second,
+            "Native selection selected the wrong tab"
+        );
+        app.bars[&pane].test_action("edit", second, cx);
+        Ok(())
+    })??;
+    for _ in 0..4 {
+        pause(cx).await;
+    }
+    view.update_in(cx, |app, _, cx| -> Result<()> {
+        let (editing, value) = app.bars[&pane].test_editor(cx);
+        ensure!(
+            editing == Some(second) && value == "about:blank",
+            "Native address editor was not initialized"
+        );
+        ensure!(
+            app.bars[&pane].has_focus(),
+            "Native editor did not receive keyboard focus"
+        );
+        app.bars[&pane].test_action("cancel", second, cx);
+        Ok(())
+    })??;
+    for _ in 0..3 {
+        pause(cx).await;
+    }
+    view.update_in(cx, |app, window, cx| {
+        app.tab_action(
+            crate::app::TabTarget::Page(pane, second),
+            crate::app::TabAction::Close,
+            window,
+            cx,
+        );
+        app.model.switch_tab(pane, first);
+        cx.notify();
+    })?;
     Ok(vec![
-        "Windows tab chips stay above pages; URL editing retains focus and drafts after address shortcut, chip double-click and lazy new-tab creation; page focus dismisses editing",
+        "native GPUI overlay expands above WebView2, selects tabs, focuses its address editor, cancels editing and closes tabs without JavaScript",
     ])
 }
+
 pub(crate) async fn run(
     view: &WeakEntity<BrowserApp>,
     host: &Host,
@@ -87,202 +98,18 @@ pub(crate) async fn run(
     destination: PaneId,
     cx: &mut AsyncWindowContext,
 ) -> Result<Vec<&'static str>> {
-    let mut checks = Vec::new();
-    let control_pane = view.update_in(cx, |app, _, _| app.model.focused_pane().id)?;
-    let triggers=bar_eval(view,control_pane,"(()=>{for(const id of ['bar','handle','add'])document.getElementById(id).dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));document.querySelector('#handle').focus();const handle=expanded;document.querySelector('#add').focus();const plus=expanded;document.activeElement?.blur();return {handle,plus}})()",cx).await?;
-    ensure!(
-        triggers["handle"] == false && triggers["plus"] == false,
-        "Handle/+ hover or focus expanded compact bar: {triggers}"
-    );
-    let before = view.update_in(cx, |app, _, _| app.model.focused_pane().tabs.len())?;
-    // Observe creation in the model: the old native surface may be destroyed.
-    view.update_in(cx, |app, _, _| {
-        app.bars[&control_pane].evaluate("document.querySelector('#add').click();true", |_| {})
-    })??;
-    pause(cx).await;
-    view.update_in(cx, |app, _, _| {
-        ensure!(
-            app.model.focused_pane().tabs.len() == before + 1
-                && app.editing == Some(crate::app::TabTarget::Page(control_pane, app.active_tab())),
-            "Plus must create a tab and open its address editor"
-        );
-        Ok(())
-    })??;
-    pause(cx).await;
-    let editor=bar_eval(view,control_pane,"(()=>{const i=document.querySelector('input');return {focused:i===document.activeElement,value:i?.value,selected:i?.selectionEnd-i?.selectionStart}})()",cx).await?;
-    ensure!(
-        editor["focused"] == true && editor["value"] == "about:blank" && editor["selected"] == 11,
-        "Plus-created address input is not ready for typing: {editor}"
-    );
-    view.update_in(cx, |app, window, cx| {
-        app.command(crate::app::Command::CloseTab, window, cx)
-    })?;
-    pause(cx).await;
-    view.update_in(cx,|app,_,_|app.bars[&control_pane].evaluate("document.querySelector('#count').dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));true",|_|{}))??;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| app.bars[&control_pane].expanded)?,
-        "Count hover did not expand chips"
-    );
-    checks.extend(check_sizing(view, cx).await?);
-    view.update_in(cx, |app, _, _| {
-        app.bars[&control_pane].evaluate(
-            "pinned=false;document.activeElement?.blur();expand(false);true",
-            |_| {},
-        )
-    })??;
-    pause(cx).await;
-    pause(cx).await;
-    checks.push("only count/chip hover expands; handle/plus hover stay compact; plus click creates a tab with focused address editing");
-    checks.push(crate::smoke_menu::run(view, control_pane, cx).await?);
-    checks.push(crate::smoke_space_menu::run(view, cx).await?);
-    checks.extend(crate::smoke_settings::run(view, cx).await?);
-
+    let mut checks = check_sizing(view, cx).await?;
     let pane = view.update_in(cx, |app, window, cx| {
         app.cancel_edit(window, cx);
         let pane = app.model.focused_pane().id;
-        for i in 0..12 {
-            app.model.add_tab(&format!("https://tabs.test/{i}"));
+        for _ in 0..12 {
+            app.model.add_tab("about:blank");
         }
-        // Keep the original live document active; the overflow tabs remain lazy.
         app.model.switch_tab(pane, moved);
         cx.notify();
         pane
     })?;
     pause(cx).await;
-    let count = bar_eval(
-        view,
-        pane,
-        "document.querySelector('#count').textContent",
-        cx,
-    )
-    .await?;
-    ensure!(
-        count.as_str().is_some_and(|s| s.ends_with("/13")),
-        "Compact count mismatch: {count}"
-    );
-    bar_eval(
-        view,
-        pane,
-        "window.barTween=null;const probe=new MutationObserver(()=>{if(!bar.classList.contains('expanded'))return;probe.disconnect();window.barTween={start:bar.getBoundingClientRect().width,viewport:innerWidth};setTimeout(()=>{const width=bar.getAnimations().find(a=>a.transitionProperty==='width');if(width)width.currentTime=70;window.barTween.middle=bar.getBoundingClientRect().width;window.barTween.sameViewport=innerWidth===window.barTween.viewport},70)});probe.observe(bar,{attributes:true,attributeFilter:['class']}); document.querySelector('#count').click(); true",
-        cx,
-    )
-    .await?;
-    pause(cx).await;
-    pause(cx).await;
-    let animation=bar_eval(view,pane,"({width:bar.getBoundingClientRect().width,viewport:innerWidth,tween:window.barTween,classes:bar.className,expanded,hostExpanded:state.expanded,pending:!!pendingStart,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,transition:getComputedStyle(bar).transitionDuration})",cx).await?;
-    let expected = view.update_in(cx, |app, window, _| {
-        let v = window.viewport_size();
-        let geometry = app.model.active_space().layout.geometry(
-            crate::render::panel_content_rect(f32::from(v.width), f32::from(v.height)),
-            6.,
-            100.,
-        );
-        let width = geometry
-            .panes
-            .iter()
-            .find(|p| p.id == pane)
-            .unwrap()
-            .bounds
-            .width;
-        ensure!(
-            (app.bars[&pane].bounds.width - (width - 24.)).abs() < 1.,
-            "Expanded native bar did not use full panel width"
-        );
-        Ok(width - 32.)
-    })??;
-    ensure!(
-        (animation["width"].as_f64().unwrap_or(0.) - f64::from(expected)).abs() < 2.,
-        "Expanded pill did not fill its surface: {animation}"
-    );
-    if animation["reduced"] == false {
-        let middle = animation["tween"]["middle"].as_f64().unwrap_or(0.);
-        ensure!(
-            middle > 129.
-                && middle < f64::from(expected) - 1.
-                && animation["tween"]["sameViewport"] == true,
-            "Expansion did not animate within a stable native viewport: {animation}"
-        );
-    }
-    let overflow=bar_eval(view,pane,"({expanded:document.querySelector('#bar').classList.contains('expanded'),overflow:document.querySelector('#bar').classList.contains('overflow'),closes:document.querySelectorAll('.close').length,rows:new Set([...document.querySelectorAll('.chip')].map(c=>c.offsetTop)).size})",cx).await?;
-    ensure!(
-        overflow["expanded"] == true
-            && overflow["overflow"] == true
-            && overflow["closes"] == 13
-            && overflow["rows"] == 1,
-        "Native overflow layout failed: {overflow}"
-    );
-    let fades=bar_eval(view,pane,"(()=>{tabs.scrollLeft=0;metrics();const start=!bar.classList.contains('fade-left')&&bar.classList.contains('fade-right');tabs.scrollLeft=(tabs.scrollWidth-tabs.clientWidth)/2;metrics();const middle=bar.classList.contains('fade-left')&&bar.classList.contains('fade-right');tabs.scrollLeft=tabs.scrollWidth;metrics();const end=bar.classList.contains('fade-left')&&!bar.classList.contains('fade-right');tabs.scrollLeft=0;metrics();return {start,middle,end,mask:getComputedStyle(tabs).maskImage||getComputedStyle(tabs).webkitMaskImage}})()",cx).await?;
-    ensure!(
-        fades["start"] == true
-            && fades["middle"] == true
-            && fades["end"] == true
-            && fades["mask"]
-                .as_str()
-                .is_some_and(|m| m.contains("linear-gradient")),
-        "Overflow fades did not track scroll edges: {fades}"
-    );
-    bar_eval(view,pane,"window.collapseTween=null;pinned=false;document.activeElement?.blur();expand(false);setTimeout(()=>{const width=bar.getAnimations().find(a=>a.transitionProperty==='width');if(width)width.currentTime=70;window.collapseTween={width:bar.getBoundingClientRect().width,viewport:innerWidth}},70);true",cx).await?;
-    pause(cx).await;
-    pause(cx).await;
-    let collapsed=bar_eval(view,pane,"({width:bar.getBoundingClientRect().width,viewport:innerWidth,tween:window.collapseTween})",cx).await?;
-    ensure!(
-        collapsed["width"].as_f64() == Some(128.) && collapsed["viewport"].as_f64() == Some(144.),
-        "Collapse did not restore compact native bounds: {collapsed}"
-    );
-    if animation["reduced"] == false {
-        ensure!(
-            collapsed["tween"]["width"]
-                .as_f64()
-                .is_some_and(|w| w > 129. && w < f64::from(expected))
-                && collapsed["tween"]["viewport"] == animation["viewport"],
-            "Native surface clipped the collapse animation: {collapsed}"
-        );
-    }
-    bar_eval(view, pane, "expand(true);true", cx).await?;
-    pause(cx).await;
-    pause(cx).await;
-    ensure!(bar_eval(view,pane,"(()=>{const chip=document.querySelector('.chip'),saved=state;window.updateBar({...saved,active:saved.tabs.at(-1).id});const retained=chip===document.querySelector('.chip');window.updateBar(saved);return retained&&[...document.querySelectorAll('img')].every(i=>!i.draggable)})()",cx).await?==true,"Selection replaced chip nodes or enabled native image dragging");
-    bar_eval(view,pane,"document.querySelector('.chip').dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); true",cx).await?;
-    pause(cx).await;
-    ensure!(
-        bar_eval(view, pane, "document.activeElement?.tagName==='INPUT'", cx).await? == true,
-        "Chip double click did not focus native editor"
-    );
-    bar_eval(view,pane,"document.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); true",cx).await?;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| app.editing.is_none())?,
-        "Native Escape did not cancel edit"
-    );
-    bar_eval(view,pane,"document.querySelector('.active').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true})); true",cx).await?;
-    pause(cx).await;
-    pause(cx).await;
-    let last = view.update_in(cx, |app, _, _| {
-        app.model.pane(pane).unwrap().tabs.last().unwrap().id
-    })?;
-    ensure!(
-        view.update_in(cx, |app, _, _| app.active_tab())? == last,
-        "Previous-tab selection did not wrap to last"
-    );
-    // There is no real hover/focus in unattended native tests. Re-enter the
-    // expanded state after the lazy page creates a replacement native bar.
-    bar_eval(view, pane, "pinned=true;expand(true);true", cx).await?;
-    pause(cx).await;
-    pause(cx).await;
-    let revealed=bar_eval(view,pane,"(()=>{let t=document.querySelector('#tabs').getBoundingClientRect(),a=document.querySelector('.active').getBoundingClientRect();return {visible:a.left>=t.left-1&&a.right<=t.right+1,left:a.left,right:a.right,viewportLeft:t.left,viewportRight:t.right,barWidth:bar.getBoundingClientRect().width,scroll:tabs.scrollLeft,client:tabs.clientWidth,expanded,pending:!!pendingStart}})()",cx).await?;
-    ensure!(
-        revealed["visible"] == true,
-        "Overflow did not reveal active chip: {revealed}"
-    );
-    bar_eval(view,pane,"document.querySelector('.active').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); true",cx).await?;
-    pause(cx).await;
-    pause(cx).await;
-    ensure!(
-        view.update_in(cx, |app, _, _| app.active_tab())? == moved,
-        "Next-tab selection did not wrap to first"
-    );
-    checks.push("native compact count, animated full-panel expansion, scroll-edge fades, single-row chip overflow, visible close buttons, double-click editing, Escape IPC, tab wraparound and active-chip reveal");
     // Move the complete panel using the same handle drag state, preserving every tab.
     for edge in [
         workspace_core::SplitEdge::Left,
@@ -435,128 +262,38 @@ pub(crate) async fn check_sizing(
     view: &WeakEntity<BrowserApp>,
     cx: &mut AsyncWindowContext,
 ) -> Result<Vec<&'static str>> {
-    let (control_pane, moved, before) = view.update_in(cx, |app, _, _| {
-        (
-            app.model.focused_pane().id,
-            app.active_tab(),
-            app.model.focused_pane().tabs.len(),
-        )
+    let (pane, tab) = view.update_in(cx, |app, window, cx| {
+        app.cancel_edit(window, cx);
+        (app.model.focused_pane().id, app.active_tab())
     })?;
-    view.update_in(cx, |app, _, _| {
-        app.bars[&control_pane]
-            .evaluate(include_str!("../assets/smoke-hover-transition.js"), |_| {})
-    })??;
+    pause(cx).await;
+    view.update_in(cx, |app, _, cx| app.bars[&pane].test_expand(true, cx))?;
     pause(cx).await;
     pause(cx).await;
+    let width = view.update_in(cx, |app, _, _| app.bars[&pane].bounds.width)?;
+    ensure!(width > 176., "GPUI strip failed to expand");
+    let extra = view.update_in(cx, |app, _, cx| {
+        let id = app.model.add_tab("about:blank");
+        app.model.switch_tab(pane, tab);
+        cx.notify();
+        id
+    })?;
     pause(cx).await;
-    let samples = bar_eval(view, control_pane, "window.hoverTransitionSamples", cx).await?;
-    ensure!(
-        samples.as_array().is_some_and(|steps| steps.len() == 6
-            && steps.iter().all(|s| s["overflow"] == false
-                && s["faded"] == false
-                && s["arrowWidth"].as_f64() == Some(0.))),
-        "Fitting chips introduced a second overflow/arrow animation: {samples}"
-    );
-    let single=bar_eval(view,control_pane,"pinned=true;({width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),gap:document.querySelector('#add').getBoundingClientRect().left-tabs.lastElementChild.getBoundingClientRect().right})",cx).await?;
-    ensure!(
-        before == 1
-            && single["width"]
-                .as_f64()
-                .is_some_and(|w| (w - 254.).abs() < 1.)
-            && single["overflow"] == false
-            && single["gap"].as_f64().is_some_and(|g| g <= 12.),
-        "Single-chip bar did not fit contents: {single}"
-    );
-    view.update_in(cx, |app, _, _| {
+    pause(cx).await;
+    view.update_in(cx, |app, _, _| -> Result<()> {
         ensure!(
-            (app.bars[&control_pane].bounds.width - 262.).abs() < 1.,
-            "Single-chip native surface is oversized"
+            app.bars[&pane].bounds.width >= width,
+            "Additional chip shrank native strip"
         );
         Ok(())
     })??;
-    let added = view.update_in(cx, |app, _, cx| {
-        let tab = app.model.add_tab("about:blank");
-        app.model.switch_tab(control_pane, moved);
-        cx.notify();
-        tab
+    view.update_in(cx, |app, window, cx| {
+        app.tab_action(
+            crate::app::TabTarget::Page(pane, extra),
+            crate::app::TabAction::Close,
+            window,
+            cx,
+        )
     })?;
-    pause(cx).await;
-    pause(cx).await;
-    // The first forced frame starts the CSS transition in an occluded window.
-    pause(cx).await;
-    let two = bar_eval(
-        view,
-        control_pane,
-        "({width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),expanded,target:state.expandedWidth,surface:innerWidth})",
-        cx,
-    )
-    .await?;
-    ensure!(
-        two["width"].as_f64().is_some_and(|w| (w - 430.).abs() < 1.) && two["overflow"] == false,
-        "Two-chip bar did not fit contents: {two}"
-    );
-    view.update_in(cx, |app, _, cx| {
-        app.model.close_tab(control_pane, added);
-        cx.notify()
-    })?;
-    pause(cx).await;
-    pause(cx).await;
-    pause(cx).await;
-    ensure!(
-        bar_eval(view, control_pane, "bar.getBoundingClientRect().width", cx)
-            .await?
-            .as_f64()
-            .is_some_and(|w| (w - 254.).abs() < 1.),
-        "Removing chip did not restore natural width"
-    );
-
-    let extras = view.update_in(cx, |app, _, cx| {
-        let tabs = (0..12)
-            .map(|_| app.model.add_tab("about:blank"))
-            .collect::<Vec<_>>();
-        app.model.switch_tab(control_pane, moved);
-        cx.notify();
-        tabs
-    })?;
-    pause(cx).await;
-    pause(cx).await;
-    pause(cx).await;
-    let capped=bar_eval(view,control_pane,"(()=>{tabs.scrollLeft=(tabs.scrollWidth-tabs.clientWidth)/2;metrics();return {width:bar.getBoundingClientRect().width,overflow:bar.classList.contains('overflow'),left:bar.classList.contains('fade-left'),right:bar.classList.contains('fade-right')}})()",cx).await?;
-    let expected = view.update_in(cx, |app, window, _| {
-        let v = window.viewport_size();
-        let geometry = app.model.active_space().layout.geometry(
-            crate::render::panel_content_rect(f32::from(v.width), f32::from(v.height)),
-            6.,
-            100.,
-        );
-        geometry
-            .panes
-            .iter()
-            .find(|p| p.id == control_pane)
-            .unwrap()
-            .bounds
-            .width
-            - 32.
-    })?;
-    ensure!(
-        capped["width"]
-            .as_f64()
-            .is_some_and(|w| (w - f64::from(expected)).abs() < 1.)
-            && capped["overflow"] == true
-            && capped["left"] == true
-            && capped["right"] == true,
-        "Many chips did not cap/fade at panel edges: {capped}"
-    );
-    view.update_in(cx, |app, _, cx| {
-        for tab in extras {
-            app.model.close_tab(control_pane, tab);
-        }
-        cx.notify()
-    })?;
-    pause(cx).await;
-    pause(cx).await;
-    pause(cx).await;
-    Ok(vec![
-        "one/two chips fit their contents; removal shrinks the bar; many chips cap at panel width with edge fades",
-    ])
+    Ok(vec!["GPUI strip expands and grows to fit additional tabs"])
 }

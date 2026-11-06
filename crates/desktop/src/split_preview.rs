@@ -22,6 +22,7 @@ span{padding:8px 14px;background:rgba(233,255,247,.9);border-radius:6px}
             html,
         )
         .build_native_child(window, cx)?;
+        #[cfg(not(target_os = "windows"))]
         view.focus_parent()?;
         Ok(Self(view))
     }

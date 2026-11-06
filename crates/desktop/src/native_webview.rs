@@ -447,36 +447,6 @@ mod windows_view {
                 focused == container || IsChild(container, focused).as_bool()
             }
         }
-        #[cfg(feature = "smoke")]
-        pub fn test_frontmost(&self) -> Result<bool> {
-            use windows::Win32::{
-                Foundation::{HWND, POINT, RECT},
-                Graphics::Gdi::MapWindowPoints,
-                UI::WindowsAndMessaging::{
-                    CWP_SKIPINVISIBLE, ChildWindowFromPointEx, GetClientRect, GetParent,
-                },
-            };
-            use wry::WebViewExtWindows;
-            let view = self
-                .0
-                .borrow()
-                .view
-                .clone()
-                .ok_or_else(|| anyhow!("View is not ready"))?;
-            unsafe {
-                let mut container = HWND::default();
-                view.controller().ParentWindow(&mut container)?;
-                let mut rect = RECT::default();
-                GetClientRect(container, &mut rect)?;
-                let parent = GetParent(container)?;
-                let mut center = [POINT {
-                    x: rect.right / 2,
-                    y: rect.bottom / 2,
-                }];
-                MapWindowPoints(Some(container), Some(parent), &mut center);
-                Ok(ChildWindowFromPointEx(parent, center[0], CWP_SKIPINVISIBLE) == container)
-            }
-        }
         pub fn focus_parent(&self) -> Result<()> {
             // SetFocus returns the previous HWND, which can be null on success.
             // Wry's windows-rs wrapper reports this as an error with HRESULT 0.
